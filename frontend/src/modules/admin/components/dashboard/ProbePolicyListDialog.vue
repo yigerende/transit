@@ -123,7 +123,7 @@ watch(() => props.policies.map(policy => policy.id).join('\u0000'), () => {
                       <ShieldCheck v-else class="h-3 w-3" />
                       {{ t(`${prefix}.strategyModes.${policyStrategyMode(policy)}`) }}
                     </span>
-                    <span v-if="policy.autoRemoteActionEnabled" class="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+                    <span v-if="policy.autoDegradeEnabled && policy.autoRemoteActionEnabled && policy.autoSuspendEnabled" class="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
                       {{ t(`${prefix}.remoteActionOn`) }}
                     </span>
                   </div>

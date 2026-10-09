@@ -55,7 +55,7 @@ func TestIsDue_WithinCooldownIsNotDue(t *testing.T) {
 		"m1": {ConnectionID: "conn-1", ModelName: "m1", State: StateSuspended, CooldownUntil: &future},
 	}
 	svc := &Service{repo: repo}
-	if svc.isDue(context.Background(), "conn-1", "m1", Policy{ProbeIntervalSeconds: 60}, time.Now()) {
+	if svc.isDue(context.Background(), "conn-1", "m1", Policy{ProbeIntervalSeconds: 60, AutoSuspendEnabled: true}, time.Now()) {
 		t.Fatalf("expected target within cooldown to not be due")
 	}
 }

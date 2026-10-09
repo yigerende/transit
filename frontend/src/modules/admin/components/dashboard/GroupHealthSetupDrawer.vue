@@ -54,6 +54,7 @@ const selectedPolicyIds = ref<Set<string>>(new Set())
 const modelText = ref('')
 const providerFamily = ref('openai')
 const autoRemoteActionEnabled = ref(true)
+const autoSuspendEnabled = ref(false)
 const errorKey = ref('')
 const modelsTouched = ref(false)
 const modelSuggestionSource = ref<ModelSuggestionSource>('none')
@@ -168,6 +169,7 @@ const reset = async () => {
   providerFamily.value = detectedProvider ?? (providerOptions.includes(group.platform) ? group.platform : 'openai')
   mode.value = 'multiplier'
   autoRemoteActionEnabled.value = true
+  autoSuspendEnabled.value = false
 
   const outcome = await loadAdminGroupPolicyConfiguration(group.id)
   if (sequence !== loadSequence || !props.open || props.group?.id !== group.id) return
@@ -267,6 +269,7 @@ const createQuickPolicyInput = (): PolicyInput => {
     dailyProbeBudget: 1000,
     autoDegradeEnabled: !multiplierOnly,
     autoRemoteActionEnabled: multiplierOnly ? false : autoRemoteActionEnabled.value,
+    autoSuspendEnabled: multiplierOnly ? false : autoSuspendEnabled.value,
     priorityMode: effectivePriorityMode.value,
     strategyMode: multiplierOnly ? 'multiplier_only' : 'health_probe',
     modelTargets: multiplierOnly
@@ -579,11 +582,18 @@ const close = () => {
                     <label class="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-3 py-2">
                       <span>
                         <span class="block text-xs font-medium text-foreground">{{ t(`${prefix}.strategy.remoteActionLabel`) }}</span>
-                        <span class="mt-0.5 block text-xs text-muted-foreground">{{ t(`${prefix}.strategy.remoteActionHelp`) }}</span>
+                        <span class="mt-0.5 block text-xs text-muted-foreground">{{ t('admin.connectionHealth.policyDrawer.autoRemoteActionHelp') }}</span>
                       </span>
                       <input v-model="autoRemoteActionEnabled" type="checkbox" class="h-4 w-4 rounded border-border" :disabled="mode === 'monitor'">
                     </label>
                   </div>
+                  <label class="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-3 py-2">
+                    <span>
+                      <span class="block text-xs font-medium text-foreground">{{ t('admin.connectionHealth.policyDrawer.autoSuspendLabel') }}</span>
+                      <span class="mt-0.5 block text-xs text-muted-foreground">{{ t('admin.connectionHealth.policyDrawer.autoSuspendHelp') }}</span>
+                    </span>
+                    <input v-model="autoSuspendEnabled" type="checkbox" class="h-4 w-4 rounded border-border">
+                  </label>
                 </template>
               </section>
 
@@ -611,8 +621,8 @@ const close = () => {
                   </div>
                   <div class="flex items-center justify-between gap-4 px-4 py-3">
                     <dt class="text-sm text-muted-foreground">{{ t(`${prefix}.confirm.remoteAction`) }}</dt>
-                    <dd class="text-right text-sm font-medium" :class="autoRemoteActionEnabled && mode !== 'existing' && mode !== 'multiplierOnly' ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'">
-                      {{ mode === 'existing' ? t(`${prefix}.confirm.fromPolicy`) : t(`${prefix}.confirm.${autoRemoteActionEnabled && mode !== 'multiplierOnly' ? 'enabled' : 'disabled'}`) }}
+                    <dd class="text-right text-sm font-medium" :class="autoRemoteActionEnabled && autoSuspendEnabled && mode !== 'existing' && mode !== 'multiplierOnly' ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'">
+                      {{ mode === 'existing' ? t(`${prefix}.confirm.fromPolicy`) : t(`${prefix}.confirm.${autoRemoteActionEnabled && autoSuspendEnabled && mode !== 'multiplierOnly' ? 'enabled' : 'disabled'}`) }}
                     </dd>
                   </div>
                 </dl>

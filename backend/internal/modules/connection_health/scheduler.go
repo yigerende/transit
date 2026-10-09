@@ -240,6 +240,7 @@ func (s *Service) recordTargetCredentialUnavailable(ctx context.Context, userID 
 		} else {
 			next = *current
 		}
+		next = stateWithoutSuspension(next, spec.policy)
 		next.LastProbeAt = &now
 		next.LastErrorKey = reason
 		next.LastErrorDetail = ""
@@ -473,6 +474,14 @@ func (s *Service) isDue(ctx context.Context, targetID string, modelName string, 
 	}
 	if state.State == StateDisabled {
 		return false
+	}
+	// Clear stale suspension even when the budget is exhausted or no probe is due.
+	if normalized := stateWithoutSuspension(*state, policy); normalized != *state {
+		if err := s.repo.UpsertState(ctx, normalized); err != nil {
+			log.Printf("[connection-health] clear suspension failed target_id=%s model=%s err=%v", targetID, modelName, err)
+			return false
+		}
+		state = &normalized
 	}
 	if state.CooldownUntil != nil && now.Before(*state.CooldownUntil) {
 		return false

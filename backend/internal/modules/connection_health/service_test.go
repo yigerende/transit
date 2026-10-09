@@ -220,7 +220,7 @@ func TestBuildPolicyAndTargets_DisablesRemoteActionWithoutAutoDegrade(t *testing
 func TestBuildPolicyAndTargets_MultiplierOnlyDropsEveryProbeBehavior(t *testing.T) {
 	policy, targets, err := buildPolicyAndTargets("user1", "ws1", "p1", PolicyInput{
 		Name: "price only", StrategyMode: StrategyModeMultiplierOnly,
-		AutoDegradeEnabled: true, AutoRemoteActionEnabled: true, PriorityMode: PriorityModeNone,
+		AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true, PriorityMode: PriorityModeNone,
 		ModelTargets: []ModelTargetInput{{ModelName: "gpt-4o", ProviderFamily: ProviderOpenAI, Enabled: true}},
 	})
 	if err != nil {
@@ -247,7 +247,7 @@ func TestSavePolicy_OmittedStrategyModePreservesExistingMultiplierOnlyMode(t *te
 
 	saved, err := service.SavePolicy(context.Background(), "user1", PolicyInput{
 		ID: "p1", Name: "old client update", Enabled: true,
-		AutoDegradeEnabled: true, AutoRemoteActionEnabled: true,
+		AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true,
 		ModelTargets: []ModelTargetInput{{ModelName: "should-not-probe", Enabled: true}},
 	})
 	if err != nil {

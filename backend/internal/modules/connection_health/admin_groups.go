@@ -598,7 +598,7 @@ func modelHealthForSpecs(byModel map[string]ConnectionHealthState, specs []probe
 			})
 			continue
 		}
-		model := toModelHealth(spec.modelName, state)
+		model := toModelHealth(spec.modelName, stateWithoutSuspension(state, spec.policy))
 		model.ProviderFamily = spec.providerFamily
 		models = append(models, model)
 	}

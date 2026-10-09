@@ -160,7 +160,7 @@ func TestSetAdminGroupPolicyConfiguration_QuickPolicyCreatesAndBindsTogether(t *
 	service := newAdminGroupsService(reader, fakeMySitesReader{session: upstream.Session{Platform: upstream.PlatformNewAPI}}, repo)
 	configuration, err := service.SetAdminGroupPolicyConfiguration(context.Background(), "user1", "g1", AdminGroupPolicyConfigurationInput{
 		QuickPolicy: &PolicyInput{
-			Name: "quick", Enabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true,
+			Name: "quick", Enabled: true, AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true,
 			ModelTargets: []ModelTargetInput{{ModelName: "gpt-4o", ProviderFamily: ProviderOpenAI, Enabled: true}},
 		},
 	})
@@ -346,7 +346,7 @@ func TestMultiplierPrioritySync_MultiplierOnlyOverridesOverlappingProbeHealth(t 
 	}
 	healthPolicy := Policy{
 		ID: "health", UserID: "user1", AdminAccountID: "ws1", Enabled: true,
-		StrategyMode: StrategyModeHealthProbe, AutoDegradeEnabled: true, PriorityMode: PriorityModeMultiplier,
+		StrategyMode: StrategyModeHealthProbe, AutoSuspendEnabled: true, AutoDegradeEnabled: true, PriorityMode: PriorityModeMultiplier,
 		ModelTargets: []ModelTarget{{ModelName: "gpt-4o", Enabled: true}},
 	}
 	pricePolicy := Policy{

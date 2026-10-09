@@ -1324,9 +1324,11 @@ export default {
         observationLabel: 'Observation Window (seconds)',
         recoveryStepLabel: 'Recovery Step Percent',
         autoDegradeLabel: 'Auto Degrade',
-        autoDegradeHelp: 'Automatically lower local weight or suspend a link once failures reach the threshold.',
+        autoDegradeHelp: 'Update health from probes for priority sorting. Suspension requires separate permission.',
         autoRemoteActionLabel: 'Auto Remote Action',
-        autoRemoteActionHelp: 'NewAPI updates channel weight/status, while Sub2API toggles the admin account active/inactive. When disabled, health results are recorded without upstream calls.',
+        autoRemoteActionHelp: 'Upstream status/weight changes require both Auto Degrade and Allow Channel Suspension. Priority sorting works independently.',
+        autoSuspendLabel: 'Allow Channel Suspension',
+        autoSuspendHelp: 'Off by default. When off, probes only affect priority and never suspend channels. Enable to allow automatic suspension.',
         priorityModeLabel: 'Upstream Traffic Priority',
         priorityModes: {
           none: 'Keep Upstream Values',
@@ -1346,13 +1348,14 @@ export default {
           provider: 'A probe policy can only use one provider (openai / anthropic / gemini / custom). Every model target added below automatically uses this provider, so a single policy never mixes providers.',
           probeInterval: 'Automatic scheduling checks whether a model is due using "last probe time + this interval". Consecutive failures also trigger an escalating 2/5/10-minute backoff on the backend.',
           dailyBudget: 'Caps how many real probe requests this workspace can run per day. Once the budget is used up, real probe requests are skipped to avoid excessive cost — this is expected, not a system error.',
-          failureThreshold: 'Consecutive soft failures reaching this count will suspend/degrade the link. Some hard failures (e.g. auth failure) may suspend it immediately without degrading first.',
+          failureThreshold: 'With suspension allowed, consecutive soft failures at this threshold suspend the channel; hard failures may suspend immediately. Otherwise failures only affect health and priority.',
           successThreshold: 'During the observation window, this many consecutive successful probes are required before the link is considered truly recovered and returns to healthy.',
           cooldown: 'After a link is suspended, the scheduler will not run automatic probes against it until this cooldown period ends.',
           observation: 'After a manual restore or an automatic recovery flow, the link enters an observation window — consecutive probe results here confirm whether it is actually stable again.',
           recoveryStep: 'During recovery, each successful probe raises local weight by this percentage step, instead of jumping straight to 100%.',
-          autoDegrade: 'When enabled, probe results drive the health state machine and adjust local routing weight. When disabled, probe results are only recorded — state and weight never change automatically.',
-          autoRemoteAction: 'When enabled, supported upstream actions run when the state machine triggers degrade/recovery: Sub2API toggles the admin account active/inactive, and NewAPI updates channel weight/status. When disabled, only probe and state results are recorded.',
+          autoDegrade: 'Update health from probe results. With suspension off, health only affects priority: forwarding weight stays unchanged and there is no suspension or cooldown. Turning Auto Degrade off records results only.',
+          autoRemoteAction: 'Auto Degrade, Auto Remote Action and Allow Channel Suspension must all be enabled to change Sub2API account status or NewAPI channel status/weight. Upstream priority has its own setting.',
+          autoSuspend: 'When off, repeated and hard failures never suspend channels, reduce forwarding weight or start suspension cooldown. Health still affects priority. Enabling allows local suspension; changing upstream status also requires Auto Remote Action. Turning off restores system-managed channels to their original state without enabling manually disabled channels.',
           priorityMode: 'Group multiplier sorting maps lower multipliers to higher upstream priority. Health tier outranks price; targets in multiple groups use the lowest multiplier; automation stops when it detects a manual priority change.'
         },
         runFlow: {
@@ -1383,15 +1386,15 @@ export default {
             },
             stateTransition: {
               title: '6. State transitions',
-              description: 'A successful probe clears that model\'s consecutive failure count. Consecutive soft failures (e.g. network fluctuation, rate limiting — recoverable errors) first move the link into a degraded state and gradually lower local weight by the recovery step percentage before the failure threshold is reached; once the threshold is reached the model is suspended. Some hard failures (e.g. auth failure, model not found) may skip degradation and suspend the model immediately.'
+              description: 'With Allow Channel Suspension off, failures only affect health and priority; forwarding weight remains unchanged. When enabled: A successful probe clears that model\'s consecutive failure count. Consecutive soft failures (e.g. network fluctuation, rate limiting — recoverable errors) first move the link into a degraded state and gradually lower local weight by the recovery step percentage before the failure threshold is reached; once the threshold is reached the model is suspended. Some hard failures (e.g. auth failure, model not found) may skip degradation and suspend the model immediately.'
             },
             cooldownObservation: {
               title: '7. Cooldown and observation',
-              description: 'Once a target/model is suspended, it enters the policy\'s configured cooldown period, during which the scheduler will not run automatic probes against it. After cooldown ends — or after an admin manually restores it — the target enters an observation phase: consecutive probe results during this window determine whether the target has genuinely stabilized, and only enough consecutive successes to reach the "recovery success threshold" moves it back to healthy.'
+              description: 'Suspension cooldown only applies when Allow Channel Suspension is enabled. Once a target/model is suspended, it enters the policy\'s configured cooldown period, during which the scheduler will not run automatic probes against it. After cooldown ends — or after an admin manually restores it — the target enters an observation phase: consecutive probe results during this window determine whether the target has genuinely stabilized, and only enough consecutive successes to reach the "recovery success threshold" moves it back to healthy.'
             },
             autoDegradeVsRemoteAction: {
               title: '8. Auto Degrade vs. Auto Remote Action',
-              description: 'Auto Degrade only affects the internal state machine and local display weight; it never calls any upstream platform API, so it is low-risk. Auto Remote Action only calls upstream when the policy explicitly enables it AND the state machine decides a remote action is warranted: for NewAPI linked-channel probing this changes channel weight/status; in the current group-health independent probing path, Sub2API targets toggle the admin account active/inactive (priority is never adjusted), while the NewAPI target dimension does not implement remote actions yet and is recorded as unsupported without calling upstream. When a policy does not enable Auto Remote Action, both paths only record "skipped" and never call any upstream API.'
+              description: 'Auto Degrade updates health from probe results. Allow Channel Suspension is off by default: health only affects enabled priority sorting, without disabling channels or reducing forwarding weight. Auto Degrade, Auto Remote Action and Allow Channel Suspension must all be enabled to change Sub2API account status or NewAPI channel status/weight. Priority sorting has its own setting.'
             },
             manualProbe: {
               title: '9. Manual probing',

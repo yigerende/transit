@@ -175,6 +175,7 @@ type Policy struct {
 	RecoveryStepPercent     int       `json:"recoveryStepPercent"`
 	AutoDegradeEnabled      bool      `json:"autoDegradeEnabled"`
 	AutoRemoteActionEnabled bool      `json:"autoRemoteActionEnabled"`
+	AutoSuspendEnabled      bool      `json:"autoSuspendEnabled"`
 	PriorityMode            string    `json:"priorityMode"`
 	StrategyMode            string    `json:"strategyMode"`
 	DailyProbeBudget        int       `json:"dailyProbeBudget"`

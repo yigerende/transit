@@ -201,20 +201,20 @@ func (s *Service) syncWorkspacePriorities(
 
 	for targetID, item := range managed {
 		multiplier := item.multipliers[0]
-		activeModels := make(map[string]struct{})
+		activeModels := make(map[string]Policy)
 		if !hasMultiplierOnlyPolicy(item.policies) {
 			for _, spec := range candidateModelSpecs(item.target.Models, item.policies) {
 				// 关闭自动降级后模型状态不会继续推进，因此不能让历史 suspended/degraded
 				// 状态永久影响倍率排序。倍率本身继续生效，但健康层级回到未配置档。
 				if spec.policy.AutoDegradeEnabled {
-					activeModels[spec.modelName] = struct{}{}
+					activeModels[spec.modelName] = spec.policy
 				}
 			}
 		}
 		activeStates := make([]ConnectionHealthState, 0, len(activeModels))
 		for _, state := range statesByTarget[targetID] {
-			if _, active := activeModels[state.ModelName]; active {
-				activeStates = append(activeStates, state)
+			if policy, active := activeModels[state.ModelName]; active {
+				activeStates = append(activeStates, stateWithoutSuspension(state, policy))
 			}
 		}
 		desired := desiredManagedPriorityForPlatformWithExpected(

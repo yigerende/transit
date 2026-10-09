@@ -159,6 +159,9 @@ func candidateModelSpecs(targetModels []string, policies []Policy) []probeModelS
 }
 
 func preferProbePolicy(candidate Policy, current Policy) bool {
+	if candidate.AutoSuspendEnabled != current.AutoSuspendEnabled {
+		return !candidate.AutoSuspendEnabled
+	}
 	if policyRemoteActionEnabled(candidate) != policyRemoteActionEnabled(current) {
 		return !policyRemoteActionEnabled(candidate)
 	}
@@ -441,6 +444,9 @@ func (s *Service) probeTargetOnce(ctx context.Context, userID string, adminAccou
 	})
 
 	now := time.Now()
+	spec.policy = s.currentActionPermissions(ctx, spec.policy)
+	normalized := stateWithoutSuspension(*current, spec.policy)
+	current = &normalized
 	transitionOut := Transition(TransitionInput{
 		Current: current.State, CurrentWeight: current.CurrentWeight, ConsecutiveFailures: current.ConsecutiveFailures,
 		ConsecutiveSuccesses: current.ConsecutiveSuccesses, ObservingUntil: current.ObservingUntil, Now: now,
@@ -499,7 +505,11 @@ func (s *Service) finishTargetProbeBatch(ctx context.Context, userID string, adm
 	if len(results) == 0 {
 		return
 	}
-	remoteAction, actionErr := s.reconcileTargetRemoteAction(ctx, userID, adminAccountID, session, target, specs)
+	currentSpecs := append([]probeModelSpec(nil), specs...)
+	for i := range currentSpecs {
+		currentSpecs[i].policy = s.currentActionPermissions(ctx, currentSpecs[i].policy)
+	}
+	remoteAction, actionErr := s.reconcileTargetRemoteAction(ctx, userID, adminAccountID, session, target, currentSpecs)
 	if actionErr != nil {
 		log.Printf("[connection-health] reconcile target action failed target_id=%s action=%s err=%v", target.TargetID, remoteAction, actionErr)
 	}

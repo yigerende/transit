@@ -401,7 +401,7 @@ export function adminTargetProbeCandidates(
         providerFamily: target.providerFamily,
         policyId: policy.id,
         policyName: policy.name,
-        autoRemoteActionEnabled: policy.autoRemoteActionEnabled,
+        autoRemoteActionEnabled: policy.autoDegradeEnabled && policy.autoRemoteActionEnabled && !!policy.autoSuspendEnabled,
         maxProbeTokens: target.maxProbeTokens,
       })
     }
@@ -441,7 +441,7 @@ export function matchingProbeCandidates(ownGroupId: string, policies: Connection
         providerFamily: target.providerFamily,
         policyId: policy.id,
         policyName: policy.name,
-        autoRemoteActionEnabled: policy.autoRemoteActionEnabled,
+        autoRemoteActionEnabled: policy.autoDegradeEnabled && policy.autoRemoteActionEnabled && !!policy.autoSuspendEnabled,
         maxProbeTokens: target.maxProbeTokens,
       })
     }

@@ -664,6 +664,7 @@ type PolicyInput struct {
 	RecoveryStepPercent     int                `json:"recoveryStepPercent"`
 	AutoDegradeEnabled      bool               `json:"autoDegradeEnabled"`
 	AutoRemoteActionEnabled bool               `json:"autoRemoteActionEnabled"`
+	AutoSuspendEnabled      bool               `json:"autoSuspendEnabled"`
 	PriorityMode            string             `json:"priorityMode"`
 	StrategyMode            string             `json:"strategyMode"`
 	DailyProbeBudget        int                `json:"dailyProbeBudget"`
@@ -752,14 +753,16 @@ func buildPolicyAndTargets(userID string, adminAccountID string, id string, in P
 		CooldownSeconds: defaultInt(in.CooldownSeconds, 300), ObservationSeconds: defaultInt(in.ObservationSeconds, 300),
 		RecoveryStepPercent: defaultInt(in.RecoveryStepPercent, 25), AutoDegradeEnabled: in.AutoDegradeEnabled,
 		AutoRemoteActionEnabled: in.AutoDegradeEnabled && in.AutoRemoteActionEnabled, PriorityMode: normalizePriorityMode(in.PriorityMode),
-		StrategyMode:     strategyMode,
-		DailyProbeBudget: defaultInt(in.DailyProbeBudget, 1000),
+		AutoSuspendEnabled: in.AutoSuspendEnabled,
+		StrategyMode:       strategyMode,
+		DailyProbeBudget:   defaultInt(in.DailyProbeBudget, 1000),
 	}
 	if strategyMode == StrategyModeMultiplierOnly {
 		// 仅倍率策略不拥有任何探活行为。即使错误或旧客户端同时提交了探活字段，也在服务端
 		// 强制关闭并丢弃模型目标，保证不会解析凭据、消耗预算或触发健康状态机。
 		policy.AutoDegradeEnabled = false
 		policy.AutoRemoteActionEnabled = false
+		policy.AutoSuspendEnabled = false
 		policy.PriorityMode = PriorityModeMultiplier
 		policy.ModelTargets = []ModelTarget{}
 		return policy, []ModelTarget{}, nil
@@ -802,10 +805,27 @@ func policySupportsProbing(policy Policy) bool {
 	return normalizeStrategyMode(policy.StrategyMode) == StrategyModeHealthProbe
 }
 
-// policyRemoteActionEnabled 是自动接管上游状态的统一有效判定。自动降级关闭时状态机不会
-// 产生可靠的降级/恢复决策，因此单独开启远端动作属于无效组合，保存和运行时都按关闭处理。
+// All three permissions are required before automation can change upstream status/weight.
 func policyRemoteActionEnabled(policy Policy) bool {
-	return policy.AutoDegradeEnabled && policy.AutoRemoteActionEnabled
+	return policySupportsProbing(policy) && policy.AutoDegradeEnabled && policy.AutoRemoteActionEnabled && policy.AutoSuspendEnabled
+}
+
+// A queued/in-flight probe must not retain permission revoked while it was running.
+// Never grant newly enabled permissions to a job that started without them.
+func (s *Service) currentActionPermissions(ctx context.Context, policy Policy) Policy {
+	if !policy.AutoSuspendEnabled {
+		return policy
+	}
+	latest, err := s.repo.GetPolicy(ctx, policy.ID, policy.UserID, policy.AdminAccountID)
+	if err != nil || latest == nil || !latest.Enabled || !policySupportsProbing(*latest) {
+		policy.AutoSuspendEnabled = false
+		policy.AutoRemoteActionEnabled = false
+		return policy
+	}
+	policy.AutoSuspendEnabled = latest.AutoSuspendEnabled
+	policy.AutoDegradeEnabled = policy.AutoDegradeEnabled && latest.AutoDegradeEnabled
+	policy.AutoRemoteActionEnabled = policy.AutoRemoteActionEnabled && latest.AutoRemoteActionEnabled
+	return policy
 }
 
 // ProbeConnectionInput 是手动探活接口的可选请求体。Models 为空（或请求体整体缺省）时
@@ -1004,6 +1024,9 @@ func (s *Service) probeOnce(ctx context.Context, conn my_sites.RealConnection, p
 	})
 
 	now := time.Now()
+	policy = s.currentActionPermissions(ctx, policy)
+	normalized := stateWithoutSuspension(*current, policy)
+	current = &normalized
 	transitionOut := Transition(TransitionInput{
 		Current: current.State, CurrentWeight: current.CurrentWeight, ConsecutiveFailures: current.ConsecutiveFailures,
 		ConsecutiveSuccesses: current.ConsecutiveSuccesses, ObservingUntil: current.ObservingUntil, Now: now,
@@ -1043,7 +1066,7 @@ func (s *Service) probeOnce(ctx context.Context, conn my_sites.RealConnection, p
 	}
 
 	remoteAction := ""
-	if policy.AutoRemoteActionEnabled {
+	if policyRemoteActionEnabled(policy) {
 		if transitionOut.TriggerRemoteDegrade {
 			action, actionErr := s.dispatcher.Degrade(ctx, conn, next)
 			remoteAction = action

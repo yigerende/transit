@@ -23,6 +23,9 @@ func (s *Service) reconcileTargetRemoteAction(
 	target AdminProbeTarget,
 	specs []probeModelSpec,
 ) (string, error) {
+	if !targetSuspensionAllowed(specs) {
+		return "", nil
+	}
 	controlledModels := make(map[string]struct{})
 	for _, spec := range specs {
 		if spec.policy.Enabled && policyRemoteActionEnabled(spec.policy) {
@@ -248,12 +251,26 @@ func (s *Service) restoreUnmanagedTargetActions(
 }
 
 func hasRemoteActionModel(specs []probeModelSpec) bool {
+	if !targetSuspensionAllowed(specs) {
+		return false
+	}
 	for _, spec := range specs {
 		if spec.policy.Enabled && policyRemoteActionEnabled(spec.policy) {
 			return true
 		}
 	}
 	return false
+}
+
+// Account status is shared by every model; a policy without suspension permission
+// must not be bypassed by a different model/policy on the same account.
+func targetSuspensionAllowed(specs []probeModelSpec) bool {
+	for _, spec := range specs {
+		if spec.policy.Enabled && !spec.policy.AutoSuspendEnabled {
+			return false
+		}
+	}
+	return true
 }
 
 func legacyTargetWasManaged(states []ConnectionHealthState) bool {

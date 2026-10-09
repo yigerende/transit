@@ -7,6 +7,7 @@ import (
 
 func testPolicy() Policy {
 	return Policy{
+		AutoSuspendEnabled:  true,
 		FailureThreshold:    3,
 		SuccessThreshold:    2,
 		CooldownSeconds:     300,
@@ -181,7 +182,7 @@ func TestTransition_ObservingDoesNotRecoverBeforeDeadline(t *testing.T) {
 	out := Transition(TransitionInput{
 		Current: StateObserving, CurrentWeight: 0, ConsecutiveSuccesses: 10,
 		ObservingUntil: &observingUntil, Now: now, Result: ResultOK,
-		Policy: Policy{SuccessThreshold: 2, RecoveryStepPercent: 25},
+		Policy: Policy{AutoSuspendEnabled: true, SuccessThreshold: 2, RecoveryStepPercent: 25},
 	})
 	if out.NextState != StateObserving || out.TriggerRemoteRestore {
 		t.Fatalf("observation deadline must be enforced, got %+v", out)

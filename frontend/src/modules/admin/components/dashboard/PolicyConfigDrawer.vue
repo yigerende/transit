@@ -52,6 +52,7 @@ const recoveryStepPercent = ref(DEFAULTS.recoveryStepPercent)
 const dailyProbeBudget = ref(DEFAULTS.dailyProbeBudget)
 const autoDegradeEnabled = ref(true)
 const autoRemoteActionEnabled = ref(false)
+const autoSuspendEnabled = ref(false)
 const priorityMode = ref<ConnectionHealthPriorityMode>('none')
 const strategyMode = ref<ConnectionHealthStrategyMode>('health_probe')
 const modelTargets = ref<ModelTargetInput[]>([])
@@ -81,6 +82,7 @@ const resetForm = () => {
   dailyProbeBudget.value = p?.dailyProbeBudget ?? DEFAULTS.dailyProbeBudget
   autoDegradeEnabled.value = p?.autoDegradeEnabled ?? true
   autoRemoteActionEnabled.value = autoDegradeEnabled.value && (p?.autoRemoteActionEnabled ?? false)
+  autoSuspendEnabled.value = p?.autoSuspendEnabled ?? false
   priorityMode.value = p?.priorityMode === 'multiplier' ? 'multiplier' : 'none'
   strategyMode.value = p ? resolveConnectionHealthStrategyMode(p) : 'health_probe'
 
@@ -171,6 +173,7 @@ const handleSave = () => {
     dailyProbeBudget: dailyProbeBudget.value,
     autoDegradeEnabled: isMultiplierOnly.value ? false : autoDegradeEnabled.value,
     autoRemoteActionEnabled: isMultiplierOnly.value ? false : autoRemoteActionEnabled.value,
+    autoSuspendEnabled: isMultiplierOnly.value ? false : autoSuspendEnabled.value,
     priorityMode: isMultiplierOnly.value ? 'multiplier' : priorityMode.value,
     strategyMode: strategyMode.value,
     modelTargets: targets,
@@ -440,7 +443,7 @@ const handleSave = () => {
                     <div class="text-xs text-muted-foreground">{{ t(`${prefix}.autoDegradeHelp`) }}</div>
                   </div>
                   <label class="relative inline-flex cursor-pointer items-center shrink-0">
-                    <input v-model="autoDegradeEnabled" type="checkbox" class="peer sr-only" />
+                    <input v-model="autoDegradeEnabled" type="checkbox" class="peer sr-only" :aria-label="t(`${prefix}.autoDegradeLabel`)" />
                     <div class="w-9 h-5 bg-surface-elevated rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
                   </label>
                 </div>
@@ -453,8 +456,21 @@ const handleSave = () => {
                     <div class="text-xs text-amber-700 dark:text-amber-400">{{ t(`${prefix}.autoRemoteActionHelp`) }}</div>
                   </div>
                   <label class="relative inline-flex cursor-pointer items-center shrink-0">
-                    <input v-model="autoRemoteActionEnabled" type="checkbox" class="peer sr-only" :disabled="!autoDegradeEnabled" />
+                    <input v-model="autoRemoteActionEnabled" type="checkbox" class="peer sr-only" :disabled="!autoDegradeEnabled" :aria-label="t(`${prefix}.autoRemoteActionLabel`)" />
                     <div class="w-9 h-5 bg-surface-elevated rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white peer-disabled:cursor-not-allowed peer-disabled:opacity-50 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+                <div class="flex items-center justify-between gap-3 rounded-lg border border-border/40 bg-surface/30 px-4 py-3">
+                  <div>
+                    <div class="flex items-center gap-1 text-sm text-foreground">
+                      {{ t(`${prefix}.autoSuspendLabel`) }}
+                      <HelpTooltip :text="t(`${prefix}.tooltips.autoSuspend`)" />
+                    </div>
+                    <div class="text-xs text-muted-foreground">{{ t(`${prefix}.autoSuspendHelp`) }}</div>
+                  </div>
+                  <label class="relative inline-flex shrink-0 cursor-pointer items-center">
+                    <input v-model="autoSuspendEnabled" type="checkbox" class="peer sr-only" :aria-label="t(`${prefix}.autoSuspendLabel`)" />
+                    <div class="w-9 h-5 bg-surface-elevated rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
                   </label>
                 </div>
               </div>

@@ -58,6 +58,9 @@ func Transition(in TransitionInput) TransitionOutput {
 			ObservingUntil:       in.ObservingUntil,
 		}
 	}
+	if !in.Policy.AutoSuspendEnabled {
+		return transitionWithoutSuspension(in)
+	}
 
 	step := stepPercent(in.Policy)
 
@@ -78,6 +81,45 @@ func Transition(in TransitionInput) TransitionOutput {
 			ObservingUntil:       in.ObservingUntil,
 		}
 	}
+}
+
+// Without suspension, health only influences priority. Do not reduce forwarding
+// weight, enter cooldown/observation, or request upstream status/weight changes.
+func transitionWithoutSuspension(in TransitionInput) TransitionOutput {
+	state := stateWithoutSuspension(ConnectionHealthState{State: in.Current}, in.Policy)
+	out := TransitionOutput{
+		NextState: state.State, Weight: 100,
+		ConsecutiveFailures: in.ConsecutiveFailures, ConsecutiveSuccesses: in.ConsecutiveSuccesses,
+	}
+	switch {
+	case in.Result == ResultOK:
+		out.ConsecutiveFailures = 0
+		out.ConsecutiveSuccesses++
+		if in.Current == StateHealthy || out.ConsecutiveSuccesses >= successThreshold(in.Policy) {
+			out.NextState = StateHealthy
+		}
+	case isHardFailure(in.Result), isSoftFailure(in.Result):
+		out.NextState = StateDegraded
+		out.ConsecutiveFailures++
+		out.ConsecutiveSuccesses = 0
+	}
+	return out
+}
+
+// Apply the current permission to old snapshots as well, so turning suspension
+// off immediately clears its display and scheduling gates. Manual disabled stays.
+func stateWithoutSuspension(state ConnectionHealthState, policy Policy) ConnectionHealthState {
+	if policy.AutoSuspendEnabled || state.State == StateDisabled {
+		return state
+	}
+	switch state.State {
+	case StateSuspended, StateObserving, StateRecovering:
+		state.State = StateDegraded
+	}
+	state.CurrentWeight = 100
+	state.CooldownUntil = nil
+	state.ObservingUntil = nil
+	return state
 }
 
 func stepPercent(p Policy) int {

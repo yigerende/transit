@@ -263,6 +263,7 @@ export interface ConnectionHealthPolicy {
   recoveryStepPercent: number
   autoDegradeEnabled: boolean
   autoRemoteActionEnabled: boolean
+  autoSuspendEnabled?: boolean
   priorityMode?: ConnectionHealthPriorityMode
   strategyMode?: ConnectionHealthStrategyMode
   dailyProbeBudget: number
@@ -319,6 +320,7 @@ export interface PolicyInput {
   recoveryStepPercent?: number
   autoDegradeEnabled: boolean
   autoRemoteActionEnabled: boolean
+  autoSuspendEnabled?: boolean
   priorityMode?: ConnectionHealthPriorityMode
   strategyMode?: ConnectionHealthStrategyMode
   dailyProbeBudget?: number

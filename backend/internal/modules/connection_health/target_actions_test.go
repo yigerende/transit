@@ -20,7 +20,7 @@ func TestReconcileTargetRemoteAction_SuspendedSiblingBlocksRestore(t *testing.T)
 		UserID: "user1", AdminAccountID: "ws1", TargetID: targetID,
 		OriginalStatus: "active", LastAppliedStatus: "inactive",
 	}
-	policy := Policy{ID: "p1", Enabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
+	policy := Policy{ID: "p1", Enabled: true, AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
 	specs := []probeModelSpec{{modelName: "model-a", policy: policy}, {modelName: "model-b", policy: policy}}
 	target := AdminProbeTarget{TargetID: targetID, Platform: string(upstream.PlatformSub2API), AccountID: "acc-1", AccountStatus: "inactive"}
 
@@ -55,7 +55,7 @@ func TestReconcileTargetRemoteAction_RestoresOriginalNewAPIWeight(t *testing.T) 
 		UserID: "user1", AdminAccountID: "ws1", TargetID: targetID,
 		OriginalStatus: "1", OriginalWeight: &originalWeight, LastAppliedStatus: "1", LastAppliedWeight: &appliedWeight,
 	}
-	policy := Policy{ID: "p1", Enabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
+	policy := Policy{ID: "p1", Enabled: true, AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
 	target := AdminProbeTarget{
 		TargetID: targetID, Platform: string(upstream.PlatformNewAPI), AccountID: "100",
 		AccountStatus: "1", AccountWeight: &currentWeight,
@@ -82,7 +82,7 @@ func TestReconcileTargetRemoteAction_ScalesNewAPIWeightFromOriginal(t *testing.T
 	repo.states[targetID] = map[string]ConnectionHealthState{
 		"model-a": {ConnectionID: targetID, ModelName: "model-a", State: StateDegraded, CurrentWeight: 75},
 	}
-	policy := Policy{ID: "p1", Enabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
+	policy := Policy{ID: "p1", Enabled: true, AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
 	target := AdminProbeTarget{
 		TargetID: targetID, Platform: string(upstream.PlatformNewAPI), AccountID: "100",
 		AccountStatus: "1", AccountWeight: &currentWeight,
@@ -124,7 +124,7 @@ func TestReconcileTargetRemoteAction_DoesNotRestoreWithUnprobedControlledModel(t
 		UserID: "user1", AdminAccountID: "ws1", TargetID: targetID,
 		OriginalStatus: "active", LastAppliedStatus: "inactive",
 	}
-	policy := Policy{ID: "p1", Enabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
+	policy := Policy{ID: "p1", Enabled: true, AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
 	specs := []probeModelSpec{{modelName: "model-a", policy: policy}, {modelName: "model-b", policy: policy}}
 	target := AdminProbeTarget{TargetID: targetID, Platform: string(upstream.PlatformSub2API), AccountID: "acc-1", AccountStatus: "inactive"}
 
@@ -145,7 +145,7 @@ func TestReconcileTargetRemoteAction_DoesNotEnableInitiallyDisabledTarget(t *tes
 	repo.states[targetID] = map[string]ConnectionHealthState{
 		"model-a": {ConnectionID: targetID, ModelName: "model-a", State: StateRecovering, CurrentWeight: 25},
 	}
-	policy := Policy{ID: "p1", Enabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
+	policy := Policy{ID: "p1", Enabled: true, AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
 	target := AdminProbeTarget{TargetID: targetID, Platform: string(upstream.PlatformSub2API), AccountID: "acc-1", AccountStatus: "inactive"}
 
 	action, err := service.reconcileTargetRemoteAction(context.Background(), "user1", "ws1", upstream.Session{Platform: upstream.PlatformSub2API}, target, []probeModelSpec{{modelName: "model-a", policy: policy}})
@@ -169,7 +169,7 @@ func TestReconcileTargetRemoteAction_ConfirmsPendingSystemWrite(t *testing.T) {
 		UserID: "user1", AdminAccountID: "ws1", TargetID: targetID,
 		OriginalStatus: "active", LastAppliedStatus: "active", PendingStatus: "inactive",
 	}
-	policy := Policy{ID: "p1", Enabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
+	policy := Policy{ID: "p1", Enabled: true, AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
 	target := AdminProbeTarget{TargetID: targetID, Platform: string(upstream.PlatformSub2API), AccountID: "acc-1", AccountStatus: "inactive"}
 
 	action, err := service.reconcileTargetRemoteAction(context.Background(), "user1", "ws1", upstream.Session{Platform: upstream.PlatformSub2API}, target, []probeModelSpec{{modelName: "model-a", policy: policy}})

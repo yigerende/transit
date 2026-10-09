@@ -47,12 +47,14 @@ func (r *Repository) EnsureSchema(ctx context.Context) error {
 			recovery_step_percent integer NOT NULL DEFAULT 25,
 			auto_degrade_enabled boolean NOT NULL DEFAULT true,
 			auto_remote_action_enabled boolean NOT NULL DEFAULT true,
+			auto_suspend_enabled boolean NOT NULL DEFAULT false,
 			priority_mode text NOT NULL DEFAULT 'none',
 			strategy_mode text NOT NULL DEFAULT 'health_probe',
 			daily_probe_budget integer NOT NULL DEFAULT 1000,
 			created_at timestamptz NOT NULL DEFAULT now(),
 			updated_at timestamptz NOT NULL DEFAULT now()
 		)`,
+		`ALTER TABLE connection_health_policies ADD COLUMN IF NOT EXISTS auto_suspend_enabled boolean NOT NULL DEFAULT false`,
 		`ALTER TABLE connection_health_policies ADD COLUMN IF NOT EXISTS priority_mode text NOT NULL DEFAULT 'none'`,
 		`ALTER TABLE connection_health_policies ADD COLUMN IF NOT EXISTS strategy_mode text NOT NULL DEFAULT 'health_probe'`,
 		`CREATE INDEX IF NOT EXISTS idx_connection_health_policies_workspace_enabled ON connection_health_policies (user_id, admin_account_id, enabled)`,
@@ -232,8 +234,8 @@ func upsertPolicyWithExecutor(ctx context.Context, executor policyExecutor, p Po
 		INSERT INTO connection_health_policies (
 			id, user_id, admin_account_id, name, enabled, own_group_id, own_group_name, model_pattern, probe_mode,
 			probe_interval_seconds, failure_threshold, success_threshold, cooldown_seconds, observation_seconds,
-			recovery_step_percent, auto_degrade_enabled, auto_remote_action_enabled, priority_mode, strategy_mode, daily_probe_budget, created_at, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,now(),now())
+			recovery_step_percent, auto_degrade_enabled, auto_remote_action_enabled, priority_mode, strategy_mode, daily_probe_budget, auto_suspend_enabled, created_at, updated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,now(),now())
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			enabled = EXCLUDED.enabled,
@@ -249,6 +251,7 @@ func upsertPolicyWithExecutor(ctx context.Context, executor policyExecutor, p Po
 			recovery_step_percent = EXCLUDED.recovery_step_percent,
 			auto_degrade_enabled = EXCLUDED.auto_degrade_enabled,
 			auto_remote_action_enabled = EXCLUDED.auto_remote_action_enabled,
+			auto_suspend_enabled = EXCLUDED.auto_suspend_enabled,
 			priority_mode = EXCLUDED.priority_mode,
 			strategy_mode = EXCLUDED.strategy_mode,
 			daily_probe_budget = EXCLUDED.daily_probe_budget,
@@ -256,7 +259,7 @@ func upsertPolicyWithExecutor(ctx context.Context, executor policyExecutor, p Po
 	`, p.ID, p.UserID, p.AdminAccountID, p.Name, p.Enabled, p.OwnGroupID, p.OwnGroupName, p.ModelPattern, p.ProbeMode,
 		p.ProbeIntervalSeconds, p.FailureThreshold, p.SuccessThreshold, p.CooldownSeconds, p.ObservationSeconds,
 		p.RecoveryStepPercent, p.AutoDegradeEnabled, p.AutoRemoteActionEnabled, normalizePriorityMode(p.PriorityMode),
-		normalizeStrategyMode(p.StrategyMode), p.DailyProbeBudget)
+		normalizeStrategyMode(p.StrategyMode), p.DailyProbeBudget, p.AutoSuspendEnabled)
 	return err
 }
 
@@ -382,7 +385,7 @@ func (r *Repository) GetPolicy(ctx context.Context, id string, userID string, ad
 	row := r.db.QueryRow(ctx, `
 		SELECT id, user_id, admin_account_id, name, enabled, own_group_id, own_group_name, model_pattern, probe_mode,
 			probe_interval_seconds, failure_threshold, success_threshold, cooldown_seconds, observation_seconds,
-			recovery_step_percent, auto_degrade_enabled, auto_remote_action_enabled, priority_mode, strategy_mode, daily_probe_budget, created_at, updated_at
+			recovery_step_percent, auto_degrade_enabled, auto_remote_action_enabled, priority_mode, strategy_mode, daily_probe_budget, auto_suspend_enabled, created_at, updated_at
 		FROM connection_health_policies WHERE id = $1 AND user_id = $2 AND admin_account_id = $3
 	`, id, userID, adminAccountID)
 	p, err := scanPolicy(row)
@@ -405,7 +408,7 @@ func (r *Repository) ListPolicies(ctx context.Context, userID string, adminAccou
 	rows, err := r.db.Query(ctx, `
 		SELECT id, user_id, admin_account_id, name, enabled, own_group_id, own_group_name, model_pattern, probe_mode,
 			probe_interval_seconds, failure_threshold, success_threshold, cooldown_seconds, observation_seconds,
-			recovery_step_percent, auto_degrade_enabled, auto_remote_action_enabled, priority_mode, strategy_mode, daily_probe_budget, created_at, updated_at
+			recovery_step_percent, auto_degrade_enabled, auto_remote_action_enabled, priority_mode, strategy_mode, daily_probe_budget, auto_suspend_enabled, created_at, updated_at
 		FROM connection_health_policies WHERE user_id = $1 AND admin_account_id = $2 ORDER BY created_at ASC
 	`, userID, adminAccountID)
 	if err != nil {
@@ -440,7 +443,7 @@ func (r *Repository) ListEnabledPolicies(ctx context.Context) ([]Policy, error) 
 	rows, err := r.db.Query(ctx, `
 		SELECT id, user_id, admin_account_id, name, enabled, own_group_id, own_group_name, model_pattern, probe_mode,
 			probe_interval_seconds, failure_threshold, success_threshold, cooldown_seconds, observation_seconds,
-			recovery_step_percent, auto_degrade_enabled, auto_remote_action_enabled, priority_mode, strategy_mode, daily_probe_budget, created_at, updated_at
+			recovery_step_percent, auto_degrade_enabled, auto_remote_action_enabled, priority_mode, strategy_mode, daily_probe_budget, auto_suspend_enabled, created_at, updated_at
 		FROM connection_health_policies WHERE enabled = true ORDER BY created_at ASC
 	`)
 	if err != nil {
@@ -480,7 +483,7 @@ func scanPolicy(row pgx.Row) (*Policy, error) {
 	var p Policy
 	if err := row.Scan(&p.ID, &p.UserID, &p.AdminAccountID, &p.Name, &p.Enabled, &p.OwnGroupID, &p.OwnGroupName, &p.ModelPattern, &p.ProbeMode,
 		&p.ProbeIntervalSeconds, &p.FailureThreshold, &p.SuccessThreshold, &p.CooldownSeconds, &p.ObservationSeconds,
-		&p.RecoveryStepPercent, &p.AutoDegradeEnabled, &p.AutoRemoteActionEnabled, &p.PriorityMode, &p.StrategyMode, &p.DailyProbeBudget, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		&p.RecoveryStepPercent, &p.AutoDegradeEnabled, &p.AutoRemoteActionEnabled, &p.PriorityMode, &p.StrategyMode, &p.DailyProbeBudget, &p.AutoSuspendEnabled, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -497,7 +500,7 @@ func scanPolicyRow(row rowScanner) (*Policy, error) {
 	var p Policy
 	if err := row.Scan(&p.ID, &p.UserID, &p.AdminAccountID, &p.Name, &p.Enabled, &p.OwnGroupID, &p.OwnGroupName, &p.ModelPattern, &p.ProbeMode,
 		&p.ProbeIntervalSeconds, &p.FailureThreshold, &p.SuccessThreshold, &p.CooldownSeconds, &p.ObservationSeconds,
-		&p.RecoveryStepPercent, &p.AutoDegradeEnabled, &p.AutoRemoteActionEnabled, &p.PriorityMode, &p.StrategyMode, &p.DailyProbeBudget, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		&p.RecoveryStepPercent, &p.AutoDegradeEnabled, &p.AutoRemoteActionEnabled, &p.PriorityMode, &p.StrategyMode, &p.DailyProbeBudget, &p.AutoSuspendEnabled, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &p, nil
@@ -989,13 +992,13 @@ func (r *Repository) CreatePolicyAndReplaceGroupConfiguration(ctx context.Contex
 		INSERT INTO connection_health_policies (
 			id, user_id, admin_account_id, name, enabled, own_group_id, own_group_name, model_pattern, probe_mode,
 			probe_interval_seconds, failure_threshold, success_threshold, cooldown_seconds, observation_seconds,
-			recovery_step_percent, auto_degrade_enabled, auto_remote_action_enabled, priority_mode, strategy_mode, daily_probe_budget, created_at, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,now(),now())
+			recovery_step_percent, auto_degrade_enabled, auto_remote_action_enabled, priority_mode, strategy_mode, daily_probe_budget, auto_suspend_enabled, created_at, updated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,now(),now())
 	`, policy.ID, policy.UserID, policy.AdminAccountID, policy.Name, policy.Enabled, policy.OwnGroupID, policy.OwnGroupName,
 		policy.ModelPattern, policy.ProbeMode, policy.ProbeIntervalSeconds, policy.FailureThreshold, policy.SuccessThreshold,
 		policy.CooldownSeconds, policy.ObservationSeconds, policy.RecoveryStepPercent, policy.AutoDegradeEnabled,
 		policy.AutoRemoteActionEnabled, normalizePriorityMode(policy.PriorityMode), normalizeStrategyMode(policy.StrategyMode),
-		policy.DailyProbeBudget); err != nil {
+		policy.DailyProbeBudget, policy.AutoSuspendEnabled); err != nil {
 		return err
 	}
 	for _, target := range targets {

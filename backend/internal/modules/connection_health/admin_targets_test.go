@@ -29,7 +29,7 @@ func newAdminTargetsRemoteActionService(reader PlatformGroupReader, mySites MySi
 func sub2APIProbePolicy(autoRemoteAction bool) Policy {
 	return Policy{
 		ID: "policy-1", UserID: "user1", AdminAccountID: "ws1", Name: "p", Enabled: true, DailyProbeBudget: 1000,
-		AutoDegradeEnabled: true, AutoRemoteActionEnabled: autoRemoteAction,
+		AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: autoRemoteAction,
 		FailureThreshold: 3, SuccessThreshold: 2, CooldownSeconds: 300, ObservationSeconds: 300, RecoveryStepPercent: 25,
 		ModelTargets: []ModelTarget{{ID: "t1", PolicyID: "policy-1", ModelName: "gpt-4o", ProviderFamily: ProviderOpenAI, Enabled: true, MaxProbeTokens: 1}},
 	}
