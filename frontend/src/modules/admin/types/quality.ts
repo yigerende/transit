@@ -1,0 +1,59 @@
+export interface QualityQuestion {
+  id: string
+  name: string
+  enabled: boolean
+  prompt: string
+  answer: string
+  matchMode: 'answer' | 'keyword' | 'regex'
+  maxDurationMs: number
+}
+export interface QualitySettings {
+  enabled: boolean
+  revision: string
+  model: string
+  reasoningEffort: '' | 'low' | 'medium' | 'high' | 'xhigh'
+  mode: 'content' | 'time' | 'content_time'
+  intervalSeconds: number
+  retrySeconds: number
+  failureLimit: number
+  recoveryLimit: number
+  concurrency: number
+  timeoutSeconds: number
+  maxTokens: number
+  historyLimit: number
+  questions: QualityQuestion[]
+}
+export interface QualityGroup {
+  groupId: string
+  enabled: boolean
+  globalEnabled: boolean
+  errorKey?: string
+}
+export interface QualitySample {
+  id: string
+  targetId: string
+  model: string
+  questionId: string
+  questionName: string
+  answer: string
+  expectedAnswer: string
+  matchMode: string
+  result: 'passed' | 'failed' | 'error'
+  errorKey?: string
+  contentPassed: boolean
+  timePassed: boolean
+  durationMs: number
+  maxDurationMs: number
+  createdAt: string
+}
+export interface QualityState {
+  targetId: string
+  revision: string
+  status: 'normal' | 'suspect' | 'degraded' | 'recovering' | 'error'
+  degraded: boolean
+  failures: number
+  successes: number
+  nextQuestionId: string
+  nextProbeAt: string
+  latest: QualitySample
+}

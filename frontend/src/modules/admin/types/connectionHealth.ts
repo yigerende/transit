@@ -96,6 +96,8 @@ export interface AdminGroupUnprobedModel {
 }
 
 export interface AdminGroupAccount {
+  qualityState?: import('./quality').QualityState
+  qualityHistory?: import('./quality').QualitySample[]
   recentProbes?: GroupProbeSample[]
   id: string
   name: string
@@ -146,6 +148,7 @@ export interface GroupProbeSample {
 }
 
 export interface AdminGroupHealth {
+  quality?: import('./quality').QualityGroup
   probeConfig?: GroupProbeConfig
   groupProbeSupported?: boolean
   id: string

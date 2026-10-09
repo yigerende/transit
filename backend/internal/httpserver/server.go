@@ -248,6 +248,7 @@ func New(cfg config.Config, db *pgxpool.Pool, redisClient *redis.Client) *Server
 	groupProbeCtx, groupProbeCancel := context.WithCancel(context.Background())
 	server.groupProbeCancel = groupProbeCancel
 	connHealthService.StartGroupProbeScheduler(groupProbeCtx)
+	connHealthService.StartQualityScheduler(groupProbeCtx)
 
 	// 策略设置变更时通知上游服务更新定时同步配置。
 	applyRefreshConfig := func(s settings.StrategySettings) {

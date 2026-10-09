@@ -3,6 +3,7 @@ package connection_health
 import (
 	"context"
 	"log"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -71,6 +72,8 @@ type Service struct {
 	modelDiscovery  *ModelDiscoveryRunner
 	platformGroups  PlatformGroupReader
 	priorityActions TargetPriorityActioner
+	qualityRepo     qualityRepository
+	qualityRunner   qualityProbeRunner
 }
 
 func NewService(repo *Repository, mySites MySitesReader, sites SiteLookup, platform PlatformActioner) *Service {
@@ -81,6 +84,8 @@ func NewService(repo *Repository, mySites MySitesReader, sites SiteLookup, platf
 		dispatcher:     newRemoteActionDispatcher(sites, mySites, platform),
 		probeRunner:    NewRealProbeRunner(),
 		modelDiscovery: NewModelDiscoveryRunner(),
+		qualityRepo:    repo,
+		qualityRunner:  &questionProbeRunner{client: &http.Client{}},
 	}
 	// 真实 PlatformService 同时实现优先级更新能力；测试或旧注入器如果尚未实现，倍率策略会
 	// 安全跳过远端写入，不影响既有探活/降级流程。

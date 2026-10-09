@@ -861,6 +861,25 @@ export default {
       saveError: '保存失败，请重试。'
     },
     connectionHealth: {
+      quality: {
+        settingsTitle: '降智检测配置', settingsHint: '当前站点的所有已开启分组共用此配置。保存后在左侧开启分组，后台会逐个检测渠道。',
+        displayOnly: '仅检测展示，不改变渠道状态、优先级或权重。',
+        globalEnabled: '启用题目降智检测', questions: '题目检测', schedule: '检测配置', model: '检测模型', reasoningEffort: '推理强度', defaultEffort: '模型默认', mode: '判断方式',
+        modes: { content_time: '内容＋耗时', content: '只看内容', time: '只看耗时' },
+        questionBank: '检测题库', add: '新增题目', newQuestion: '新题目', questionName: '题目名称', maxDurationMs: '耗时阈值（ms）', prompt: '题目内容', matchMode: '匹配方式',
+        matchModes: { answer: '标准答案', keyword: '包含关键词', regex: '正则表达式' }, answer: '答案 / 关键词 / 正则', answerHint: '标准答案支持纯答案或唯一的 FINAL_ANSWER= 行。每次有效答题后轮换到下一道已启用题目。',
+        intervalSeconds: '正常检测间隔（秒）', retrySeconds: '异常 / 失败复测间隔（秒）', failureLimit: '连续异常次数', recoveryLimit: '连续正常恢复次数', concurrency: '检测并发数（1～32）', timeoutSeconds: '请求超时（秒）', maxTokens: '最大输出 Token', historyLimit: '每渠道历史上限（1～1000）',
+        scheduleHint: '连续次数只影响降智状态显示。网络错误、限流、空响应和未完成响应记为检测失败，不累计答错次数。记录条展示当前配置最近最多 100 次检测。',
+        importConfig: '导入 Qerkai 题目配置', importHint: '导入后默认关闭检测，确认题目和参数后再启用并保存。', importFailed: '导入失败，请选择不超过 1 MB 的有效 Qerkai JSON 题库配置。',
+        save: '保存配置', saving: '保存中…', loading: '加载中…', close: '关闭', retry: '重试', moveUp: '上移题目', moveDown: '下移题目', enableQuestion: '启用题目 {name}', removeQuestion: '删除题目 {name}',
+        stripTitle: '降智检测', toggleGroup: '切换分组 {name} 的降智检测', globalPaused: '全局暂停', configureFirst: '请先启用并保存全局降智检测配置，再开启左侧分组。',
+        invalidModel: '请输入有效的检测模型。', invalidConfig: '请检查检测参数：间隔 10～86400 秒，连续次数 1～20，并发 1～32，超时 5～300 秒，输出 Token 128～32768，历史 1～1000。', invalidQuestion: '请填写题目名称、内容和答案，并检查耗时阈值（1～300000 ms）及匹配方式。', invalidRegex: '答案正则表达式无效。', questionsRequired: '开启检测需至少启用一道题，题库最多 50 题。',
+        statuses: { normal: '无降智', suspect: '疑似降智', degraded: '降智', recovering: '恢复观察', error: '检测失败', off: '未开启', pending: '待检测', unavailable: '记录不可用' },
+        passed: '通过', failed: '答题异常', error: '检测失败', recent: '近 {count} 次', failedCount: '答题异常 {count}', errorCount: '检测失败 {count}', passRate: '通过率 {rate}', rateHint: '仅统计有效答题；网络等检测失败不计入通过率。',
+        historyLabel: '最近 {count} 次降智检测，答题异常 {failed} 次，检测失败 {errors} 次，通过率 {rate}。绿色通过，红色答题异常，黄色检测失败。从左到右由旧到新。',
+        noRecord: '无检测记录', actualAnswer: '实际回答', expectedAnswer: '标准答案 / 规则', contentResult: '内容', timeResult: '耗时', previousDegraded: '保留上次降智判定',
+        historyUnavailable: '降智记录暂不可用，请刷新重试。', waiting: '等待后台检测。绿色为通过，红色为答题异常，黄色为检测失败。', enableHint: '在左侧开启分组降智检测后自动记录。',
+      },
       groupProbe: {
         title: '分组自动探活',
         close: '关闭',

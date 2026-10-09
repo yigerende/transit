@@ -3,10 +3,11 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Eye, Zap } from 'lucide-vue-next'
 import ProbeHistoryStrip from './ProbeHistoryStrip.vue'
+import QualityHistoryStrip from './QualityHistoryStrip.vue'
 import { connectionHealthStateBadgeClass } from '../../composables/useConnectionHealth'
 import type { AdminGroupAccount } from '../../types/connectionHealth'
 
-const props = defineProps<{ account: AdminGroupAccount; historyUnavailable?: boolean }>()
+const props = defineProps<{ account: AdminGroupAccount; historyUnavailable?: boolean; qualityEnabled?: boolean; qualityUnavailable?: boolean }>()
 const emit = defineEmits<{ probe: [account: AdminGroupAccount]; 'view-events': [account: AdminGroupAccount] }>()
 const { t } = useI18n()
 const prefix = 'admin.connectionHealth'
@@ -36,6 +37,7 @@ const state = computed(() => {
         <span class="text-muted-foreground">{{ t(`${prefix}.groupDetail.columns.priority`) }} {{ account.priority ?? '—' }}</span>
       </template>
     </ProbeHistoryStrip>
+    <QualityHistoryStrip :samples="account.qualityHistory" :state="account.qualityState" :enabled="qualityEnabled" :unavailable="qualityUnavailable" />
     <div v-if="account.modelHealth.length || account.unprobedModels?.length" class="flex flex-wrap gap-2">
       <span v-for="model in account.modelHealth" :key="model.modelName" class="rounded-md px-2 py-1 text-xs" :class="connectionHealthStateBadgeClass(model.state)">{{ model.modelName }} · {{ t(`${prefix}.stateLabels.${model.state}`) }}</span>
       <span v-for="model in account.unprobedModels" :key="`pending-${model.modelName}`" class="rounded-md bg-surface px-2 py-1 text-xs text-muted-foreground">{{ model.modelName }} · {{ t(`${prefix}.notProbed`) }}</span>

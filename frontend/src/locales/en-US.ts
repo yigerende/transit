@@ -861,6 +861,25 @@ export default {
       saveError: 'Save failed. Please try again.'
     },
     connectionHealth: {
+      quality: {
+        settingsTitle: 'Quality detection settings', settingsHint: 'All enabled groups in this workspace share these settings. Save, then enable groups on the left to check their channels in the background.',
+        displayOnly: 'Results only. Channel status, priority and weight are unaffected.',
+        globalEnabled: 'Enable question-based quality detection', questions: 'Question checks', schedule: 'Detection settings', model: 'Detection model', reasoningEffort: 'Reasoning effort', defaultEffort: 'Model default', mode: 'Evaluation',
+        modes: { content_time: 'Content and duration', content: 'Content only', time: 'Duration only' },
+        questionBank: 'Question bank', add: 'Add question', newQuestion: 'New question', questionName: 'Question name', maxDurationMs: 'Duration threshold (ms)', prompt: 'Question prompt', matchMode: 'Matching',
+        matchModes: { answer: 'Exact answer', keyword: 'Contains keyword', regex: 'Regular expression' }, answer: 'Answer / keyword / pattern', answerHint: 'Exact answers accept plain text or a single FINAL_ANSWER= line. Each valid response advances to the next enabled question.',
+        intervalSeconds: 'Normal interval (seconds)', retrySeconds: 'Abnormal / failed retry interval (seconds)', failureLimit: 'Consecutive abnormal answers', recoveryLimit: 'Consecutive passes to recover', concurrency: 'Concurrency (1–32)', timeoutSeconds: 'Request timeout (seconds)', maxTokens: 'Maximum output tokens', historyLimit: 'History per channel (1–1000)',
+        scheduleHint: 'Streaks affect the displayed verdict only. Network errors, rate limits, empty and incomplete responses do not count as wrong answers. The strip shows up to 100 checks using the current settings.',
+        importConfig: 'Import Qerkai questions', importHint: 'Import disables detection until you review, enable and save the settings.', importFailed: 'Choose a valid Qerkai JSON configuration under 1 MB.',
+        save: 'Save settings', saving: 'Saving…', loading: 'Loading…', close: 'Close', retry: 'Retry', moveUp: 'Move question up', moveDown: 'Move question down', enableQuestion: 'Enable question {name}', removeQuestion: 'Delete question {name}',
+        stripTitle: 'Quality checks', toggleGroup: 'Toggle quality detection for {name}', globalPaused: 'Globally paused', configureFirst: 'Enable and save global quality settings first, then enable groups on the left.',
+        invalidModel: 'Enter a valid detection model.', invalidConfig: 'Check parameters: interval 10–86400s, streaks 1–20, concurrency 1–32, timeout 5–300s, output tokens 128–32768, history 1–1000.', invalidQuestion: 'Enter a question name, prompt and answer; check matching mode and duration threshold (1–300000 ms).', invalidRegex: 'The answer regular expression is invalid.', questionsRequired: 'Enable at least one question. The bank supports up to 50 questions.',
+        statuses: { normal: 'Normal', suspect: 'Suspected degradation', degraded: 'Degraded', recovering: 'Recovering', error: 'Check failed', off: 'Disabled', pending: 'Pending', unavailable: 'History unavailable' },
+        passed: 'Passed', failed: 'Abnormal answer', error: 'Check failed', recent: 'Last {count}', failedCount: 'Abnormal {count}', errorCount: 'Failed {count}', passRate: 'Pass rate {rate}', rateHint: 'Only valid answers count; request failures are excluded.',
+        historyLabel: 'Last {count} quality checks: {failed} abnormal answers, {errors} failed requests, {rate} pass rate. Green passes, red abnormal answers, amber failed checks. Oldest on the left.',
+        noRecord: 'No check recorded', actualAnswer: 'Actual answer', expectedAnswer: 'Expected answer / rule', contentResult: 'Content', timeResult: 'Duration', previousDegraded: 'Previous degradation verdict retained',
+        historyUnavailable: 'Quality history is unavailable. Refresh to retry.', waiting: 'Waiting for background checks. Green: passed; red: abnormal answer; amber: check failed.', enableHint: 'Enable quality detection for the group on the left to start recording.',
+      },
       groupProbe: {
         title: 'Automatic group probing',
         close: 'Close',

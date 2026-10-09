@@ -4,6 +4,7 @@ import { useDocumentVisibility, useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import {
   Activity,
+  BrainCircuit,
   Layers,
   Loader2,
   RefreshCw,
@@ -17,6 +18,8 @@ import { connectionHealthMessageKey, useConnectionHealth } from '../composables/
 import ChannelHealthCard from '../components/dashboard/ChannelHealthCard.vue'
 import ProbeHistoryStrip from '../components/dashboard/ProbeHistoryStrip.vue'
 import GroupProbeDialog from '../components/dashboard/GroupProbeDialog.vue'
+import QualitySettingsDialog from '../components/dashboard/QualitySettingsDialog.vue'
+import { setGroupQuality } from '../api/connectionHealth'
 import ConnectionHealthEventsDialog from '../components/dashboard/ConnectionHealthEventsDialog.vue'
 import GroupHealthSetupDrawer from '../components/dashboard/GroupHealthSetupDrawer.vue'
 import ManualOneTimeProbeDialog from '../components/dashboard/ManualOneTimeProbeDialog.vue'
@@ -52,6 +55,19 @@ const selectedType = ref('')
 const selectedGroupId = ref('')
 const groupProbeOpen = ref(false)
 const probeGroup = ref<AdminGroupHealth | null>(null)
+const qualitySettingsOpen = ref(false)
+const qualityBusyGroup = ref('')
+const qualityError = ref('')
+async function toggleGroupQuality(group: AdminGroupHealth) {
+  if (qualityBusyGroup.value) return
+  qualityBusyGroup.value = group.id; qualityError.value = ''
+  try { await setGroupQuality(group.id, !group.quality?.enabled); await refreshProbeResults() }
+  catch (err) {
+    qualityError.value = err instanceof Error ? err.message : 'admin.connectionHealth.errors.request'
+    if (qualityError.value === 'admin.connectionHealth.quality.configureFirst') qualitySettingsOpen.value = true
+  } finally { qualityBusyGroup.value = '' }
+}
+async function onQualitySaved() { qualityError.value = ''; await refreshProbeResults() }
 const selectedConnectionId = ref('')
 const eventsDialogOpen = ref(false)
 const siteNameMap = ref<Map<string, string>>(new Map())
@@ -255,6 +271,7 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
     <header class="flex flex-wrap items-center justify-between gap-3">
       <h1 class="text-xl font-semibold text-foreground">{{ t('admin.connectionHealth.title') }}</h1>
       <div class="flex flex-wrap items-center gap-2">
+        <Button variant="secondary" size="sm" @click="qualitySettingsOpen = true"><BrainCircuit class="h-4 w-4" />{{ t('admin.connectionHealth.quality.settingsTitle') }}</Button>
         <Button variant="secondary" size="sm" @click="policyListDialogOpen = true">
           <Settings2 class="h-4 w-4" />{{ t('admin.connectionHealth.topActions.policies') }}
         </Button>
@@ -269,6 +286,7 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
     </header>
 
     <p v-if="errorKey" role="alert" class="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{{ readableMessage(errorKey) }}</p>
+    <p v-if="qualityError" role="alert" class="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{{ readableMessage(qualityError) }}</p>
 
     <section class="grid min-h-[34rem] min-w-0 rounded-xl border border-border/70 bg-card lg:grid-cols-[18rem_minmax(0,1fr)]">
       <aside class="min-w-0 border-b border-border/60 lg:border-b-0 lg:border-r">
@@ -299,6 +317,10 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
               <button type="button" :disabled="group.groupProbeSupported === false" class="rounded-md p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary disabled:opacity-30" :aria-label="t('admin.connectionHealth.groupProbe.action', { name: group.name })" :title="t(group.groupProbeSupported === false ? 'admin.connectionHealth.groupProbe.unsupported' : 'admin.connectionHealth.groupProbe.buttonHint')" @click="openGroupProbe(group)"><Zap class="h-4 w-4" /></button>
             </div>
             <ProbeHistoryStrip class="mt-2.5" :samples="group.recentProbes" :limit="20" compact :unavailable="Boolean(group.probeHistoryError)" />
+            <button type="button" :disabled="Boolean(qualityBusyGroup) || Boolean(group.quality?.errorKey)" :aria-pressed="Boolean(group.quality?.enabled)" :aria-label="t('admin.connectionHealth.quality.toggleGroup', { name:group.name })" class="mt-3 flex w-full items-center justify-between gap-2 text-[11px] disabled:opacity-50" :class="group.quality?.enabled && group.quality?.globalEnabled ? 'text-primary' : 'text-muted-foreground'" @click="toggleGroupQuality(group)">
+              <span class="inline-flex items-center gap-1.5"><Loader2 v-if="qualityBusyGroup === group.id" class="h-3.5 w-3.5 animate-spin" /><BrainCircuit v-else class="h-3.5 w-3.5" />{{ t('admin.connectionHealth.quality.stripTitle') }}<span v-if="group.quality?.enabled && !group.quality?.globalEnabled">· {{ t('admin.connectionHealth.quality.globalPaused') }}</span></span>
+              <span class="relative h-4 w-7 shrink-0 rounded-full transition-colors" :class="group.quality?.enabled ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="group.quality?.enabled ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
+            </button>
           </div>
           <p v-if="!isLoading && !filteredGroups.length" class="px-3 py-8 text-center text-sm text-muted-foreground">{{ t(adminGroups.length ? 'admin.connectionHealth.cards.noMatches' : 'admin.connectionHealth.adminEmpty') }}</p>
         </nav>
@@ -320,13 +342,14 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
           <p v-if="selectedGroup.accountsError" role="alert" class="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{{ readableMessage(selectedGroup.accountsError) }}</p>
           <p v-else-if="!selectedGroup.accounts.length" class="py-16 text-center text-sm text-muted-foreground">{{ t('admin.connectionHealth.groupDetail.empty') }}</p>
           <p v-if="(selectedGroup.priorityConflictCount ?? 0) > 0" class="text-xs text-amber-600">{{ t('admin.connectionHealth.cards.priorityConflict', { count: selectedGroup.priorityConflictCount }) }}</p>
-          <ChannelHealthCard v-for="account in selectedGroup.accounts" :key="account.targetId" :account="account" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
+          <ChannelHealthCard v-for="account in selectedGroup.accounts" :key="account.targetId" :account="account" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" :quality-enabled="Boolean(selectedGroup.quality?.enabled && selectedGroup.quality?.globalEnabled)" :quality-unavailable="Boolean(selectedGroup.quality?.errorKey)" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
         </div>
       </div>
       <div v-else class="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground"><Layers class="h-8 w-8 opacity-40" /><p class="text-sm">{{ t('admin.connectionHealth.groupProbe.selectGroup') }}</p></div>
     </section>
 
     <GroupProbeDialog :open="groupProbeOpen" :group="probeGroup" @close="groupProbeOpen = false" @saved="refreshProbeResults" />
+    <QualitySettingsDialog :open="qualitySettingsOpen" @close="qualitySettingsOpen = false" @saved="onQualitySaved" />
 
     <GroupHealthSetupDrawer
       :open="setupDrawerOpen"

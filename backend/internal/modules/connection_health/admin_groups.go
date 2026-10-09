@@ -44,6 +44,7 @@ type AdminGroupHealth struct {
 	ProbeHistoryError   string              `json:"probeHistoryError,omitempty"`
 	GroupProbeSupported bool                `json:"groupProbeSupported"`
 	ProbeConfig         *GroupProbeConfig   `json:"probeConfig,omitempty"`
+	Quality             *QualityGroup       `json:"quality,omitempty"`
 }
 
 // AdminGroupHealthSummary 是单个 admin 分组的探活健康概览，用于主列表快速展示。
@@ -67,6 +68,8 @@ type AdminGroupHealthSummary struct {
 // 只要后端能安全解析 base_url + key + model 就可独立探活，不再需要 real_connections。
 // 绝不包含 key / token / cookie / credentials / secret / authorization 明文。
 type AdminGroupAccount struct {
+	QualityState   *QualityState      `json:"qualityState,omitempty"`
+	QualityHistory []QualitySample    `json:"qualityHistory,omitempty"`
 	RecentProbes   []GroupProbeSample `json:"recentProbes"`
 	ID             string             `json:"id"`
 	Name           string             `json:"name"`
@@ -338,6 +341,7 @@ func (s *Service) AdminGroups(ctx context.Context, userID string) ([]AdminGroupH
 		result = append(result, health)
 	}
 	s.attachGroupProbeHistory(ctx, userID, adminAccountID, result)
+	s.attachQuality(ctx, userID, adminAccountID, result)
 	configs, err := s.repo.ListGroupProbeConfigs(ctx, userID, adminAccountID)
 	if err != nil {
 		return nil, err

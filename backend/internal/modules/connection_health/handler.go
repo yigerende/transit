@@ -17,6 +17,9 @@ type Handler struct {
 // RegisterRoutes 注册链路健康探活模块的全部路由。响应体一律不含 upstream_key。
 func RegisterRoutes(mux *http.ServeMux, service *Service) {
 	handler := &Handler{service: service}
+	mux.HandleFunc("GET /api/connection-health/quality-settings", handler.qualitySettings)
+	mux.HandleFunc("PUT /api/connection-health/quality-settings", handler.saveQualitySettings)
+	mux.HandleFunc("PUT /api/connection-health/admin-groups/{id}/quality", handler.setGroupQuality)
 	mux.HandleFunc("GET /api/connection-health/overview", handler.overview)
 	mux.HandleFunc("GET /api/connection-health/stored-summary", handler.storedSummary)
 	mux.HandleFunc("GET /api/connection-health/groups", handler.groups)

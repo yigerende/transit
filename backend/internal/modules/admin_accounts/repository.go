@@ -31,6 +31,10 @@ const (
 )
 
 var workspaceDeleteStatements = []workspaceDeleteStatement{
+	{Name: "connection_health_quality_settings", SQL: `DELETE FROM connection_health_quality_settings WHERE user_id = $1 AND admin_account_id = $2`},
+	{Name: "connection_health_quality_groups", SQL: `DELETE FROM connection_health_quality_groups WHERE user_id = $1 AND admin_account_id = $2`},
+	{Name: "connection_health_quality_states", SQL: `DELETE FROM connection_health_quality_states WHERE user_id = $1 AND admin_account_id = $2`},
+	{Name: "connection_health_quality_history", SQL: `DELETE FROM connection_health_quality_history WHERE user_id = $1 AND admin_account_id = $2`},
 	{Name: "lottery_reward_jobs", SQL: `DELETE FROM lottery_reward_jobs WHERE user_id = $1 AND admin_account_id = $2`},
 	{Name: "lottery_winners", SQL: `DELETE FROM lottery_winners WHERE user_id = $1 AND admin_account_id = $2`},
 	{Name: "lottery_draws", SQL: `DELETE FROM lottery_draws WHERE user_id = $1 AND admin_account_id = $2`},
