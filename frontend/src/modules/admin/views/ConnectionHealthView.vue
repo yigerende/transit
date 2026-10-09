@@ -361,10 +361,12 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
               @toggle="togglePolicyEnabled"
               @setup="openSetup(group)"
             />
-            <button type="button" :disabled="Boolean(qualityBusyGroup) || Boolean(group.quality?.errorKey)" :aria-pressed="Boolean(group.quality?.enabled)" :aria-label="t('admin.connectionHealth.quality.toggleGroup', { name:group.name })" class="mt-1.5 flex min-h-6 w-full items-center justify-between gap-2 text-[11px] disabled:opacity-50" :class="group.quality?.enabled && group.quality?.globalEnabled ? 'text-primary' : 'text-muted-foreground'" @click="toggleGroupQuality(group)">
+            <div class="mt-1.5 flex min-h-6 items-center justify-between gap-2 text-[11px]" :class="group.quality?.enabled && group.quality?.globalEnabled ? 'text-primary' : 'text-muted-foreground'">
               <span class="inline-flex items-center gap-1.5"><Loader2 v-if="qualityBusyGroup === group.id" class="h-3.5 w-3.5 animate-spin" /><BrainCircuit v-else class="h-3.5 w-3.5" />{{ t('admin.connectionHealth.quality.stripTitle') }}<span v-if="group.quality?.enabled && !group.quality?.globalEnabled">· {{ t('admin.connectionHealth.quality.globalPaused') }}</span></span>
-              <span class="relative h-4 w-7 shrink-0 rounded-full transition-colors" :class="group.quality?.enabled ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="group.quality?.enabled ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
-            </button>
+              <button type="button" role="switch" :disabled="Boolean(qualityBusyGroup) || Boolean(group.quality?.errorKey)" :aria-checked="Boolean(group.quality?.enabled)" :aria-label="t('admin.connectionHealth.quality.toggleGroup', { name:group.name })" :title="t('admin.connectionHealth.quality.toggleGroup', { name:group.name })" class="flex h-6 w-7 shrink-0 items-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50" @click.stop="toggleGroupQuality(group)">
+                <span class="relative h-4 w-7 rounded-full transition-colors" :class="group.quality?.enabled ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="group.quality?.enabled ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
+              </button>
+            </div>
           </div>
           <p v-if="!isLoading && !filteredGroups.length" class="px-3 py-8 text-center text-sm text-muted-foreground">{{ t(adminGroups.length ? 'admin.connectionHealth.cards.noMatches' : 'admin.connectionHealth.adminEmpty') }}</p>
         </nav>
