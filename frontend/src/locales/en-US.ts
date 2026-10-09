@@ -1,7 +1,7 @@
 export default {
   brand: {
-    name: 'TransitHub',
-    logoAlt: 'TransitHub logo'
+    name: '监控探测',
+    logoAlt: '监控探测 logo'
   },
   nav: {
     features: 'Features',
@@ -12,7 +12,7 @@ export default {
     getStarted: 'Get Started'
   },
   hero: {
-    badge: 'Introducing TransitHub 2.0',
+    badge: 'Introducing 监控探测 2.0',
     title: 'The Ultimate',
     highlight: 'API Gateway',
     subtitle: 'Unify your NewAPI instances, manage keys with ease, and route traffic intelligently. Built for the modern AI infrastructure.',
@@ -43,12 +43,12 @@ export default {
   },
   cta: {
     title: 'Ready to take control?',
-    subtitle: 'Join thousands of developers using TransitHub to power their API infrastructure. Get started for free today.',
+    subtitle: 'Join thousands of developers using 监控探测 to power their API infrastructure. Get started for free today.',
     deployBtn: 'Deploy Now',
     salesBtn: 'Contact Sales'
   },
   footer: {
-    rights: 'TransitHub Operations. All rights reserved.'
+    rights: '监控探测 Operations. All rights reserved.'
   },
   auth: {
     backToHome: 'Back to Home',
@@ -70,7 +70,7 @@ export default {
     },
     register: {
       title: 'Create an Account',
-      subtitle: 'Enter your details to register for TransitHub',
+      subtitle: 'Enter your details to register for 监控探测',
       email: 'Email',
       emailPlaceholder: "name{'@'}example.com",
       password: 'Password',
@@ -381,7 +381,7 @@ export default {
       delete: {
         actionLabel: 'Delete workspace {name}',
         title: 'Delete {name}',
-        localDataWarning: 'All TransitHub local workspace data for this workspace will be permanently deleted. This cannot be undone.',
+        localDataWarning: 'All 监控探测 local workspace data for this workspace will be permanently deleted. This cannot be undone.',
         remoteResourcesRetained: 'Remote upstream resources and accounts are retained and will not be deleted.',
         phraseInstruction: 'Type the exact phrase below to confirm: {phrase}',
         inputLabel: 'Confirmation phrase',

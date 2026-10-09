@@ -1,7 +1,7 @@
 export default {
   brand: {
-    name: 'TransitHub',
-    logoAlt: 'TransitHub 徽标'
+    name: '监控探测',
+    logoAlt: '监控探测徽标'
   },
   nav: {
     features: '核心特性',
@@ -12,7 +12,7 @@ export default {
     getStarted: '立即开始'
   },
   hero: {
-    badge: 'TransitHub 2.0 震撼发布',
+    badge: '监控探测 2.0 震撼发布',
     title: '终极版',
     highlight: 'API 流量网关',
     subtitle: '统一接管你的 NewAPI 实例，轻松管理密钥并智能调度流量。专为现代 AI 基础设施而生。',
@@ -43,18 +43,18 @@ export default {
   },
   cta: {
     title: '准备好接管一切了吗？',
-    subtitle: '加入成千上万使用 TransitHub 驱动其 API 基础设施的开发者行列。今天就免费开始吧。',
+    subtitle: '加入成千上万使用监控探测驱动其 API 基础设施的开发者行列。今天就免费开始吧。',
     deployBtn: '立即部署',
     salesBtn: '联系销售'
   },
   footer: {
-    rights: 'TransitHub 运维团队。保留所有权利。'
+    rights: '监控探测运维团队。保留所有权利。'
   },
   auth: {
     backToHome: '返回主页',
     login: {
       title: '欢迎回来',
-      subtitle: '输入您的邮箱和密码登录 TransitHub',
+      subtitle: '输入您的邮箱和密码登录监控探测',
       email: '邮箱',
       emailPlaceholder: "name{'@'}example.com",
       password: '密码',
@@ -70,7 +70,7 @@ export default {
     },
     register: {
       title: '创建账号',
-      subtitle: '输入您的信息以注册 TransitHub',
+      subtitle: '输入您的信息以注册监控探测',
       email: '邮箱',
       emailPlaceholder: "name{'@'}example.com",
       password: '密码',
@@ -381,7 +381,7 @@ export default {
       delete: {
         actionLabel: '删除工作区 {name}',
         title: '删除 {name}',
-        localDataWarning: '此工作区的所有 TransitHub 本地工作区数据将被永久删除，且无法恢复。',
+        localDataWarning: '此工作区的所有监控探测本地工作区数据将被永久删除，且无法恢复。',
         remoteResourcesRetained: '远程上游资源和账号会被保留，不会被删除。',
         phraseInstruction: '手动输入下方完全一致的短语以确认：{phrase}',
         inputLabel: '确认短语',
