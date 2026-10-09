@@ -68,6 +68,7 @@ type AdminGroupHealthSummary struct {
 // 只要后端能安全解析 base_url + key + model 就可独立探活，不再需要 real_connections。
 // 绝不包含 key / token / cookie / credentials / secret / authorization 明文。
 type AdminGroupAccount struct {
+	QualityEnabled  bool               `json:"qualityEnabled"`
 	QualitySelected bool               `json:"qualitySelected"`
 	QualityState    *QualityState      `json:"qualityState,omitempty"`
 	QualityHistory  []QualitySample    `json:"qualityHistory,omitempty"`

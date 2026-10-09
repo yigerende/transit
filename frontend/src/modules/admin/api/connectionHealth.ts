@@ -1,4 +1,4 @@
-import type { QualitySettings, QualityGroup } from '../types/quality'
+import type { QualitySettings, QualityGroup, QualityChannel } from '../types/quality'
 import type {
   AdminGroupPolicyConfiguration,
   AdminGroupPolicyConfigurationInput,
@@ -28,6 +28,8 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '/api'
 export const getQualitySettings = (): Promise<QualitySettings> => requestJson('/connection-health/quality-settings')
 export const saveQualitySettings = (config: QualitySettings): Promise<QualitySettings> => requestJson('/connection-health/quality-settings', { method: 'PUT', body: JSON.stringify(config) })
 export const setGroupQuality = (groupId: string, enabled: boolean): Promise<QualityGroup> => requestJson(`/connection-health/admin-groups/${encodeURIComponent(groupId)}/quality`, { method: 'PUT', body: JSON.stringify({ enabled }) })
+
+export const setChannelQuality = (targetId: string, enabled: boolean): Promise<QualityChannel> => requestJson(`/connection-health/targets/${encodeURIComponent(targetId)}/quality`, { method: 'PUT', body: JSON.stringify({ enabled }) })
 
 const endpoint = (path: string): string => `${apiBaseUrl.replace(/\/$/, '')}${path}`
 

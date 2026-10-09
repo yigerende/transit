@@ -5,9 +5,10 @@ import "context"
 // Quality detection uses automation's saved channel selection, while its own
 // global/group switches control execution independently of health probe settings.
 type qualitySelection struct {
-	groups   map[string]bool
-	targets  map[string]bool
-	excluded map[string]map[string]bool
+	disabledChannels map[string]bool
+	groups           map[string]bool
+	targets          map[string]bool
+	excluded         map[string]map[string]bool
 }
 
 func newQualitySelection(policies []Policy, assignments []PolicyAssignment, groups []GroupPolicyAssignment, exclusions []GroupTargetExclusion) qualitySelection {
@@ -38,7 +39,7 @@ func newQualitySelection(policies []Policy, assignments []PolicyAssignment, grou
 func (s qualitySelection) selected(group, target string) bool {
 	// Explicitly unchecking a channel in this group also excludes it from quality
 	// checks, even if a legacy per-channel health policy remains assigned.
-	return !s.excluded[group][target] && (s.groups[group] || s.targets[target])
+	return !s.disabledChannels[target] && !s.excluded[group][target] && (s.groups[group] || s.targets[target])
 }
 
 func (s *Service) loadQualitySelection(ctx context.Context, user, workspace string) (qualitySelection, error) {
@@ -58,5 +59,16 @@ func (s *Service) loadQualitySelection(ctx context.Context, user, workspace stri
 	if err != nil {
 		return qualitySelection{}, err
 	}
-	return newQualitySelection(policies, assignments, groups, exclusions), nil
+	selection := newQualitySelection(policies, assignments, groups, exclusions)
+	if s.qualityRepo != nil {
+		channels, err := s.qualityRepo.ListQualityChannels(ctx, user, workspace)
+		if err != nil {
+			return qualitySelection{}, err
+		}
+		selection.disabledChannels = map[string]bool{}
+		for _, channel := range channels {
+			selection.disabledChannels[channel.TargetID] = !channel.Enabled
+		}
+	}
+	return selection, nil
 }

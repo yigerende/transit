@@ -102,6 +102,13 @@ type QualityGroup struct {
 	GlobalEnabled bool   `json:"globalEnabled"`
 	ErrorKey      string `json:"errorKey,omitempty"`
 }
+
+// Channel preference is shared across all groups in the connected workspace.
+type QualityChannel struct {
+	TargetID string `json:"targetId"`
+	Enabled  bool   `json:"enabled"`
+}
+
 type QualitySample struct {
 	ID             string    `json:"id"`
 	TargetID       string    `json:"targetId"`

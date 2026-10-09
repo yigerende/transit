@@ -888,6 +888,7 @@ export default {
         },
       },
       quality: {
+        toggleChannel: 'Toggle quality checks for channel {name}', channelSwitchHint: 'Controls quality checks for this channel across all its groups. History is retained when off. Global and group checks must be enabled and the channel selected in an automation policy.',
         settingsTitle: 'Quality detection settings', settingsHint: 'All enabled groups in this workspace share these settings. Save, then enable groups on the left. Only channels selected and saved in automation policies are tested.',
         displayOnly: 'Results only. Channel status, priority and weight are unaffected.',
         globalEnabled: 'Enable question-based quality detection', questions: 'Question checks', schedule: 'Detection settings', model: 'Detection model', reasoningEffort: 'Reasoning effort', defaultEffort: 'Model default', mode: 'Evaluation',
@@ -905,7 +906,7 @@ export default {
         passed: 'Passed', failed: 'Abnormal answer', error: 'Check failed', recent: 'Last {count}', failedCount: 'Abnormal {count}', errorCount: 'Failed {count}', passRate: 'Pass rate {rate}', rateHint: 'Only valid answers count; request failures are excluded.',
         historyLabel: 'Last {count} quality checks: {failed} abnormal answers, {errors} failed requests, {rate} pass rate. Green passes, red abnormal answers, amber failed checks. Oldest on the left.',
         noRecord: 'No check recorded', actualAnswer: 'Actual answer', expectedAnswer: 'Expected answer / rule', contentResult: 'Content', timeResult: 'Duration', previousDegraded: 'Previous degradation verdict retained',
-        historyUnavailable: 'Quality history is unavailable. Refresh to retry.', waiting: 'Waiting for background checks. Green: passed; red: abnormal answer; amber: check failed.', enableHint: 'Enable quality detection for the group on the left to start recording.',
+        historyUnavailable: 'Quality history is unavailable. Refresh to retry.', waiting: 'Waiting for background checks. Green: passed; red: abnormal answer; amber: check failed.', enableHint: 'Enable group and channel quality checks to start recording.',
       },
       groupProbe: {
         title: 'Automatic group probing',

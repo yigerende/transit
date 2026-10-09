@@ -23,6 +23,10 @@ export interface QualitySettings {
   historyLimit: number
   questions: QualityQuestion[]
 }
+export interface QualityChannel {
+  targetId: string
+  enabled: boolean
+}
 export interface QualityGroup {
   groupId: string
   enabled: boolean

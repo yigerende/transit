@@ -25,6 +25,7 @@ function title(sample: QualitySample | null) {
     <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-xs">
       <div class="flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums">
         <span class="font-medium text-muted-foreground">{{ t(`${p}.stripTitle`) }}</span>
+        <slot name="controls" />
         <span :class="selected && enabled && state?.degraded ? 'text-red-600 dark:text-red-400' : status === 'normal' ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'">{{ t(`${p}.statuses.${status}`) }}</span>
         <template v-if="samples.length"><span class="text-muted-foreground">{{ t(`${p}.recent`, { count:samples.length }) }}</span><span :class="failed ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'">{{ t(`${p}.failedCount`, { count:failed }) }}</span><span :class="errors ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'">{{ t(`${p}.errorCount`, { count:errors }) }}</span><span class="text-emerald-700 dark:text-emerald-400" :title="t(`${p}.rateHint`)">{{ t(`${p}.passRate`, { rate }) }}</span></template>
       </div>

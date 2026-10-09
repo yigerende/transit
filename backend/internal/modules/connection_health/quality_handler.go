@@ -58,3 +58,24 @@ func (h *Handler) setGroupQuality(w http.ResponseWriter, r *http.Request) {
 	}
 	httpjson.Write(w, http.StatusOK, result)
 }
+
+func (h *Handler) setChannelQuality(w http.ResponseWriter, r *http.Request) {
+	user, ok := authctx.UserID(r.Context())
+	if !ok {
+		httpjson.WriteError(w, http.StatusUnauthorized, "auth.errors.unauthorized")
+		return
+	}
+	var input struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if httpjson.Decode(r, &input) != nil || input.Enabled == nil {
+		httpjson.WriteError(w, http.StatusBadRequest, ErrorRequest)
+		return
+	}
+	result, err := h.service.SetChannelQuality(r.Context(), user, r.PathValue("id"), *input.Enabled)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	httpjson.Write(w, http.StatusOK, result)
+}

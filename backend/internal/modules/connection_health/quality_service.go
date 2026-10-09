@@ -81,6 +81,18 @@ func (s *Service) SetGroupQuality(ctx context.Context, user, groupID string, ena
 	return QualityGroup{GroupID: groupID, Enabled: enabled, GlobalEnabled: q.Enabled}, s.qualityRepo.SetQualityGroup(ctx, user, workspace, groupID, enabled)
 }
 
+func (s *Service) SetChannelQuality(ctx context.Context, user, targetID string, enabled bool) (QualityChannel, error) {
+	// Validate the live target and workspace, without resolving its API key.
+	_, target, _, workspace, err := s.resolveManualTarget(ctx, user, targetID)
+	if err != nil {
+		return QualityChannel{}, err
+	}
+	if err := s.qualityRepo.SetQualityChannel(ctx, user, workspace, target.TargetID, enabled); err != nil {
+		return QualityChannel{}, err
+	}
+	return QualityChannel{TargetID: target.TargetID, Enabled: enabled}, nil
+}
+
 func (s *Service) attachQuality(ctx context.Context, user, workspace string, groups []AdminGroupHealth) {
 	if s.qualityRepo == nil {
 		return
@@ -94,6 +106,15 @@ func (s *Service) attachQuality(ctx context.Context, user, workspace string, gro
 	if err != nil {
 		s.qualityUnavailable(groups)
 		return
+	}
+	channels, err := s.qualityRepo.ListQualityChannels(ctx, user, workspace)
+	if err != nil {
+		s.qualityUnavailable(groups)
+		return
+	}
+	disabledChannels := map[string]bool{}
+	for _, channel := range channels {
+		disabledChannels[channel.TargetID] = !channel.Enabled
 	}
 	enabled := map[string]bool{}
 	for _, g := range switches {
@@ -134,6 +155,7 @@ func (s *Service) attachQuality(ctx context.Context, user, workspace string, gro
 		g.Quality = &QualityGroup{GroupID: g.ID, Enabled: enabled[g.ID], GlobalEnabled: q.Enabled}
 		for j := range g.Accounts {
 			a := &g.Accounts[j]
+			a.QualityEnabled = !disabledChannels[a.TargetID]
 			a.QualityHistory = append([]QualitySample{}, byHistory[a.TargetID]...)
 			if state, ok := byTarget[a.TargetID]; ok {
 				a.QualityState = &state

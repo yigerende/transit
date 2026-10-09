@@ -888,6 +888,7 @@ export default {
         },
       },
       quality: {
+        toggleChannel: '切换渠道 {name} 的降智检测', channelSwitchHint: '仅控制此渠道的降智检测，同一渠道在各分组共用。关闭保留历史；开启仍需全局、分组开启且渠道已被策略选中。',
         settingsTitle: '降智检测配置', settingsHint: '当前站点的所有已开启分组共用此配置。保存后在左侧开启分组，仅检测自动化策略中已勾选并保存的渠道。',
         displayOnly: '仅检测展示，不改变渠道状态、优先级或权重。',
         globalEnabled: '启用题目降智检测', questions: '题目检测', schedule: '检测配置', model: '检测模型', reasoningEffort: '推理强度', defaultEffort: '模型默认', mode: '判断方式',
@@ -905,7 +906,7 @@ export default {
         passed: '通过', failed: '答题异常', error: '检测失败', recent: '近 {count} 次', failedCount: '答题异常 {count}', errorCount: '检测失败 {count}', passRate: '通过率 {rate}', rateHint: '仅统计有效答题；网络等检测失败不计入通过率。',
         historyLabel: '最近 {count} 次降智检测，答题异常 {failed} 次，检测失败 {errors} 次，通过率 {rate}。绿色通过，红色答题异常，黄色检测失败。从左到右由旧到新。',
         noRecord: '无检测记录', actualAnswer: '实际回答', expectedAnswer: '标准答案 / 规则', contentResult: '内容', timeResult: '耗时', previousDegraded: '保留上次降智判定',
-        historyUnavailable: '降智记录暂不可用，请刷新重试。', waiting: '等待后台检测。绿色为通过，红色为答题异常，黄色为检测失败。', enableHint: '在左侧开启分组降智检测后自动记录。',
+        historyUnavailable: '降智记录暂不可用，请刷新重试。', waiting: '等待后台检测。绿色为通过，红色为答题异常，黄色为检测失败。', enableHint: '开启分组及渠道降智检测后自动记录。',
       },
       groupProbe: {
         title: '分组自动探活',

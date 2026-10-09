@@ -20,7 +20,7 @@ import GroupAutomationControl from '../components/dashboard/GroupAutomationContr
 import ProbeHistoryStrip from '../components/dashboard/ProbeHistoryStrip.vue'
 import GroupProbeDialog from '../components/dashboard/GroupProbeDialog.vue'
 import QualitySettingsDialog from '../components/dashboard/QualitySettingsDialog.vue'
-import { listConnectionHealthPolicies, setGroupQuality } from '../api/connectionHealth'
+import { listConnectionHealthPolicies, setChannelQuality, setGroupQuality } from '../api/connectionHealth'
 import ConnectionHealthEventsDialog from '../components/dashboard/ConnectionHealthEventsDialog.vue'
 import GroupHealthSetupDrawer from '../components/dashboard/GroupHealthSetupDrawer.vue'
 import ManualOneTimeProbeDialog from '../components/dashboard/ManualOneTimeProbeDialog.vue'
@@ -60,6 +60,30 @@ const probeGroup = ref<AdminGroupHealth | null>(null)
 const qualitySettingsOpen = ref(false)
 const qualityBusyGroup = ref('')
 const qualityError = ref('')
+const qualityBusyTargets = ref(new Set<string>())
+const qualityChannelErrors = ref<Record<string, string>>({})
+async function toggleChannelQuality(account: AdminGroupAccount) {
+  const target = account.targetId
+  if (qualityBusyTargets.value.has(target)) return
+  qualityBusyTargets.value.add(target)
+  delete qualityChannelErrors.value[target]
+  try {
+    const saved = await setChannelQuality(target, account.qualityEnabled === false)
+    await refreshProbeResults()
+    // One upstream channel may appear in multiple groups; reflect its preference everywhere.
+    for (const group of adminGroups.value) {
+      for (const channel of group.accounts) {
+        if (channel.targetId === saved.targetId) channel.qualityEnabled = saved.enabled
+      }
+    }
+  } catch (err) {
+    const key = err instanceof Error ? err.message : 'admin.connectionHealth.errors.request'
+    qualityChannelErrors.value[target] = t(connectionHealthMessageKey(key, te))
+  } finally {
+    qualityBusyTargets.value.delete(target)
+  }
+}
+
 async function toggleGroupQuality(group: AdminGroupHealth) {
   if (qualityBusyGroup.value) return
   qualityBusyGroup.value = group.id; qualityError.value = ''
@@ -388,7 +412,7 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
           <p v-if="selectedGroup.accountsError" role="alert" class="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{{ readableMessage(selectedGroup.accountsError) }}</p>
           <p v-else-if="!selectedGroup.accounts.length" class="py-16 text-center text-sm text-muted-foreground">{{ t('admin.connectionHealth.groupDetail.empty') }}</p>
           <p v-if="(selectedGroup.priorityConflictCount ?? 0) > 0" class="text-xs text-amber-600">{{ t('admin.connectionHealth.cards.priorityConflict', { count: selectedGroup.priorityConflictCount }) }}</p>
-          <ChannelHealthCard v-for="account in selectedGroup.accounts" :key="account.targetId" :account="account" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" :show-quality="Boolean(selectedGroup.quality?.enabled)" :quality-enabled="Boolean(selectedGroup.quality?.enabled && selectedGroup.quality?.globalEnabled)" :quality-unavailable="Boolean(selectedGroup.quality?.errorKey)" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
+          <ChannelHealthCard v-for="account in selectedGroup.accounts" :key="account.targetId" :account="account" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" :show-quality="Boolean(selectedGroup.quality?.enabled)" :quality-enabled="Boolean(selectedGroup.quality?.enabled && selectedGroup.quality?.globalEnabled)" :quality-unavailable="Boolean(selectedGroup.quality?.errorKey)" :quality-busy="qualityBusyTargets.has(account.targetId)" :quality-error="qualityChannelErrors[account.targetId]" @toggle-quality="toggleChannelQuality" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
         </div>
       </div>
       <div v-else class="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground"><Layers class="h-8 w-8 opacity-40" /><p class="text-sm">{{ t('admin.connectionHealth.groupProbe.selectGroup') }}</p></div>

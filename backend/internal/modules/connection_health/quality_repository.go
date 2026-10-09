@@ -41,12 +41,23 @@ CREATE TABLE IF NOT EXISTS connection_health_quality_history (
 CREATE INDEX IF NOT EXISTS idx_quality_history_target ON connection_health_quality_history (user_id, admin_account_id, target_id, created_at DESC, id DESC);
 `
 
+const qualityChannelSchema = `CREATE TABLE IF NOT EXISTS connection_health_quality_channels (
+    user_id text NOT NULL,
+    admin_account_id text NOT NULL,
+    target_id text NOT NULL,
+    enabled boolean NOT NULL DEFAULT true,
+    PRIMARY KEY (user_id, admin_account_id, target_id)
+);
+`
+
 type qualityRepository interface {
 	GetQualitySettings(context.Context, string, string) (QualitySettings, error)
 	SaveQualitySettings(context.Context, string, string, QualitySettings) error
 	ListQualityScopes(context.Context) ([]QualityScope, error)
 	ListQualityGroups(context.Context, string, string) ([]QualityGroup, error)
 	SetQualityGroup(context.Context, string, string, string, bool) error
+	ListQualityChannels(context.Context, string, string) ([]QualityChannel, error)
+	SetQualityChannel(context.Context, string, string, string, bool) error
 	ListQualityStates(context.Context, string, string) ([]QualityState, error)
 	SaveQualityResult(context.Context, string, string, []string, QualitySettings, QualityState) (bool, error)
 	ListQualityHistory(context.Context, string, string, []string, int) ([]QualitySample, error)
@@ -117,6 +128,29 @@ func (r *Repository) SetQualityGroup(ctx context.Context, user, workspace, group
 	 ON CONFLICT(user_id,admin_account_id,group_id) DO UPDATE SET enabled=EXCLUDED.enabled`, user, workspace, group, enabled)
 	return err
 }
+func (r *Repository) ListQualityChannels(ctx context.Context, user, workspace string) ([]QualityChannel, error) {
+	rows, err := r.db.Query(ctx, `SELECT target_id,enabled FROM connection_health_quality_channels WHERE user_id=$1 AND admin_account_id=$2`, user, workspace)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []QualityChannel{}
+	for rows.Next() {
+		var channel QualityChannel
+		if err := rows.Scan(&channel.TargetID, &channel.Enabled); err != nil {
+			return nil, err
+		}
+		out = append(out, channel)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) SetQualityChannel(ctx context.Context, user, workspace, target string, enabled bool) error {
+	_, err := r.db.Exec(ctx, `INSERT INTO connection_health_quality_channels(user_id,admin_account_id,target_id,enabled) VALUES($1,$2,$3,$4)
+	 ON CONFLICT(user_id,admin_account_id,target_id) DO UPDATE SET enabled=EXCLUDED.enabled`, user, workspace, target, enabled)
+	return err
+}
+
 func (r *Repository) ListQualityStates(ctx context.Context, user, workspace string) ([]QualityState, error) {
 	rows, err := r.db.Query(ctx, `SELECT state FROM connection_health_quality_states WHERE user_id=$1 AND admin_account_id=$2`, user, workspace)
 	if err != nil {
@@ -161,6 +195,20 @@ func (r *Repository) SaveQualityResult(ctx context.Context, user, workspace stri
 	}
 	if err != nil {
 		return false, err
+	}
+	// Materialize the default-on row and lock it, so a concurrent disable cannot
+	// race the result commit even when this channel has never been configured.
+	if _, err := tx.Exec(ctx, `INSERT INTO connection_health_quality_channels(user_id,admin_account_id,target_id,enabled)
+		VALUES($1,$2,$3,true) ON CONFLICT(user_id,admin_account_id,target_id) DO NOTHING`, user, workspace, state.TargetID); err != nil {
+		return false, err
+	}
+	var channelEnabled bool
+	if err := tx.QueryRow(ctx, `SELECT enabled FROM connection_health_quality_channels
+		WHERE user_id=$1 AND admin_account_id=$2 AND target_id=$3 FOR SHARE`, user, workspace, state.TargetID).Scan(&channelEnabled); err != nil {
+		return false, err
+	}
+	if !channelEnabled {
+		return false, nil
 	}
 	raw, err := json.Marshal(state)
 	if err != nil {

@@ -11,15 +11,16 @@ import (
 )
 
 type fakeQualityRepo struct {
-	mu      sync.Mutex
-	configs map[string]QualitySettings
-	groups  map[string]map[string]bool
-	states  map[string]map[string]QualityState
-	history map[string][]QualitySample
+	mu       sync.Mutex
+	configs  map[string]QualitySettings
+	groups   map[string]map[string]bool
+	channels map[string]map[string]bool
+	states   map[string]map[string]QualityState
+	history  map[string][]QualitySample
 }
 
 func newFakeQualityRepo() *fakeQualityRepo {
-	return &fakeQualityRepo{configs: map[string]QualitySettings{}, groups: map[string]map[string]bool{}, states: map[string]map[string]QualityState{}, history: map[string][]QualitySample{}}
+	return &fakeQualityRepo{configs: map[string]QualitySettings{}, channels: map[string]map[string]bool{}, groups: map[string]map[string]bool{}, states: map[string]map[string]QualityState{}, history: map[string][]QualitySample{}}
 }
 func qualityScopeKey(u, w string) string { return u + "|" + w }
 func (r *fakeQualityRepo) GetQualitySettings(_ context.Context, u, w string) (QualitySettings, error) {
@@ -61,6 +62,26 @@ func (r *fakeQualityRepo) SetQualityGroup(_ context.Context, u, w, g string, en 
 	r.groups[key][g] = en
 	return nil
 }
+func (r *fakeQualityRepo) ListQualityChannels(_ context.Context, u, w string) ([]QualityChannel, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := []QualityChannel{}
+	for id, enabled := range r.channels[qualityScopeKey(u, w)] {
+		out = append(out, QualityChannel{TargetID: id, Enabled: enabled})
+	}
+	return out, nil
+}
+func (r *fakeQualityRepo) SetQualityChannel(_ context.Context, u, w, target string, enabled bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := qualityScopeKey(u, w)
+	if r.channels[key] == nil {
+		r.channels[key] = map[string]bool{}
+	}
+	r.channels[key][target] = enabled
+	return nil
+}
+
 func (r *fakeQualityRepo) ListQualityStates(_ context.Context, u, w string) ([]QualityState, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -74,6 +95,9 @@ func (r *fakeQualityRepo) SaveQualityResult(_ context.Context, u, w string, grou
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	key := qualityScopeKey(u, w)
+	if enabled, exists := r.channels[key][st.TargetID]; exists && !enabled {
+		return false, nil
+	}
 	current := r.configs[key]
 	if !current.Enabled || current.Revision != q.Revision {
 		return false, nil

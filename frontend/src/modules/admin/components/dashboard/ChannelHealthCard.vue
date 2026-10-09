@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Eye, Zap } from 'lucide-vue-next'
+import { Eye, Loader2, Zap } from 'lucide-vue-next'
 import ProbeHistoryStrip from './ProbeHistoryStrip.vue'
 import QualityHistoryStrip from './QualityHistoryStrip.vue'
 import { connectionHealthStateBadgeClass } from '../../composables/useConnectionHealth'
 import type { AdminGroupAccount } from '../../types/connectionHealth'
 
-const props = defineProps<{ account: AdminGroupAccount; historyUnavailable?: boolean; showQuality?: boolean; qualityEnabled?: boolean; qualityUnavailable?: boolean }>()
-const emit = defineEmits<{ probe: [account: AdminGroupAccount]; 'view-events': [account: AdminGroupAccount] }>()
+const props = defineProps<{ account: AdminGroupAccount; historyUnavailable?: boolean; showQuality?: boolean; qualityEnabled?: boolean; qualityUnavailable?: boolean; qualityBusy?: boolean; qualityError?: string }>()
+const emit = defineEmits<{ probe: [account: AdminGroupAccount]; 'view-events': [account: AdminGroupAccount]; 'toggle-quality': [account: AdminGroupAccount] }>()
 const { t } = useI18n()
 const prefix = 'admin.connectionHealth'
 // This flag follows saved channel selection, independently of policy on/off.
@@ -43,7 +43,17 @@ const state = computed(() => {
         <span class="text-muted-foreground">{{ t(`${prefix}.groupDetail.columns.priority`) }} {{ account.priority ?? '—' }}</span>
       </template>
     </ProbeHistoryStrip>
-    <QualityHistoryStrip v-if="selectedForAutomation && showQuality" :samples="account.qualityHistory" :state="account.qualityState" :enabled="qualityEnabled" :selected="account.qualitySelected" :unavailable="qualityUnavailable" />
+    <template v-if="selectedForAutomation && showQuality">
+      <QualityHistoryStrip :samples="account.qualityHistory" :state="account.qualityState" :enabled="qualityEnabled && account.qualityEnabled !== false" :selected="account.qualitySelected" :unavailable="qualityUnavailable">
+        <template #controls>
+          <button type="button" role="switch" :aria-checked="account.qualityEnabled !== false" :aria-label="t(`${prefix}.quality.toggleChannel`, { name: account.name || account.id })" :title="t(`${prefix}.quality.channelSwitchHint`)" :disabled="qualityBusy || qualityUnavailable" class="flex h-6 w-7 shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50" @click.stop="emit('toggle-quality', account)">
+            <Loader2 v-if="qualityBusy" class="h-4 w-4 animate-spin text-muted-foreground" />
+            <span v-else class="relative h-4 w-7 rounded-full transition-colors" :class="account.qualityEnabled !== false ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="account.qualityEnabled !== false ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
+          </button>
+        </template>
+      </QualityHistoryStrip>
+      <p v-if="qualityError" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ qualityError }}</p>
+    </template>
     <div v-if="selectedForAutomation && (account.modelHealth.length || account.unprobedModels?.length)" class="flex flex-wrap gap-2">
       <span v-for="model in account.modelHealth" :key="model.modelName" class="rounded-md px-2 py-1 text-xs" :class="connectionHealthStateBadgeClass(model.state)">{{ model.modelName }} · {{ t(`${prefix}.stateLabels.${model.state}`) }}</span>
       <span v-for="model in account.unprobedModels" :key="`pending-${model.modelName}`" class="rounded-md bg-surface px-2 py-1 text-xs text-muted-foreground">{{ model.modelName }} · {{ t(`${prefix}.notProbed`) }}</span>

@@ -27,6 +27,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 func (r *Repository) EnsureSchema(ctx context.Context) error {
 	statements := []string{
 		qualitySchema,
+		qualityChannelSchema,
 		groupProbeConfigSchema,
 		`CREATE INDEX IF NOT EXISTS idx_connection_health_group_probe_due ON connection_health_group_probe_configs (next_probe_at) WHERE enabled`,
 		`CREATE TABLE IF NOT EXISTS connection_health_policies (

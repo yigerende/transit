@@ -96,6 +96,7 @@ export interface AdminGroupUnprobedModel {
 }
 
 export interface AdminGroupAccount {
+  qualityEnabled?: boolean
   qualitySelected?: boolean
   qualityState?: import('./quality').QualityState
   qualityHistory?: import('./quality').QualitySample[]

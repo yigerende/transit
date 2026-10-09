@@ -38,6 +38,16 @@ func qualityTestPool(t *testing.T) (context.Context, *pgxpool.Pool) {
 	if _, err = pool.Exec(ctx, strings.ReplaceAll(qualitySchema, "CREATE TABLE IF NOT EXISTS", "CREATE TEMP TABLE IF NOT EXISTS")); err != nil {
 		t.Fatal(err)
 	}
+	channelMigration, err := os.ReadFile("../../database/migrations/000023_channel_quality_switches.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.ReplaceAll(strings.TrimSpace(string(channelMigration)), "\r\n", "\n") != strings.TrimSpace(qualityChannelSchema) {
+		t.Fatal("channel migration and runtime schema differ")
+	}
+	if _, err := pool.Exec(ctx, strings.ReplaceAll(qualityChannelSchema, "CREATE TABLE IF NOT EXISTS", "CREATE TEMP TABLE IF NOT EXISTS")); err != nil {
+		t.Fatal(err)
+	}
 	return ctx, pool
 }
 func TestQualityPostgresPersistenceIsolationAndStaleWrites(t *testing.T) {
