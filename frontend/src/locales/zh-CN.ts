@@ -1266,6 +1266,7 @@ export default {
         viewingConnection: '正在查看该目标事件',
         card: {
           latencyLabel: '对话延迟',
+          failureDurationLabel: '失败耗时',
           pingLabel: '节点 PING',
           availabilityLabel: '可用率',
           recentRecordsLabel: '近 60 次记录',

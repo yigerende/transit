@@ -4,12 +4,14 @@ import { useI18n } from 'vue-i18n'
 import { Activity, ArrowRight, X } from 'lucide-vue-next'
 import { matchingProbeIntervalSeconds, remoteActionLabelKey } from '../../composables/useConnectionHealth'
 import ConnectionHealthLinkDetailCard from './ConnectionHealthLinkDetailCard.vue'
+import { latestProbeTiming, PROBE_RESULTS } from '../../utils/connectionHealthProbeTiming'
 import type {
   ConnectionHealthEvent,
   ConnectionHealthPolicy,
   ConnectionHealthState,
   AdminGroupHealth,
   OwnGroupHealth,
+  ModelHealth,
 } from '../../types/connectionHealth'
 
 const props = defineProps<{
@@ -33,7 +35,6 @@ const cardPrefix = `${prefix}.eventsDialog.card`
 
 // 探活结果分类：用于近 60 次记录条着色和可用率计算分母。人工禁用/恢复不算一次探活结果，
 // 不计入可用率分母，只在记录条里以中性色展示这个动作发生过。
-const PROBE_RESULTS = new Set(['ok', 'network_fluctuation', 'rate_limited', 'server_error', 'auth', 'model_not_found', 'invalid_response', 'unsupported'])
 const VALID_STATES = new Set<ConnectionHealthState>(['healthy', 'degraded', 'suspended', 'observing', 'recovering', 'disabled'])
 
 interface StatusCard {
@@ -45,6 +46,7 @@ interface StatusCard {
   provider: string
   state: ConnectionHealthState | ''
   latestLatencyMs: number | null
+  latestProbeFailed: boolean
   lastProbeAt: string | null
   intervalSeconds: number | null
   availabilityPct: number | null
@@ -65,12 +67,12 @@ interface GroupBlock {
 // 用它关联出真实的当前状态和 provider，而不是从事件的 fromState/toState 猜测——
 // 事件本身只记录状态迁移，不等于「当前」状态。
 const connectionMeta = computed(() => {
-  const map = new Map<string, { ownGroupId: string; models: Map<string, { providerFamily: string; state: ConnectionHealthState; lastProbeAt: string | null }> }>()
+  const map = new Map<string, { ownGroupId: string; models: Map<string, ModelHealth> }>()
   for (const group of props.groups) {
     for (const conn of group.connections) {
-      const models = new Map<string, { providerFamily: string; state: ConnectionHealthState; lastProbeAt: string | null }>()
+      const models = new Map<string, ModelHealth>()
       for (const model of conn.models) {
-        models.set(model.modelName, { providerFamily: model.providerFamily, state: model.state, lastProbeAt: model.lastProbeAt })
+        models.set(model.modelName, model)
       }
       map.set(conn.connectionId, { ownGroupId: group.ownGroupId, models })
     }
@@ -83,6 +85,7 @@ type AdminTargetModelMeta = {
   state: ConnectionHealthState | ''
   lastProbeAt: string | null
   lastLatencyMs: number | null
+  lastErrorKey: string
   lastRemoteAction: string
 }
 
@@ -106,6 +109,7 @@ const adminTargetMeta = computed(() => {
           state: model.state,
           lastProbeAt: model.lastProbeAt,
           lastLatencyMs: model.lastLatencyMs,
+          lastErrorKey: model.lastErrorKey,
           lastRemoteAction: model.lastRemoteAction ?? '',
         })
       }
@@ -116,6 +120,7 @@ const adminTargetMeta = computed(() => {
           state: '',
           lastProbeAt: null,
           lastLatencyMs: null,
+          lastErrorKey: '',
           lastRemoteAction: '',
         })
       }
@@ -190,7 +195,7 @@ const buildFocusedCards = (connectionId: string): StatusCard[] => {
         upstreamGroupName: ctx.conn.upstreamGroupName,
         provider: model.providerFamily,
         state: model.state,
-        latestLatencyMs: eventsDesc[0]?.latencyMs ?? model.lastLatencyMs,
+        ...latestProbeTiming(eventsDesc, model),
         lastProbeAt: model.lastProbeAt,
         intervalSeconds: matchingProbeIntervalSeconds(ctx.group.ownGroupId, model.modelName, props.policies),
         availabilityPct,
@@ -213,7 +218,7 @@ const buildFocusedCards = (connectionId: string): StatusCard[] => {
         upstreamGroupName: adminMeta.groupName,
         provider: modelMeta.providerFamily,
         state: modelMeta.state,
-        latestLatencyMs: eventsDesc[0]?.latencyMs ?? modelMeta.lastLatencyMs,
+        ...latestProbeTiming(eventsDesc, modelMeta),
         lastProbeAt: modelMeta.lastProbeAt,
         intervalSeconds: adminProbeInterval(adminMeta, modelName),
         availabilityPct,
@@ -237,7 +242,7 @@ const buildFocusedCards = (connectionId: string): StatusCard[] => {
       upstreamGroupName: latest.upstreamGroupName,
       provider: 'custom',
       state,
-      latestLatencyMs: latest.latencyMs,
+      ...latestProbeTiming(eventsDesc),
       lastProbeAt: latest.createdAt,
       intervalSeconds: null,
       availabilityPct,
@@ -293,7 +298,7 @@ const globalGroups = computed<GroupBlock[]>(() => {
         upstreamGroupName: latest.upstreamGroupName,
         provider: legacyModelMeta?.providerFamily ?? adminModelMeta?.providerFamily ?? 'custom',
         state,
-        latestLatencyMs: latest.latencyMs ?? adminModelMeta?.lastLatencyMs ?? null,
+        ...latestProbeTiming(eventsDesc, legacyModelMeta ?? adminModelMeta),
         lastProbeAt: legacyModelMeta?.lastProbeAt ?? adminModelMeta?.lastProbeAt ?? latest.createdAt,
         intervalSeconds: adminMeta
           ? adminProbeInterval(adminMeta, latest.modelName)
@@ -426,6 +431,7 @@ const nextProbeLabel = (card: StatusCard): string => {
                   :provider="card.provider"
                   :state="card.state"
                   :latest-latency-ms="card.latestLatencyMs"
+                  :latest-probe-failed="card.latestProbeFailed"
                   :availability-pct="card.availabilityPct"
                   :records="card.records"
                   :next-probe-text="nextProbeLabel(card)"
@@ -455,6 +461,7 @@ const nextProbeLabel = (card: StatusCard): string => {
                       :provider="card.provider"
                       :state="card.state"
                       :latest-latency-ms="card.latestLatencyMs"
+                      :latest-probe-failed="card.latestProbeFailed"
                       :availability-pct="card.availabilityPct"
                       :records="card.records"
                       :next-probe-text="nextProbeLabel(card)"

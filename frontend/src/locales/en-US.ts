@@ -1266,6 +1266,7 @@ export default {
         viewingConnection: 'Viewing events for this target',
         card: {
           latencyLabel: 'Chat Latency',
+          failureDurationLabel: 'Time to Failure',
           pingLabel: 'Node PING',
           availabilityLabel: 'Availability',
           recentRecordsLabel: 'Last 60 Records',

@@ -21,6 +21,7 @@ const props = defineProps<{
   provider: string
   state: ConnectionHealthState | ''
   latestLatencyMs: number | null
+  latestProbeFailed: boolean
   availabilityPct: number | null
   records: ConnectionHealthEvent[]
   nextProbeText: string
@@ -65,8 +66,8 @@ const remoteActionText = computed(() => {
 
     <div class="mt-3 grid grid-cols-2 gap-2">
       <div class="rounded-lg border border-border/40 bg-background/60 px-3 py-2">
-        <p class="text-[11px] text-muted-foreground">{{ t(`${cardPrefix}.latencyLabel`) }}</p>
-        <p class="mt-0.5 text-sm font-semibold text-foreground">
+        <p class="text-[11px] text-muted-foreground">{{ t(`${cardPrefix}.${latestProbeFailed ? 'failureDurationLabel' : 'latencyLabel'}`) }}</p>
+        <p class="mt-0.5 text-sm font-semibold" :class="latestProbeFailed ? 'text-red-600 dark:text-red-400' : 'text-foreground'">
           {{ latestLatencyMs != null ? `${latestLatencyMs}ms` : t(`${cardPrefix}.noData`) }}
         </p>
       </div>

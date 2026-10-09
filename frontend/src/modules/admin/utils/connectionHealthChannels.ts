@@ -17,6 +17,9 @@ export const latestChannelProbe = (account: AdminGroupAccount): GroupProbeSample
 
 export const channelsByLatestLatency = (accounts: AdminGroupAccount[]): AdminGroupAccount[] =>
   accounts.map(account => {
-    const latency = latestChannelProbe(account)?.latencyMs
-    return { account, latency: latency != null && Number.isFinite(latency) && latency >= 0 ? latency : Infinity }
-  }).sort((a, b) => a.latency - b.latency).map(({ account }) => account)
+    const latest = latestChannelProbe(account)
+    // A fast error is not a fast conversation. Only the latest successful
+    // result can put a channel ahead of failed or unprobed channels.
+    const latency = latest?.result === 'ok' ? latest.latencyMs : null
+    return { account, succeeded: latest?.result === 'ok', latency: latency != null && Number.isFinite(latency) && latency >= 0 ? latency : Infinity }
+  }).sort((a, b) => Number(b.succeeded) - Number(a.succeeded) || a.latency - b.latency).map(({ account }) => account)
