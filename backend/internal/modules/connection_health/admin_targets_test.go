@@ -30,7 +30,7 @@ func sub2APIProbePolicy(autoRemoteAction bool) Policy {
 	return Policy{
 		ID: "policy-1", UserID: "user1", AdminAccountID: "ws1", Name: "p", Enabled: true, DailyProbeBudget: 1000,
 		AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: autoRemoteAction,
-		FailureThreshold: 3, SuccessThreshold: 2, CooldownSeconds: 300, ObservationSeconds: 300, RecoveryStepPercent: 25,
+		FailureThreshold: 1, SuccessThreshold: 2, CooldownSeconds: 300, ObservationSeconds: 300, RecoveryStepPercent: 25,
 		ModelTargets: []ModelTarget{{ID: "t1", PolicyID: "policy-1", ModelName: "gpt-4o", ProviderFamily: ProviderOpenAI, Enabled: true, MaxProbeTokens: 1}},
 	}
 }
@@ -111,8 +111,8 @@ func TestProbeTargetOnce_Sub2APIAutoRemoteRestoreUpdatesActive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(results) != 1 || results[0].State != StateRecovering {
-		t.Fatalf("expected transition to recovering after success threshold, got %+v", results)
+	if len(results) != 1 || results[0].State != StateHealthy {
+		t.Fatalf("expected full recovery after success threshold, got %+v", results)
 	}
 	if len(platform.sub2APICalls) != 1 || platform.sub2APICalls[0].accountID != "acc-1" || platform.sub2APICalls[0].status != "active" {
 		t.Fatalf("expected one call accountID=acc-1 status=active, got %+v", platform.sub2APICalls)
@@ -195,7 +195,7 @@ func TestProbeTargetOnce_Sub2APIAutoRemoteRestoreFailureRecordsFailedAction(t *t
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(results) != 1 || results[0].State != StateRecovering {
+	if len(results) != 1 || results[0].State != StateHealthy {
 		t.Fatalf("expected transition to recovering, got %+v", results)
 	}
 	st := repo.states[targetID]["gpt-4o"]

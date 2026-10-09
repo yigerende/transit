@@ -27,259 +27,86 @@ type TransitionOutput struct {
 	TriggerRemoteRestore bool
 }
 
-// isHardFailure 分类：5xx、认证失败、模型不存在，无需累计失败次数即可直接暂停。
-func isHardFailure(result ResultKey) bool {
+// Every completed failure follows the same threshold, including transport errors,
+// timeouts, authentication errors, unavailable models and server errors.
+func isProbeFailure(result ResultKey) bool {
 	switch result {
-	case ResultServerError, ResultAuth, ResultModelNotFound:
+	case ResultServerError, ResultAuth, ResultModelNotFound,
+		ResultNetworkFluctuation, ResultRateLimited, ResultInvalidResponse:
 		return true
 	default:
 		return false
 	}
 }
 
-// isSoftFailure 分类：网络波动、限流、响应无法解析，先降级观察，达到阈值才暂停。
-func isSoftFailure(result ResultKey) bool {
-	switch result {
-	case ResultNetworkFluctuation, ResultRateLimited, ResultInvalidResponse:
-		return true
-	default:
-		return false
-	}
-}
-
-// Transition 是健康状态机的核心决策函数。disabled 只能人工进出，探活结果不会自动改变它。
+// Transition changes health/actions only at the configured consecutive thresholds.
+// Disabled remains manual. Suspension never changes the probe interval.
 func Transition(in TransitionInput) TransitionOutput {
-	if in.Current == StateDisabled {
-		return TransitionOutput{
-			NextState:            StateDisabled,
-			Weight:               0,
-			ConsecutiveFailures:  in.ConsecutiveFailures,
-			ConsecutiveSuccesses: in.ConsecutiveSuccesses,
-			ObservingUntil:       in.ObservingUntil,
-		}
-	}
-	if !in.Policy.AutoSuspendEnabled {
-		return transitionWithoutSuspension(in)
-	}
-
-	step := stepPercent(in.Policy)
-
-	switch {
-	case in.Result == ResultOK:
-		return transitionOnSuccess(in, step)
-	case isHardFailure(in.Result):
-		return transitionOnHardFailure(in)
-	case isSoftFailure(in.Result):
-		return transitionOnSoftFailure(in, step)
-	default:
-		// unsupported 等非探活结果不驱动状态机，原样保持。
-		return TransitionOutput{
-			NextState:            in.Current,
-			Weight:               in.CurrentWeight,
-			ConsecutiveFailures:  in.ConsecutiveFailures,
-			ConsecutiveSuccesses: in.ConsecutiveSuccesses,
-			ObservingUntil:       in.ObservingUntil,
-		}
-	}
-}
-
-// Without suspension, health only influences priority. Do not reduce forwarding
-// weight, enter cooldown/observation, or request upstream status/weight changes.
-func transitionWithoutSuspension(in TransitionInput) TransitionOutput {
-	state := stateWithoutSuspension(ConnectionHealthState{State: in.Current}, in.Policy)
+	current := stateWithoutSuspension(ConnectionHealthState{State: in.Current, CurrentWeight: in.CurrentWeight}, in.Policy)
 	out := TransitionOutput{
-		NextState: state.State, Weight: 100,
+		NextState: current.State, Weight: current.CurrentWeight,
 		ConsecutiveFailures: in.ConsecutiveFailures, ConsecutiveSuccesses: in.ConsecutiveSuccesses,
+	}
+	if current.State == StateDisabled {
+		return out
 	}
 	switch {
 	case in.Result == ResultOK:
 		out.ConsecutiveFailures = 0
 		out.ConsecutiveSuccesses++
-		if in.Current == StateHealthy || out.ConsecutiveSuccesses >= successThreshold(in.Policy) {
+		if current.State == StateHealthy || out.ConsecutiveSuccesses >= successThreshold(in.Policy) {
 			out.NextState = StateHealthy
+			out.Weight = 100
+			out.TriggerRemoteRestore = in.Policy.AutoSuspendEnabled && current.State != StateHealthy
 		}
-	case isHardFailure(in.Result), isSoftFailure(in.Result):
-		out.NextState = StateDegraded
-		out.ConsecutiveFailures++
+	case isProbeFailure(in.Result):
 		out.ConsecutiveSuccesses = 0
+		out.ConsecutiveFailures++
+		if current.State == StateSuspended || out.ConsecutiveFailures >= failureThreshold(in.Policy) {
+			out.NextState = StateDegraded
+			out.Weight = 100
+			if in.Policy.AutoSuspendEnabled {
+				out.NextState = StateSuspended
+				out.Weight = 0
+				out.TriggerRemoteDegrade = current.State != StateSuspended
+			}
+		}
 	}
 	return out
 }
 
-// Apply the current permission to old snapshots as well, so turning suspension
-// off immediately clears its display and scheduling gates. Manual disabled stays.
+// Normalize old snapshots so obsolete timers and partial weights cannot delay a
+// probe or bypass a threshold. Old observation waits for the success threshold;
+// old gradual recovery keeps degraded health until that threshold is reached.
 func stateWithoutSuspension(state ConnectionHealthState, policy Policy) ConnectionHealthState {
-	if policy.AutoSuspendEnabled || state.State == StateDisabled {
+	state.CooldownUntil = nil
+	state.ObservingUntil = nil
+	if state.State == StateDisabled {
+		state.CurrentWeight = 0
 		return state
 	}
 	switch state.State {
-	case StateSuspended, StateObserving, StateRecovering:
+	case StateObserving:
+		state.State = StateSuspended
+	case StateRecovering:
+		state.State = StateDegraded
+	}
+	if state.State == StateSuspended && !policy.AutoSuspendEnabled {
 		state.State = StateDegraded
 	}
 	state.CurrentWeight = 100
-	state.CooldownUntil = nil
-	state.ObservingUntil = nil
+	if state.State == StateSuspended {
+		state.CurrentWeight = 0
+	}
 	return state
 }
 
-func stepPercent(p Policy) int {
-	if p.RecoveryStepPercent <= 0 {
-		return 25
-	}
-	return p.RecoveryStepPercent
-}
-
 func successThreshold(p Policy) int {
-	if p.SuccessThreshold <= 0 {
-		return 2
-	}
-	return p.SuccessThreshold
+	return defaultInt(p.SuccessThreshold, 2)
 }
 
 func failureThreshold(p Policy) int {
-	if p.FailureThreshold <= 0 {
-		return 3
-	}
-	return p.FailureThreshold
-}
-
-func transitionOnSuccess(in TransitionInput, step int) TransitionOutput {
-	out := TransitionOutput{
-		ConsecutiveFailures:  0,
-		ConsecutiveSuccesses: in.ConsecutiveSuccesses + 1,
-	}
-
-	switch in.Current {
-	case StateHealthy:
-		out.NextState = StateHealthy
-		out.Weight = 100
-
-	case StateDegraded:
-		weight := minInt(100, in.CurrentWeight+step)
-		if weight >= 100 {
-			out.NextState = StateHealthy
-			out.Weight = 100
-		} else {
-			out.NextState = StateDegraded
-			out.Weight = weight
-		}
-
-	case StateSuspended:
-		// 冷却后探活成功：进入 observing，权重从 0 起步观察，不立即恢复调用。
-		observingUntil := in.Now.Add(observationWindow(in.Policy))
-		out.NextState = StateObserving
-		out.Weight = 0
-		out.ObservingUntil = &observingUntil
-		out.ConsecutiveSuccesses = 1
-
-	case StateObserving:
-		out.ObservingUntil = in.ObservingUntil
-		// 观察期和连续成功阈值必须同时满足。旧数据可能没有 observing_until，
-		// 此时只按成功阈值判断，保持升级前已进入 observing 的状态可继续恢复。
-		observationFinished := in.ObservingUntil == nil || !in.Now.Before(*in.ObservingUntil)
-		if observationFinished && out.ConsecutiveSuccesses >= successThreshold(in.Policy) {
-			out.NextState = StateRecovering
-			out.Weight = minInt(100, step)
-			out.TriggerRemoteRestore = true
-		} else {
-			out.NextState = StateObserving
-			out.Weight = in.CurrentWeight
-		}
-
-	case StateRecovering:
-		weight := minInt(100, in.CurrentWeight+step)
-		if weight >= 100 {
-			out.NextState = StateHealthy
-			out.Weight = 100
-		} else {
-			out.NextState = StateRecovering
-			out.Weight = weight
-		}
-		out.TriggerRemoteRestore = true
-
-	default:
-		out.NextState = StateHealthy
-		out.Weight = 100
-	}
-
-	return out
-}
-
-func transitionOnSoftFailure(in TransitionInput, step int) TransitionOutput {
-	out := TransitionOutput{
-		ConsecutiveSuccesses: 0,
-		ConsecutiveFailures:  in.ConsecutiveFailures + 1,
-	}
-
-	switch in.Current {
-	case StateHealthy:
-		out.NextState = StateDegraded
-		out.Weight = maxInt(0, 100-step)
-
-	case StateDegraded, StateObserving, StateRecovering:
-		if out.ConsecutiveFailures >= failureThreshold(in.Policy) {
-			cooldownUntil := in.Now.Add(cooldownWindow(in.Policy))
-			out.NextState = StateSuspended
-			out.Weight = 0
-			out.CooldownUntil = &cooldownUntil
-			out.TriggerRemoteDegrade = true
-		} else {
-			out.NextState = StateDegraded
-			out.Weight = maxInt(0, in.CurrentWeight-step)
-		}
-
-	case StateSuspended:
-		cooldownUntil := in.Now.Add(cooldownWindow(in.Policy))
-		out.NextState = StateSuspended
-		out.Weight = 0
-		out.CooldownUntil = &cooldownUntil
-
-	default:
-		out.NextState = StateDegraded
-		out.Weight = maxInt(0, 100-step)
-	}
-
-	return out
-}
-
-func transitionOnHardFailure(in TransitionInput) TransitionOutput {
-	cooldownUntil := in.Now.Add(cooldownWindow(in.Policy))
-	return TransitionOutput{
-		NextState:            StateSuspended,
-		Weight:               0,
-		ConsecutiveFailures:  in.ConsecutiveFailures + 1,
-		ConsecutiveSuccesses: 0,
-		CooldownUntil:        &cooldownUntil,
-		TriggerRemoteDegrade: in.Current != StateSuspended,
-	}
-}
-
-func observationWindow(p Policy) time.Duration {
-	if p.ObservationSeconds <= 0 {
-		return 300 * time.Second
-	}
-	return time.Duration(p.ObservationSeconds) * time.Second
-}
-
-func cooldownWindow(p Policy) time.Duration {
-	if p.CooldownSeconds <= 0 {
-		return 300 * time.Second
-	}
-	return time.Duration(p.CooldownSeconds) * time.Second
-}
-
-// ProbeBackoff 按连续失败次数返回下一次探活前的退避时长：2、5、10 分钟，超过后维持 10 分钟。
-func ProbeBackoff(consecutiveFailures int) time.Duration {
-	switch {
-	case consecutiveFailures <= 0:
-		return 0
-	case consecutiveFailures == 1:
-		return 2 * time.Minute
-	case consecutiveFailures == 2:
-		return 5 * time.Minute
-	default:
-		return 10 * time.Minute
-	}
+	return defaultInt(p.FailureThreshold, 3)
 }
 
 func minInt(a, b int) int {

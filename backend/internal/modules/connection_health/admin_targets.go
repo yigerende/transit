@@ -122,7 +122,7 @@ func candidateModelSpecs(targetModels []string, policies []Policy) []probeModelS
 			}
 			if index, dup := seen[name]; dup {
 				// 同一模型被多条策略覆盖时使用稳定且偏安全的策略：关闭远端动作优先，
-				// 然后选择更低失败阈值、更长观察期和更短探活间隔，最后按 ID 决胜。
+				// 然后选择更低失败阈值、更高恢复成功阈值和更短探活间隔，最后按 ID 决胜。
 				if preferProbePolicy(p, pool[index].policy) {
 					pool[index] = probeModelSpec{
 						modelName: name, providerFamily: t.ProviderFamily, maxProbeTokens: t.MaxProbeTokens,
@@ -168,8 +168,8 @@ func preferProbePolicy(candidate Policy, current Policy) bool {
 	if failureThreshold(candidate) != failureThreshold(current) {
 		return failureThreshold(candidate) < failureThreshold(current)
 	}
-	if observationWindow(candidate) != observationWindow(current) {
-		return observationWindow(candidate) > observationWindow(current)
+	if successThreshold(candidate) != successThreshold(current) {
+		return successThreshold(candidate) > successThreshold(current)
 	}
 	if candidate.ProbeIntervalSeconds != current.ProbeIntervalSeconds {
 		return defaultInt(candidate.ProbeIntervalSeconds, 60) < defaultInt(current.ProbeIntervalSeconds, 60)

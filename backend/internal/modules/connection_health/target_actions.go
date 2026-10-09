@@ -55,15 +55,16 @@ func (s *Service) reconcileTargetRemoteAction(
 	if err != nil {
 		return "", err
 	}
-	allHealthy, blocked, minWeight := aggregateTargetStates(states)
+	allHealthy, blocked := aggregateTargetStates(states)
 	allHealthy = allHealthy && statesComplete
-	// 普通 degraded 只记录模型健康；只有已经接管或进入暂停/观察/恢复阶段时才修改上游。
-	if stored == nil && (!statesComplete || (!blocked && !hasRecoveringState(states))) {
+	// Only a threshold-triggered suspension can take over an unmanaged target.
+	// Preserve ownership evidence for channels disabled by older versions.
+	if stored == nil && (!statesComplete || (!blocked && !legacyTargetWasManaged(states))) {
 		return "", nil
 	}
 	// 已接管目标只有在全部受控模型都有状态后才能开始恢复。缺失状态不能被当作健康，
 	// 但如果已有模型明确进入暂停，仍需允许下面的 blocked 分支继续执行降级动作。
-	if stored != nil && !statesComplete && !blocked {
+	if !allHealthy && !blocked {
 		return "", nil
 	}
 
@@ -102,7 +103,7 @@ func (s *Service) reconcileTargetRemoteAction(
 		return RemoteActionSkippedTargetConflict, nil
 	}
 
-	desiredStatus, desiredWeight := desiredTargetState(target.Platform, allHealthy, blocked, minWeight, *stored)
+	desiredStatus, desiredWeight := desiredTargetState(target.Platform, allHealthy, *stored)
 	if targetStateEqual(target, currentStatus, currentWeight, desiredStatus, desiredWeight) {
 		stored.LastAppliedStatus = desiredStatus
 		stored.LastAppliedWeight = cloneIntPointer(desiredWeight)
@@ -291,64 +292,30 @@ func legacyOriginalTargetState(platform string) (string, *int) {
 	return "active", nil
 }
 
-func aggregateTargetStates(states []ConnectionHealthState) (allHealthy bool, blocked bool, minWeight int) {
+func aggregateTargetStates(states []ConnectionHealthState) (allHealthy bool, blocked bool) {
 	allHealthy = true
-	minWeight = 100
 	for _, state := range states {
 		if state.State != StateHealthy {
 			allHealthy = false
 		}
-		if state.CurrentWeight < minWeight {
-			minWeight = state.CurrentWeight
-		}
-		if state.State == StateSuspended || state.State == StateObserving || state.State == StateDisabled || state.CurrentWeight <= 0 {
+		// Legacy partial weights must never suspend a channel before its threshold.
+		if state.State == StateSuspended || state.State == StateObserving || state.State == StateDisabled {
 			blocked = true
 		}
 	}
-	return allHealthy, blocked, minWeight
+	return allHealthy, blocked
 }
 
-func hasRecoveringState(states []ConnectionHealthState) bool {
-	for _, state := range states {
-		if state.State == StateRecovering {
-			return true
-		}
-	}
-	return false
-}
-
-func desiredTargetState(platform string, allHealthy bool, blocked bool, minWeight int, stored TargetActionState) (string, *int) {
+// Callers only apply an explicit suspension or a full threshold-based recovery.
+func desiredTargetState(platform string, allHealthy bool, stored TargetActionState) (string, *int) {
 	if allHealthy {
 		return stored.OriginalStatus, cloneIntPointer(stored.OriginalWeight)
 	}
 	if platform == string(upstream.PlatformNewAPI) {
-		if blocked {
-			weight := 0
-			return "2", &weight
-		}
-		weight := scaledTargetWeight(stored.OriginalWeight, minWeight)
-		return "1", &weight
+		weight := 0
+		return "2", &weight
 	}
-	if blocked {
-		return "inactive", nil
-	}
-	return "active", nil
-}
-
-// scaledTargetWeight converts the state machine's 0-100 recovery percentage into the
-// channel's real weight. Writing the percentage directly could increase traffic for a
-// channel whose original weight was below the current recovery percentage.
-func scaledTargetWeight(originalWeight *int, percentage int) int {
-	base := 100
-	if originalWeight != nil {
-		base = maxInt(0, *originalWeight)
-	}
-	percentage = maxInt(0, minInt(100, percentage))
-	if base == 0 || percentage == 0 {
-		return 0
-	}
-	// Round up so a positive original weight receives at least one unit during recovery.
-	return (base*percentage + 99) / 100
+	return "inactive", nil
 }
 
 func normalizeTargetStatus(platform string, status string) string {

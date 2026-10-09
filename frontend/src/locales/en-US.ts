@@ -1362,9 +1362,6 @@ export default {
         dailyBudgetLabel: 'Daily Probe Budget',
         failureThresholdLabel: 'Failure Threshold',
         successThresholdLabel: 'Recovery Success Threshold',
-        cooldownLabel: 'Cooldown (seconds)',
-        observationLabel: 'Observation Window (seconds)',
-        recoveryStepLabel: 'Recovery Step Percent',
         autoDegradeLabel: 'Auto Degrade',
         autoDegradeHelp: 'Update health from probes for priority sorting. Suspension requires separate permission.',
         autoRemoteActionLabel: 'Auto Remote Action',
@@ -1388,16 +1385,13 @@ export default {
           ownGroup: 'Describes the business group scope for this policy. Independent group-health probing enables policies through explicit target assignments and uses this policy\'s enabled model targets as the model pool. If the target has its own model list, the intersection of target models and the policy model pool is used; otherwise the policy model pool is used directly.',
           modelTargets: 'The models this policy probes. Both automatic scheduling and manual probes run against exactly these models.',
           provider: 'A probe policy can only use one provider (openai / anthropic / gemini / custom). Every model target added below automatically uses this provider, so a single policy never mixes providers.',
-          probeInterval: 'Automatic scheduling checks whether a model is due using "last probe time + this interval". Consecutive failures also trigger an escalating 2/5/10-minute backoff on the backend.',
+          probeInterval: 'The next probe is due one configured interval after the last probe started, whether it succeeded, failed, or the channel is suspended.',
           dailyBudget: 'Caps how many real probe requests this workspace can run per day. Once the budget is used up, real probe requests are skipped to avoid excessive cost — this is expected, not a system error.',
-          failureThreshold: 'With suspension allowed, consecutive soft failures at this threshold suspend the channel; hard failures may suspend immediately. Otherwise failures only affect health and priority.',
-          successThreshold: 'During the observation window, this many consecutive successful probes are required before the link is considered truly recovered and returns to healthy.',
-          cooldown: 'After a link is suspended, the scheduler will not run automatic probes against it until this cooldown period ends.',
-          observation: 'After a manual restore or an automatic recovery flow, the link enters an observation window — consecutive probe results here confirm whether it is actually stable again.',
-          recoveryStep: 'During recovery, each successful probe raises local weight by this percentage step, instead of jumping straight to 100%.',
-          autoDegrade: 'Update health from probe results. With suspension off, health only affects priority: forwarding weight stays unchanged and there is no suspension or cooldown. Turning Auto Degrade off records results only.',
+          failureThreshold: 'All probe failures count, including timeouts, network errors, rate limits and authentication failures. Health, priority or suspension changes at this consecutive failure threshold, according to the automation switches. A success resets the failure count.',
+          successThreshold: 'Reaching this consecutive success threshold restores healthy status and the channel according to the automation switches. A failure resets the success count.',
+          autoDegrade: 'Update health at the consecutive failure and success thresholds. With suspension disabled, health only affects priority. Disabling Auto Degrade only records results.',
           autoRemoteAction: 'Auto Degrade, Auto Remote Action and Allow Channel Suspension must all be enabled to change Sub2API account status or NewAPI channel status/weight. Upstream priority has its own setting.',
-          autoSuspend: 'When off, repeated and hard failures never suspend channels, reduce forwarding weight or start suspension cooldown. Health still affects priority. Enabling allows local suspension; changing upstream status also requires Auto Remote Action. Turning off restores system-managed channels to their original state without enabling manually disabled channels.',
+          autoSuspend: 'Allow local suspension at the consecutive failure threshold. Upstream suspension also requires Auto Degrade and Auto Remote Action. When off, only health and priority change; system-disabled channels return to their original state while manually disabled channels are preserved.',
           priorityMode: 'Group multiplier sorting maps lower multipliers to higher upstream priority. Health tier outranks price; targets in multiple groups use the lowest multiplier; automation stops when it detects a manual priority change.'
         },
         runFlow: {
@@ -1416,11 +1410,11 @@ export default {
             },
             schedulerCadence: {
               title: '3. Automatic scheduling cadence',
-              description: 'A dedicated backend scheduler scans for due probe tasks roughly every 30 seconds across all probeable targets in the current workspace. The scheduling unit is "one probe target (account/channel) + one model" — multiple candidate models under the same target are split into separate tasks that are each evaluated independently.'
+              description: 'A dedicated backend scheduler checks loaded channels for due probes every second, while upstream group and channel lists refresh independently in the background. The scheduling unit is "one probe target (account/channel) + one model" — multiple candidate models under the same target are split into separate tasks that are each evaluated independently.'
             },
             dueCheck: {
               title: '4. How "due" is determined',
-              description: 'A (target, model) pair that has never been probed is scheduled for a probe as soon as possible. Once it has been probed, the next due time is "last probe time + the policy\'s probe interval". Consecutive failures additionally trigger an escalating 2 / 5 / 10-minute backoff so a persistently broken target isn\'t retried too aggressively.'
+              description: 'A target/model that has never been probed is scheduled as soon as possible. Subsequent probes are due one configured interval after the last probe started. Successful, failed and suspended targets use the same interval.'
             },
             budget: {
               title: '5. Budget rules',
@@ -1428,11 +1422,11 @@ export default {
             },
             stateTransition: {
               title: '6. State transitions',
-              description: 'With Allow Channel Suspension off, failures only affect health and priority; forwarding weight remains unchanged. When enabled: A successful probe clears that model\'s consecutive failure count. Consecutive soft failures (e.g. network fluctuation, rate limiting — recoverable errors) first move the link into a degraded state and gradually lower local weight by the recovery step percentage before the failure threshold is reached; once the threshold is reached the model is suspended. Some hard failures (e.g. auth failure, model not found) may skip degradation and suspend the model immediately.'
+              description: 'With Auto Degrade enabled, all failures count toward the consecutive failure threshold before changing health and applying the configured actions. With suspension disabled, health only affects priority. With suspension enabled, the threshold can suspend the channel. Success resets consecutive failures; failure resets consecutive successes.'
             },
-            cooldownObservation: {
-              title: '7. Cooldown and observation',
-              description: 'Suspension cooldown only applies when Allow Channel Suspension is enabled. Once a target/model is suspended, it enters the policy\'s configured cooldown period, during which the scheduler will not run automatic probes against it. After cooldown ends — or after an admin manually restores it — the target enters an observation phase: consecutive probe results during this window determine whether the target has genuinely stabilized, and only enough consecutive successes to reach the "recovery success threshold" moves it back to healthy.'
+            recoveryThreshold: {
+              title: '7. Recovery at the success threshold',
+              description: 'Suspended channels continue probing at the configured interval. Reaching the consecutive success threshold restores healthy status and, when automation permits, restores the original channel status and weight. Every controlled model must be healthy before a channel with multiple models is restored.'
             },
             autoDegradeVsRemoteAction: {
               title: '8. Auto Degrade vs. Auto Remote Action',
@@ -1444,7 +1438,7 @@ export default {
             },
             nextProbeCopy: {
               title: '10. What "next probe" copy means',
-              description: '"Next probe: due, waiting for scheduler" means the time-based due point has already passed, but actually running the probe still requires the backend scheduler\'s next scan (roughly every 30 seconds), an available concurrent probe slot, enough remaining daily probe budget, and the target not currently being in failure backoff or cooldown. A probe only actually fires once all of these conditions are met at the same time.'
+              description: 'Due, waiting for scheduler means the configured interval has elapsed. Execution still requires a scheduler scan, available concurrency and remaining daily probe budget.'
             }
           }
         },

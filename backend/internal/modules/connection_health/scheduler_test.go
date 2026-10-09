@@ -48,44 +48,35 @@ func TestRecordTargetCredentialUnavailable_PreservesLegacyRemoteAction(t *testin
 	}
 }
 
-func TestIsDue_WithinCooldownIsNotDue(t *testing.T) {
-	repo := newFakeRepository()
-	future := time.Now().Add(1 * time.Minute)
-	repo.states["conn-1"] = map[string]ConnectionHealthState{
-		"m1": {ConnectionID: "conn-1", ModelName: "m1", State: StateSuspended, CooldownUntil: &future},
-	}
-	svc := &Service{repo: repo}
-	if svc.isDue(context.Background(), "conn-1", "m1", Policy{ProbeIntervalSeconds: 60, AutoSuspendEnabled: true}, time.Now()) {
-		t.Fatalf("expected target within cooldown to not be due")
-	}
-}
-
-func TestIsDue_RespectsIntervalAndBackoff(t *testing.T) {
-	repo := newFakeRepository()
+func TestIsDue_UsesConfiguredIntervalEvenAfterFailuresOrSuspension(t *testing.T) {
 	now := time.Now()
-	recentProbe := now.Add(-10 * time.Second)
-	repo.states["conn-1"] = map[string]ConnectionHealthState{
-		"m1": {ConnectionID: "conn-1", ModelName: "m1", State: StateHealthy, LastProbeAt: &recentProbe},
-	}
-	svc := &Service{repo: repo}
-
-	if svc.isDue(context.Background(), "conn-1", "m1", Policy{ProbeIntervalSeconds: 60}, now) {
-		t.Fatalf("expected not due within interval")
-	}
-
-	repo.states["conn-1"] = map[string]ConnectionHealthState{
-		"m1": {ConnectionID: "conn-1", ModelName: "m1", State: StateDegraded, LastProbeAt: &recentProbe, ConsecutiveFailures: 2},
-	}
-	if svc.isDue(context.Background(), "conn-1", "m1", Policy{ProbeIntervalSeconds: 60}, now) {
-		t.Fatalf("expected backoff window to still be active 10s after failure")
-	}
-
-	longAgo := now.Add(-6 * time.Minute)
-	repo.states["conn-1"] = map[string]ConnectionHealthState{
-		"m1": {ConnectionID: "conn-1", ModelName: "m1", State: StateDegraded, LastProbeAt: &longAgo, ConsecutiveFailures: 2},
-	}
-	if !svc.isDue(context.Background(), "conn-1", "m1", Policy{ProbeIntervalSeconds: 60}, now) {
-		t.Fatalf("expected due after backoff window elapses")
+	future := now.Add(time.Hour)
+	for _, state := range []State{StateHealthy, StateDegraded, StateSuspended, StateObserving, StateRecovering} {
+		for _, failures := range []int{0, 1, 2, 3, 20} {
+			for _, interval := range []int{1, 60, 120} {
+				t.Run(fmt.Sprintf("%s/%d/%d", state, failures, interval), func(t *testing.T) {
+					repo := newFakeRepository()
+					last := now
+					repo.states["target"] = map[string]ConnectionHealthState{"model": {
+						ConnectionID: "target", ModelName: "model", State: state, LastProbeAt: &last,
+						ConsecutiveFailures: failures, CooldownUntil: &future, ObservingUntil: &future,
+					}}
+					svc := &Service{repo: repo}
+					policy := Policy{ProbeIntervalSeconds: interval, AutoSuspendEnabled: true}
+					dueAt := last.Add(time.Duration(interval) * time.Second)
+					if svc.isDue(context.Background(), "target", "model", policy, dueAt.Add(-time.Nanosecond)) {
+						t.Fatal("must not probe before configured interval")
+					}
+					if !svc.isDue(context.Background(), "target", "model", policy, dueAt) {
+						t.Fatal("failure count and legacy timers must not delay a due probe")
+					}
+					stored := repo.states["target"]["model"]
+					if stored.CooldownUntil != nil || stored.ObservingUntil != nil {
+						t.Fatal("legacy timers must be cleared")
+					}
+				})
+			}
+		}
 	}
 }
 

@@ -260,9 +260,6 @@ export interface ConnectionHealthPolicy {
   maxLatencyMs?: number
   failureThreshold: number
   successThreshold: number
-  cooldownSeconds: number
-  observationSeconds: number
-  recoveryStepPercent: number
   autoDegradeEnabled: boolean
   autoRemoteActionEnabled: boolean
   autoSuspendEnabled?: boolean
@@ -318,9 +315,6 @@ export interface PolicyInput {
   maxLatencyMs?: number
   failureThreshold?: number
   successThreshold?: number
-  cooldownSeconds?: number
-  observationSeconds?: number
-  recoveryStepPercent?: number
   autoDegradeEnabled: boolean
   autoRemoteActionEnabled: boolean
   autoSuspendEnabled?: boolean

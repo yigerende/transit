@@ -40,9 +40,6 @@ const DEFAULTS = {
   maxLatencyMs: 20000,
   failureThreshold: 3,
   successThreshold: 2,
-  cooldownSeconds: 300,
-  observationSeconds: 300,
-  recoveryStepPercent: 25,
   dailyProbeBudget: 1000,
   maxProbeTokens: 1,
 }
@@ -54,9 +51,6 @@ const probeIntervalSeconds = ref(DEFAULTS.probeIntervalSeconds)
 const maxLatencyMs = ref(DEFAULTS.maxLatencyMs)
 const failureThreshold = ref(DEFAULTS.failureThreshold)
 const successThreshold = ref(DEFAULTS.successThreshold)
-const cooldownSeconds = ref(DEFAULTS.cooldownSeconds)
-const observationSeconds = ref(DEFAULTS.observationSeconds)
-const recoveryStepPercent = ref(DEFAULTS.recoveryStepPercent)
 const dailyProbeBudget = ref(DEFAULTS.dailyProbeBudget)
 const autoDegradeEnabled = ref(true)
 const autoRemoteActionEnabled = ref(false)
@@ -123,9 +117,6 @@ const resetForm = () => {
   maxLatencyMs.value = p?.maxLatencyMs ?? DEFAULTS.maxLatencyMs
   failureThreshold.value = p?.failureThreshold ?? DEFAULTS.failureThreshold
   successThreshold.value = p?.successThreshold ?? DEFAULTS.successThreshold
-  cooldownSeconds.value = p?.cooldownSeconds ?? DEFAULTS.cooldownSeconds
-  observationSeconds.value = p?.observationSeconds ?? DEFAULTS.observationSeconds
-  recoveryStepPercent.value = p?.recoveryStepPercent ?? DEFAULTS.recoveryStepPercent
   dailyProbeBudget.value = p?.dailyProbeBudget ?? DEFAULTS.dailyProbeBudget
   autoDegradeEnabled.value = p?.autoDegradeEnabled ?? true
   autoRemoteActionEnabled.value = autoDegradeEnabled.value && (p?.autoRemoteActionEnabled ?? false)
@@ -228,9 +219,6 @@ const handleSave = () => {
     maxLatencyMs: maxLatencyMs.value,
     failureThreshold: failureThreshold.value,
     successThreshold: successThreshold.value,
-    cooldownSeconds: cooldownSeconds.value,
-    observationSeconds: observationSeconds.value,
-    recoveryStepPercent: recoveryStepPercent.value,
     dailyProbeBudget: dailyProbeBudget.value,
     autoDegradeEnabled: isMultiplierOnly.value ? false : autoDegradeEnabled.value,
     autoRemoteActionEnabled: isMultiplierOnly.value ? false : autoRemoteActionEnabled.value,
@@ -488,27 +476,6 @@ const handleSave = () => {
                     <HelpTooltip :text="t(`${prefix}.tooltips.successThreshold`)" />
                   </label>
                   <input v-model.number="successThreshold" type="number" min="1" class="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-sm text-foreground" />
-                </div>
-                <div class="space-y-1.5">
-                  <label class="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                    {{ t(`${prefix}.cooldownLabel`) }}
-                    <HelpTooltip :text="t(`${prefix}.tooltips.cooldown`)" />
-                  </label>
-                  <input v-model.number="cooldownSeconds" type="number" min="1" class="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-sm text-foreground" />
-                </div>
-                <div class="space-y-1.5">
-                  <label class="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                    {{ t(`${prefix}.observationLabel`) }}
-                    <HelpTooltip :text="t(`${prefix}.tooltips.observation`)" />
-                  </label>
-                  <input v-model.number="observationSeconds" type="number" min="1" class="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-sm text-foreground" />
-                </div>
-                <div class="col-span-2 space-y-1.5">
-                  <label class="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                    {{ t(`${prefix}.recoveryStepLabel`) }}
-                    <HelpTooltip :text="t(`${prefix}.tooltips.recoveryStep`)" />
-                  </label>
-                  <input v-model.number="recoveryStepPercent" type="number" min="1" max="100" class="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-sm text-foreground" />
                 </div>
               </div>
 

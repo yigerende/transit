@@ -14,7 +14,7 @@ func TestReconcileTargetRemoteAction_SuspendedSiblingBlocksRestore(t *testing.T)
 	targetID := "sub2api:ws1:acc-1"
 	repo.states[targetID] = map[string]ConnectionHealthState{
 		"model-a": {ConnectionID: targetID, ModelName: "model-a", State: StateSuspended, CurrentWeight: 0},
-		"model-b": {ConnectionID: targetID, ModelName: "model-b", State: StateRecovering, CurrentWeight: 25},
+		"model-b": {ConnectionID: targetID, ModelName: "model-b", State: StateHealthy, CurrentWeight: 100},
 	}
 	repo.targetActionStates["user1|ws1|"+targetID] = TargetActionState{
 		UserID: "user1", AdminAccountID: "ws1", TargetID: targetID,
@@ -73,7 +73,7 @@ func TestReconcileTargetRemoteAction_RestoresOriginalNewAPIWeight(t *testing.T) 
 	}
 }
 
-func TestReconcileTargetRemoteAction_ScalesNewAPIWeightFromOriginal(t *testing.T) {
+func TestReconcileTargetRemoteAction_WaitsForFullRecovery(t *testing.T) {
 	repo := newFakeRepository()
 	platform := &fakePlatformActioner{}
 	service := &Service{repo: repo, dispatcher: newRemoteActionDispatcher(nil, nil, platform)}
@@ -107,8 +107,8 @@ func TestReconcileTargetRemoteAction_ScalesNewAPIWeightFromOriginal(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected managed recovery error: %v", err)
 	}
-	if action != "newapi_channel_weight_28" || len(platform.calls) != 1 || platform.calls[0].weight != 28 {
-		t.Fatalf("75%% recovery of original weight 37 must write 28, action=%q calls=%+v", action, platform.calls)
+	if action != "" || len(platform.calls) != 0 {
+		t.Fatalf("must not restore before the success threshold, action=%q calls=%+v", action, platform.calls)
 	}
 }
 
@@ -143,7 +143,7 @@ func TestReconcileTargetRemoteAction_DoesNotEnableInitiallyDisabledTarget(t *tes
 	service := &Service{repo: repo, dispatcher: newRemoteActionDispatcher(nil, nil, platform)}
 	targetID := "sub2api:ws1:acc-1"
 	repo.states[targetID] = map[string]ConnectionHealthState{
-		"model-a": {ConnectionID: targetID, ModelName: "model-a", State: StateRecovering, CurrentWeight: 25},
+		"model-a": {ConnectionID: targetID, ModelName: "model-a", State: StateSuspended, CurrentWeight: 0},
 	}
 	policy := Policy{ID: "p1", Enabled: true, AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
 	target := AdminProbeTarget{TargetID: targetID, Platform: string(upstream.PlatformSub2API), AccountID: "acc-1", AccountStatus: "inactive"}

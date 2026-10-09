@@ -12,8 +12,8 @@ const { automationCapability, groupAutomationPolicyIds, policyInputWithEnabled }
 const policy = (overrides = {}) => ({
   id: 'policy', name: 'Group monitoring', enabled: true, ownGroupId: 'g1', ownGroupName: 'Group',
   modelPattern: 'gpt-*', probeMode: 'real_model', strategyMode: 'health_probe', priorityMode: 'none',
-  probeIntervalSeconds: 60, maxLatencyMs: 45000, failureThreshold: 3, successThreshold: 2, cooldownSeconds: 300,
-  observationSeconds: 120, recoveryStepPercent: 25, dailyProbeBudget: 1000,
+  probeIntervalSeconds: 60, maxLatencyMs: 45000, failureThreshold: 3, successThreshold: 2,
+  dailyProbeBudget: 1000,
   autoDegradeEnabled: true, autoRemoteActionEnabled: false, autoSuspendEnabled: false,
   modelTargets: [{ id: 'model', modelName: 'gpt-4o', providerFamily: 'openai', enabled: true, probePrompt: 'Custom prompt', maxProbeTokens: 17 }],
   ...overrides,

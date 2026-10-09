@@ -763,8 +763,9 @@ func buildPolicyAndTargets(userID string, adminAccountID string, id string, in P
 		ProbeMode: "real_model", ProbeIntervalSeconds: defaultInt(in.ProbeIntervalSeconds, 60),
 		MaxLatencyMs:     maxLatencyMs,
 		FailureThreshold: defaultInt(in.FailureThreshold, 3), SuccessThreshold: defaultInt(in.SuccessThreshold, 2),
-		CooldownSeconds: defaultInt(in.CooldownSeconds, 300), ObservationSeconds: defaultInt(in.ObservationSeconds, 300),
-		RecoveryStepPercent: defaultInt(in.RecoveryStepPercent, 25), AutoDegradeEnabled: in.AutoDegradeEnabled,
+		// Retained storage fields for older clients; timers and gradual recovery are obsolete.
+		CooldownSeconds: 0, ObservationSeconds: 0, RecoveryStepPercent: 100,
+		AutoDegradeEnabled:      in.AutoDegradeEnabled,
 		AutoRemoteActionEnabled: in.AutoDegradeEnabled && in.AutoRemoteActionEnabled, PriorityMode: normalizePriorityMode(in.PriorityMode),
 		AutoSuspendEnabled: in.AutoSuspendEnabled,
 		StrategyMode:       strategyMode,
@@ -850,7 +851,7 @@ type ProbeConnectionInput struct {
 }
 
 // ProbeConnection 手动触发一次真实探活：对该连接匹配到的全部（或 input.Models 指定的）
-// 启用策略/模型目标逐一探活，立即执行，不受 60s 调度间隔和失败退避限制，但仍计入每日探活预算。
+// 启用策略/模型目标逐一探活，立即执行，不受自动调度间隔限制，但仍计入每日探活预算。
 func (s *Service) ProbeConnection(ctx context.Context, userID string, connectionID string, input ProbeConnectionInput) ([]ModelHealth, error) {
 	adminAccountID, err := s.currentAdminAccountID(ctx, userID)
 	if err != nil {
@@ -956,7 +957,7 @@ func (s *Service) DisableConnection(ctx context.Context, userID string, connecti
 	return nil
 }
 
-// RestoreConnection 人工恢复一条被禁用/暂停的对接链路，进入观察期，可选触发远端恢复。
+// RestoreConnection 人工恢复一条被禁用/暂停的对接链路，直接恢复健康，可选触发远端恢复。
 func (s *Service) RestoreConnection(ctx context.Context, userID string, connectionID string) error {
 	adminAccountID, err := s.currentAdminAccountID(ctx, userID)
 	if err != nil {
@@ -981,9 +982,10 @@ func (s *Service) RestoreConnection(ctx context.Context, userID string, connecti
 	remoteAction := ""
 	for i, st := range states {
 		fromState := st.State
-		st.State = StateObserving
-		observingUntil := time.Now().Add(5 * time.Minute)
-		st.ObservingUntil = &observingUntil
+		st.State = StateHealthy
+		st.CurrentWeight = 100
+		st.CooldownUntil = nil
+		st.ObservingUntil = nil
 		st.ConsecutiveFailures = 0
 		st.ConsecutiveSuccesses = 0
 		st.UserID = userID
@@ -999,7 +1001,7 @@ func (s *Service) RestoreConnection(ctx context.Context, userID string, connecti
 		if err := s.repo.UpsertState(ctx, st); err != nil {
 			return err
 		}
-		s.recordEvent(ctx, *conn, "", st.ModelName, "manual_restore", string(fromState), string(StateObserving), nil, "", "", remoteAction)
+		s.recordEvent(ctx, *conn, "", st.ModelName, "manual_restore", string(fromState), string(StateHealthy), nil, "", "", remoteAction)
 	}
 	return nil
 }

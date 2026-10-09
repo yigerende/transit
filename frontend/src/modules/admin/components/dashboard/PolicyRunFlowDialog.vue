@@ -46,7 +46,7 @@ const stepKeys = [
   'dueCheck',
   'budget',
   'stateTransition',
-  'cooldownObservation',
+  'recoveryThreshold',
   'autoDegradeVsRemoteAction',
   'manualProbe',
   'nextProbeCopy',

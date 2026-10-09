@@ -14,7 +14,7 @@ import (
 func TestTransition_SuspensionOffOnlyChangesHealth(t *testing.T) {
 	for _, result := range []ResultKey{ResultServerError, ResultAuth, ResultModelNotFound, ResultRateLimited, ResultNetworkFluctuation, ResultInvalidResponse} {
 		t.Run(string(result), func(t *testing.T) {
-			in := TransitionInput{Current: StateHealthy, CurrentWeight: 100, Result: result, Now: time.Now(), Policy: Policy{RecoveryStepPercent: 100}}
+			in := TransitionInput{Current: StateHealthy, CurrentWeight: 100, Result: result, Now: time.Now(), Policy: Policy{FailureThreshold: 1, RecoveryStepPercent: 100}}
 			for attempt := 1; attempt <= 8; attempt++ {
 				out := Transition(in)
 				if out.NextState != StateDegraded || out.Weight != 100 || out.CooldownUntil != nil || out.ObservingUntil != nil || out.TriggerRemoteDegrade || out.TriggerRemoteRestore || out.ConsecutiveFailures != attempt {

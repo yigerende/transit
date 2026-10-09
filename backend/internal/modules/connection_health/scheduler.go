@@ -2,18 +2,20 @@ package connection_health
 
 import (
 	"context"
+	"errors"
 	"log"
-	"sync"
 	"time"
 
 	"transithub/backend/internal/modules/upstream"
 )
 
 const (
-	schedulerTickInterval   = 30 * time.Second
-	maxJobsPerTick          = 100
-	globalProbeConcurrency  = 5
-	perSiteProbeConcurrency = 2
+	schedulerTickInterval      = time.Second
+	schedulerInventoryInterval = 30 * time.Second
+	channelProbeConcurrency    = 5
+	maxJobsPerTick             = 100
+	globalProbeConcurrency     = 5
+	perSiteProbeConcurrency    = 2
 )
 
 // adminProbeJob 是调度器一轮扫描出的、针对一个独立探活目标的到期任务集合。
@@ -26,6 +28,7 @@ type adminProbeJob struct {
 	account        upstream.AdminGroupAccountInfo
 	models         []probeModelSpec
 	dueSpecs       []probeModelSpec
+	groups         []upstream.AdminGroupInfo
 }
 
 type probePolicyEventGroup struct {
@@ -76,121 +79,182 @@ func (s *Service) loadAdminInventory(ctx context.Context, userID string, adminAc
 	return inventory, nil
 }
 
-// StartScheduler 启动后台探活调度：立即跑一次，之后每 30s 一次。tick 和每个探活 goroutine
-// 都有独立的 panic recover，任意一次探活失败或 panic 都不能影响调度器持续运行。
+// Inventory and priority synchronization run independently of the one-second due
+// scan. A slow upstream read or probe must not hold up unrelated due channels.
 func (s *Service) StartScheduler(ctx context.Context) {
-	go func() {
-		s.runSchedulerTickSafely(ctx)
-		ticker := time.NewTicker(schedulerTickInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				s.runSchedulerTickSafely(ctx)
-			}
-		}
-	}()
+	go s.runProbeScheduler(ctx)
 }
 
-func (s *Service) runSchedulerTickSafely(ctx context.Context) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("[connection-health] scheduler tick panic recovered: %v", r)
-		}
-	}()
-	release, acquired, err := s.repo.TryAcquireSchedulerLease(ctx)
-	if err != nil {
-		log.Printf("[connection-health] acquire scheduler lease failed: %v", err)
-		return
-	}
-	if !acquired {
-		return
-	}
-	defer release()
-	s.runSchedulerTick(ctx)
-}
-
-// runSchedulerTick 扫描全部已启用策略、旧版 target 分配和新版 admin 分组分配，按 workspace
-// 生成独立探活目标。分组新增的账号/渠道会在下一轮扫描时自动继承，无需写入额外 target 行。
-func (s *Service) runSchedulerTick(ctx context.Context) {
+func (s *Service) runProbeScheduler(ctx context.Context) {
 	if s.platformGroups == nil {
 		return
 	}
+	ticker := time.NewTicker(schedulerTickInterval)
+	defer ticker.Stop()
+	inventoryTicker := time.NewTicker(schedulerInventoryInterval)
+	defer inventoryTicker.Stop()
+	inventories := make(chan adminInventoryCache, 1)
+	done := make(chan adminProbeJob, channelProbeConcurrency)
+	active := map[string]bool{}
+	workspaceActive := map[string]int{}
+	var cache adminInventoryCache
+	refreshing := false
+	refresh := func() {
+		if refreshing {
+			return
+		}
+		refreshing = true
+		go func() {
+			inventory := s.refreshSchedulerInventory(ctx)
+			select {
+			case inventories <- inventory:
+			case <-ctx.Done():
+			}
+		}()
+	}
+	dispatch := func() {
+		defer func() {
+			if recover() != nil {
+				log.Printf("[connection-health] due scan panic recovered")
+			}
+		}()
+		if cache == nil || len(active) >= channelProbeConcurrency {
+			return
+		}
+		for _, job := range s.collectCachedProbeJobs(ctx, cache, active) {
+			key := job.userID + "|" + job.target.TargetID
+			workspace := job.userID + "|" + job.adminAccountID
+			if active[key] || workspaceActive[workspace] >= channelProbeConcurrency {
+				continue
+			}
+			if len(active) >= channelProbeConcurrency || ctx.Err() != nil {
+				break
+			}
+			active[key] = true
+			workspaceActive[workspace]++
+			go func(job adminProbeJob) {
+				defer func() { done <- job }()
+				s.runAdminProbeJob(ctx, job)
+			}(job)
+		}
+	}
+	refresh()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case next := <-inventories:
+			refreshing = false
+			cache = next
+			dispatch()
+		case job := <-done:
+			delete(active, job.userID+"|"+job.target.TargetID)
+			workspaceActive[job.userID+"|"+job.adminAccountID]--
+		case <-ticker.C:
+			dispatch()
+		case <-inventoryTicker.C:
+			refresh()
+		}
+	}
+}
+
+// Only upstream membership/session snapshots are cached. Policy switches,
+// selections, thresholds, budgets and last-probe timestamps are read each scan.
+func (s *Service) collectCachedProbeJobs(ctx context.Context, cache adminInventoryCache, active map[string]bool) []adminProbeJob {
 	policies, err := s.repo.ListEnabledPolicies(ctx)
 	if err != nil {
-		log.Printf("[connection-health] scheduler list policies failed: %v", err)
-		return
+		return nil
 	}
 	assignments, err := s.repo.ListAllPolicyAssignments(ctx)
 	if err != nil {
-		log.Printf("[connection-health] scheduler list policy assignments failed: %v", err)
-		return
+		return nil
 	}
-	groupAssignments, err := s.repo.ListAllGroupPolicyAssignments(ctx)
+	groups, err := s.repo.ListAllGroupPolicyAssignments(ctx)
 	if err != nil {
-		log.Printf("[connection-health] scheduler list group policy assignments failed: %v", err)
-		return
+		return nil
 	}
 	exclusions, err := s.repo.ListAllGroupTargetExclusions(ctx)
 	if err != nil {
-		log.Printf("[connection-health] scheduler list group target exclusions failed: %v", err)
-		return
+		return nil
+	}
+	// A newly added workspace waits for inventory refresh, never a network read
+	// on the scheduling goroutine. Copy because loadAdminInventory may cache errors.
+	ready := make(adminInventoryCache, len(cache))
+	for key, entry := range cache {
+		ready[key] = entry
+	}
+	for _, policy := range policies {
+		key := policy.UserID + "|" + policy.AdminAccountID
+		if _, ok := ready[key]; !ok {
+			ready[key] = adminInventoryCacheEntry{err: errors.New("inventory pending")}
+		}
+	}
+	return s.collectAdminProbeJobsWithGroupsAndCache(ctx, policies, assignments, groups, exclusions, ready, active)
+}
+
+func (s *Service) refreshSchedulerInventory(ctx context.Context) (cache adminInventoryCache) {
+	defer func() {
+		if recover() != nil {
+			cache = nil
+			log.Printf("[connection-health] inventory refresh panic recovered")
+		}
+	}()
+	policies, err := s.repo.ListEnabledPolicies(ctx)
+	if err != nil {
+		return nil
+	}
+	assignments, err := s.repo.ListAllPolicyAssignments(ctx)
+	if err != nil {
+		return nil
+	}
+	groups, err := s.repo.ListAllGroupPolicyAssignments(ctx)
+	if err != nil {
+		return nil
+	}
+	exclusions, err := s.repo.ListAllGroupTargetExclusions(ctx)
+	if err != nil {
+		return nil
 	}
 	priorityStates, err := s.repo.ListAllPrioritySyncStates(ctx)
 	if err != nil {
-		log.Printf("[connection-health] scheduler list priority sync states failed: %v", err)
-		return
+		return nil
 	}
-	targetActionStates, err := s.repo.ListAllTargetActionStates(ctx)
+	actionStates, err := s.repo.ListAllTargetActionStates(ctx)
 	if err != nil {
-		log.Printf("[connection-health] scheduler list target action states failed: %v", err)
-		return
+		return nil
 	}
-	if len(assignments) == 0 && len(groupAssignments) == 0 && len(priorityStates) == 0 && len(targetActionStates) == 0 {
-		// 没有任何显式或分组分配：不解析凭据、不探活、不修改优先级。
-		return
+	cache = make(adminInventoryCache)
+	assigned := map[string]bool{}
+	for _, a := range assignments {
+		assigned[a.UserID+"|"+a.AdminAccountID] = true
 	}
-
-	// 优先级同步和探活使用同一份有效策略关系。优先级写入失败只记录日志，不阻断探活。
-	inventoryCache := make(adminInventoryCache)
-	s.syncMultiplierPrioritiesWithCache(ctx, policies, assignments, groupAssignments, exclusions, priorityStates, inventoryCache)
-	s.restoreUnmanagedTargetActions(ctx, policies, assignments, groupAssignments, exclusions, targetActionStates, inventoryCache)
-	if len(policies) == 0 {
-		return
+	for _, a := range groups {
+		assigned[a.UserID+"|"+a.AdminAccountID] = true
 	}
-	jobs := s.collectAdminProbeJobsWithGroupsAndCache(ctx, policies, assignments, groupAssignments, exclusions, inventoryCache)
-	if len(jobs) == 0 {
-		return
-	}
-
-	globalSem := make(chan struct{}, globalProbeConcurrency)
-	workspaceSemaphores := make(map[string]chan struct{})
-	var wg sync.WaitGroup
-
-	for _, j := range jobs {
-		wsKey := j.userID + "|" + j.adminAccountID
-		wsSem, ok := workspaceSemaphores[wsKey]
-		if !ok {
-			wsSem = make(chan struct{}, perSiteProbeConcurrency)
-			workspaceSemaphores[wsKey] = wsSem
+	// Load probe inventory before priority work, sharing it with those operations.
+	for _, policy := range policies {
+		if ctx.Err() != nil {
+			return nil
 		}
-
-		wg.Add(1)
-		globalSem <- struct{}{}
-		wsSem <- struct{}{}
-		go s.runAdminProbeJob(ctx, j, globalSem, wsSem, &wg)
+		if !assigned[policy.UserID+"|"+policy.AdminAccountID] || !hasEnabledModelTarget([]Policy{policy}) {
+			continue
+		}
+		_, _ = s.loadAdminInventory(ctx, policy.UserID, policy.AdminAccountID, cache)
 	}
-	wg.Wait()
+	release, acquired, err := s.repo.TryAcquireSchedulerLease(ctx)
+	if err != nil || !acquired {
+		return cache
+	}
+	defer release()
+	s.syncMultiplierPrioritiesWithCache(ctx, policies, assignments, groups, exclusions, priorityStates, cache)
+	s.restoreUnmanagedTargetActions(ctx, policies, assignments, groups, exclusions, actionStates, cache)
+	return cache
 }
 
 // runAdminProbeJob 处理单个目标的到期任务：先解析一次凭据；凭据不可用时对每个到期模型记录
-// 一次「不可探活」事件并回填 last_probe_at 退避（不驱动状态机、不计入探活预算），
+// 一次「不可探活」事件并回填 last_probe_at（不驱动状态机、不计入探活预算），
 // 凭据可用时逐个模型执行独立探活。
-func (s *Service) runAdminProbeJob(ctx context.Context, j adminProbeJob, globalSem chan struct{}, wsSem chan struct{}, wg *sync.WaitGroup) {
-	defer wg.Done()
-	defer func() { <-wsSem; <-globalSem }()
+func (s *Service) runAdminProbeJob(ctx context.Context, j adminProbeJob) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[connection-health] admin probe goroutine panic recovered target_id=%s: %v", j.target.TargetID, r)
@@ -202,6 +266,25 @@ func (s *Service) runAdminProbeJob(ctx context.Context, j adminProbeJob, globalS
 		return
 	}
 	defer release()
+	// Another instance or manual probe may have completed while this worker waited.
+	// Re-read selection and policy so queued work cannot bypass a recent edit.
+	j.models, err = s.currentScheduledModels(ctx, j)
+	if err != nil {
+		return
+	}
+	queued := map[string]bool{}
+	for _, spec := range j.dueSpecs {
+		queued[spec.modelName] = true
+	}
+	j.dueSpecs = nil
+	for _, spec := range j.models {
+		if queued[spec.modelName] && s.isDue(ctx, j.target.TargetID, spec.modelName, spec.policy, time.Now()) {
+			j.dueSpecs = append(j.dueSpecs, spec)
+		}
+	}
+	if len(j.dueSpecs) == 0 || ctx.Err() != nil {
+		return
+	}
 
 	cred, err := s.platformGroups.ResolveProbeCredential(j.session, j.account)
 	if err != nil {
@@ -220,11 +303,37 @@ func (s *Service) runAdminProbeJob(ctx context.Context, j adminProbeJob, globalS
 			results = append(results, *result)
 		}
 	}
+	// Cached upstream status may predate our previous action. Read it afresh before
+	// conflict detection or changing an upstream channel's status/weight.
+	if hasRemoteActionModel(j.models) {
+		fresh := false
+		for _, group := range j.groups {
+			accounts, readErr := s.platformGroups.ListAdminGroupAccounts(j.session, group)
+			if readErr != nil {
+				continue
+			}
+			for _, account := range accounts {
+				if account.ID == j.target.AccountID {
+					j.target.AccountStatus, j.target.AccountWeight = account.Status, cloneIntPointer(account.Weight)
+					fresh = true
+					break
+				}
+			}
+			if fresh {
+				break
+			}
+		}
+		if !fresh {
+			for i := range j.models {
+				j.models[i].policy.AutoRemoteActionEnabled = false
+			}
+		}
+	}
 	s.finishTargetProbeBatch(ctx, j.userID, j.adminAccountID, j.session, j.target, j.models, results)
 }
 
 // recordTargetCredentialUnavailable 在凭据解析失败时，对每个到期模型回填 last_probe_at（按探活
-// 间隔退避，避免每 30s 反复命中受保护的 key/导出接口）并记录一条 unsupported 事件，
+// 间隔，避免每次扫描都命中受保护的 key/导出接口）并记录一条 unsupported 事件，
 // 事件 error_key 为脱敏 reason。不驱动状态机、不计入探活预算。
 func (s *Service) recordTargetCredentialUnavailable(ctx context.Context, userID string, adminAccountID string, target AdminProbeTarget, specs []probeModelSpec, reason string) {
 	now := time.Now()
@@ -242,6 +351,7 @@ func (s *Service) recordTargetCredentialUnavailable(ctx context.Context, userID 
 		}
 		next = stateWithoutSuspension(next, spec.policy)
 		next.LastProbeAt = &now
+		next.LastLatencyMs = nil
 		next.LastErrorKey = reason
 		next.LastErrorDetail = ""
 		// LastRemoteAction 也是旧版本判断「该上游状态是否由健康模块接管」的兼容证据。
@@ -269,7 +379,7 @@ func (s *Service) collectAdminProbeJobsWithGroups(ctx context.Context, policies 
 	return s.collectAdminProbeJobsWithGroupsAndCache(ctx, policies, assignments, groupAssignments, exclusions, make(adminInventoryCache))
 }
 
-func (s *Service) collectAdminProbeJobsWithGroupsAndCache(ctx context.Context, policies []Policy, assignments []PolicyAssignment, groupAssignments []GroupPolicyAssignment, exclusions []GroupTargetExclusion, inventoryCache adminInventoryCache) []adminProbeJob {
+func (s *Service) collectAdminProbeJobsWithGroupsAndCache(ctx context.Context, policies []Policy, assignments []PolicyAssignment, groupAssignments []GroupPolicyAssignment, exclusions []GroupTargetExclusion, inventoryCache adminInventoryCache, skipTargets ...map[string]bool) []adminProbeJob {
 	// 按 workspace 归拢策略。
 	type workspace struct {
 		userID         string
@@ -297,7 +407,6 @@ func (s *Service) collectAdminProbeJobsWithGroupsAndCache(ctx context.Context, p
 	excludedByWorkspace := groupTargetExclusionIndex(exclusions)
 
 	jobs := make([]adminProbeJob, 0, maxJobsPerTick)
-	now := time.Now()
 	modelBudget := maxJobsPerTick
 	budgetUsage := make(map[string]int)
 	budgetLoaded := make(map[string]bool)
@@ -334,6 +443,7 @@ func (s *Service) collectAdminProbeJobsWithGroupsAndCache(ctx context.Context, p
 			account       upstream.AdminGroupAccountInfo
 			policies      []Policy
 			policySources map[string]probePolicyEventGroup
+			groups        []upstream.AdminGroupInfo
 		}
 		candidates := make(map[string]*targetCandidate)
 		targetOrder := make([]string, 0)
@@ -375,6 +485,7 @@ func (s *Service) collectAdminProbeJobsWithGroupsAndCache(ctx context.Context, p
 					candidates[target.TargetID] = candidate
 					targetOrder = append(targetOrder, target.TargetID)
 				}
+				candidate.groups = append(candidate.groups, group)
 				for _, policy := range assignedTargets[target.TargetID] {
 					// An explicit target assignment has no single group owner, even when the
 					// target is currently being enumerated through a group membership.
@@ -396,6 +507,9 @@ func (s *Service) collectAdminProbeJobsWithGroupsAndCache(ctx context.Context, p
 			if modelBudget <= 0 {
 				break
 			}
+			if len(skipTargets) > 0 && skipTargets[0][ws.userID+"|"+targetID] {
+				continue
+			}
 			candidate := candidates[targetID]
 			specs := candidateModelSpecs(candidate.target.Models, candidate.policies)
 			for index := range specs {
@@ -414,7 +528,7 @@ func (s *Service) collectAdminProbeJobsWithGroupsAndCache(ctx context.Context, p
 				if modelBudget <= 0 {
 					break
 				}
-				if !s.isDue(ctx, candidate.target.TargetID, spec.modelName, spec.policy, now) {
+				if !s.isDue(ctx, candidate.target.TargetID, spec.modelName, spec.policy, time.Now()) {
 					continue
 				}
 				budgetKey := ws.userID + "|" + ws.adminAccountID + "|" + spec.policy.ID
@@ -437,7 +551,7 @@ func (s *Service) collectAdminProbeJobsWithGroupsAndCache(ctx context.Context, p
 			if len(dueSpecs) > 0 {
 				jobs = append(jobs, adminProbeJob{
 					userID: ws.userID, adminAccountID: ws.adminAccountID, session: session,
-					target: candidate.target, account: candidate.account, models: specs, dueSpecs: dueSpecs,
+					target: candidate.target, account: candidate.account, models: specs, dueSpecs: dueSpecs, groups: candidate.groups,
 				})
 			}
 		}
@@ -461,8 +575,8 @@ func hasEnabledModelTarget(policies []Policy) bool {
 }
 
 // isDue 判断某个 (targetId, model) 组合当前是否到期需要探活。
-// 从未探活过立即探活；disabled 状态永不自动探活；cooldown_until 未到不探活；
-// 探活间隔在策略配置的基础上，按连续失败次数叠加 2/5/10 分钟退避。
+// 从未探活过立即探活；disabled 状态永不自动探活。
+// 成功、失败和暂停都使用策略配置的同一个间隔，不增加退避或冷却等待。
 func (s *Service) isDue(ctx context.Context, targetID string, modelName string, policy Policy, now time.Time) bool {
 	state, err := s.repo.GetState(ctx, targetID, modelName)
 	if err != nil {
@@ -483,9 +597,6 @@ func (s *Service) isDue(ctx context.Context, targetID string, modelName string, 
 		}
 		state = &normalized
 	}
-	if state.CooldownUntil != nil && now.Before(*state.CooldownUntil) {
-		return false
-	}
 	if state.LastProbeAt == nil {
 		return true
 	}
@@ -494,8 +605,58 @@ func (s *Service) isDue(ctx context.Context, targetID string, modelName string, 
 	if interval <= 0 {
 		interval = 60 * time.Second
 	}
-	if backoff := ProbeBackoff(state.ConsecutiveFailures); backoff > interval {
-		interval = backoff
+	// Histories keep completion times. Subtract measured request duration to use
+	// request start-to-start cadence without changing existing history timestamps.
+	started := *state.LastProbeAt
+	if state.LastLatencyMs != nil && *state.LastLatencyMs > 0 {
+		started = started.Add(-time.Duration(*state.LastLatencyMs) * time.Millisecond)
 	}
-	return now.Sub(*state.LastProbeAt) >= interval
+	return now.Sub(started) >= interval
+}
+
+// Re-evaluate current assignments under the target lease. Inventory membership is
+// refreshed independently; removing a local selection takes effect immediately.
+func (s *Service) currentScheduledModels(ctx context.Context, job adminProbeJob) ([]probeModelSpec, error) {
+	policies, err := s.repo.ListPolicies(ctx, job.userID, job.adminAccountID)
+	if err != nil {
+		return nil, err
+	}
+	assignments, err := s.repo.ListPolicyAssignmentsByWorkspace(ctx, job.userID, job.adminAccountID)
+	if err != nil {
+		return nil, err
+	}
+	groups, err := s.repo.ListGroupPolicyAssignmentsByWorkspace(ctx, job.userID, job.adminAccountID)
+	if err != nil {
+		return nil, err
+	}
+	exclusions, err := s.repo.ListGroupTargetExclusionsByWorkspace(ctx, job.userID, job.adminAccountID)
+	if err != nil {
+		return nil, err
+	}
+	workspace := job.userID + "|" + job.adminAccountID
+	targetPolicies := assignedEnabledPoliciesByTarget(policies, assignments)[workspace][job.target.TargetID]
+	groupPolicies := assignedEnabledPoliciesByGroup(policies, groups)[workspace]
+	excluded := groupTargetExclusionIndex(exclusions)[workspace]
+	effective := targetPolicies
+	sources := map[string]probePolicyEventGroup{}
+	for _, policy := range targetPolicies {
+		sources[policy.ID] = probePolicyEventGroup{resolved: true}
+	}
+	for _, group := range job.groups {
+		if excluded[group.ID][job.target.TargetID] {
+			continue
+		}
+		for _, policy := range groupPolicies[group.ID] {
+			if _, exists := sources[policy.ID]; !exists {
+				sources[policy.ID] = probePolicyEventGroup{resolved: true, adminGroupID: group.ID, adminGroupName: group.Name}
+			}
+		}
+		effective = mergePoliciesByID(effective, groupPolicies[group.ID])
+	}
+	specs := candidateModelSpecs(job.target.Models, effective)
+	for i := range specs {
+		source := sources[specs[i].policy.ID]
+		specs[i].eventGroupResolved, specs[i].eventAdminGroupID, specs[i].eventAdminGroupName = source.resolved, source.adminGroupID, source.adminGroupName
+	}
+	return specs, nil
 }
