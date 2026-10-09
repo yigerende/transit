@@ -21,5 +21,16 @@ export const channelsByLatestLatency = (accounts: AdminGroupAccount[]): AdminGro
     // A fast error is not a fast conversation. Only the latest successful
     // result can put a channel ahead of failed or unprobed channels.
     const latency = latest?.result === 'ok' ? latest.latencyMs : null
-    return { account, succeeded: latest?.result === 'ok', latency: latency != null && Number.isFinite(latency) && latency >= 0 ? latency : Infinity }
-  }).sort((a, b) => Number(b.succeeded) - Number(a.succeeded) || a.latency - b.latency).map(({ account }) => account)
+    return {
+      account,
+      suspended: account.modelHealth?.some(model => model.state === 'suspended') ?? false,
+      succeeded: latest?.result === 'ok',
+      latency: latency != null && Number.isFinite(latency) && latency >= 0 ? latency : Infinity,
+    }
+  }).sort((a, b) =>
+    // Keep paused channels last until their recovery threshold clears the state,
+    // even if their latest probe has already succeeded.
+    Number(a.suspended) - Number(b.suspended)
+    || Number(b.succeeded) - Number(a.succeeded)
+    || a.latency - b.latency,
+  ).map(({ account }) => account)
