@@ -146,6 +146,7 @@ export interface GroupProbeSample {
 }
 
 export interface AdminGroupHealth {
+  probeConfig?: GroupProbeConfig
   groupProbeSupported?: boolean
   id: string
   name: string
@@ -172,6 +173,17 @@ export interface AdminGroupHealth {
   accounts: AdminGroupAccount[]
   recentProbes?: GroupProbeSample[]
   probeHistoryError?: string
+}
+
+export interface GroupProbeConfig {
+  hasCustomKey: boolean
+  groupId: string
+  model: string
+  intervalSeconds: number
+  enabled: boolean
+  nextProbeAt: string | null
+  lastProbeAt: string | null
+  lastErrorKey: string
 }
 
 export interface ConnectionHealthEvent {

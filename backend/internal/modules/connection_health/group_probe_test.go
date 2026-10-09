@@ -20,6 +20,13 @@ type fakeGroupProbeProvider struct {
 	err     error
 }
 
+func (f *fakeGroupProbeProvider) ResolveSub2APIGroupProbeKey(_ upstream.Session, groupID, key, id string) (upstream.ProbeCredential, string, error) {
+	if groupID != "42" || (key != "group-secret" && (key != "" || id != "key-7")) {
+		return upstream.ProbeCredential{}, "", errors.New("invalid secret")
+	}
+	return upstream.ProbeCredential{Key: "group-secret"}, "key-7", f.err
+}
+
 func (f *fakeGroupProbeProvider) EnsureSub2APIGroupProbeKey(_ upstream.Session, groupID, name string) (upstream.ProbeCredential, error) {
 	f.calls++
 	f.name, f.groupID = name, groupID

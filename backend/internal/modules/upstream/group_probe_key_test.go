@@ -10,6 +10,60 @@ import (
 	"testing"
 )
 
+func TestSuppliedGroupProbeKeyResolution(t *testing.T) {
+	for _, scenario := range []string{"supplied", "saved-id", "wrong-group", "inactive", "masked", "missing", "later-page", "invalid-list"} {
+		t.Run(scenario, func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				if r.Method != "GET" || r.URL.Path != "/api/v1/admin/groups/42/api-keys" || r.Header.Get("x-api-key") != "admin-token" {
+					t.Error("incorrect custom key endpoint/auth or unexpected mutation")
+				}
+				key := map[string]any{"id": 7, "key": "supplied-secret", "group_id": 42, "status": "active"}
+				switch scenario {
+				case "wrong-group":
+					key["group_id"] = 43
+				case "inactive":
+					key["status"] = "disabled"
+				case "masked":
+					key["key"] = "sk-***"
+				case "missing":
+					writeJSON(w, map[string]any{"data": map[string]any{"items": []any{}, "total": 0}})
+					return
+				case "invalid-list":
+					writeJSON(w, map[string]any{"data": map[string]any{}})
+					return
+				case "later-page":
+					if requests == 1 {
+						writeJSON(w, map[string]any{"data": map[string]any{"items": []any{map[string]any{"id": 1, "key": "other"}}, "total": 101}})
+						return
+					}
+				}
+				writeJSON(w, map[string]any{"data": map[string]any{"items": []any{key}, "total": 1}})
+			}))
+			defer server.Close()
+			svc := NewPlatformService(NewHTTPClient(server.Client()))
+			session := Session{Platform: PlatformSub2API, BaseURL: server.URL, AdminAPIKey: "admin-token"}
+			key, id := "supplied-secret", ""
+			if scenario == "saved-id" || scenario == "masked" {
+				key, id = "", "7"
+			}
+			cred, savedID, err := svc.ResolveSub2APIGroupProbeKey(session, "42", key, id)
+			valid := scenario == "supplied" || scenario == "saved-id" || scenario == "later-page"
+			if valid {
+				if err != nil || cred.Key != "supplied-secret" || savedID != "7" {
+					t.Fatalf("resolution failed: %v", err)
+				}
+			} else if err == nil {
+				t.Fatal("invalid key accepted")
+			}
+			if err != nil && strings.Contains(err.Error(), "supplied-secret") {
+				t.Fatal("key leaked in error")
+			}
+		})
+	}
+}
+
 func TestGroupProbeMalformedKeyResponseDoesNotLogCredentials(t *testing.T) {
 	var output bytes.Buffer
 	previous := log.Writer()

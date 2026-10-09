@@ -82,6 +82,7 @@ const openGroupProbe = (group: AdminGroupHealth) => {
 }
 const groupProbeState = (group: AdminGroupHealth): string => {
   if (group.probeHistoryError) return 'loadError'
+  if (group.probeConfig?.enabled && group.probeConfig.lastErrorKey) return 'unhealthy'
   const latest = group.recentProbes?.[0]
   return latest ? (latest.result === 'ok' ? 'healthy' : 'unhealthy') : 'pending'
 }
@@ -288,7 +289,10 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
               <button type="button" class="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" :aria-current="selectedGroup?.id === group.id ? 'true' : undefined" @click="selectedGroupId = group.id">
                 <span class="block truncate text-sm font-medium text-foreground" :title="group.name">{{ group.name }}</span>
                 <span class="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                  <span :class="groupProbeState(group) === 'healthy' ? 'text-emerald-600 dark:text-emerald-400' : groupProbeState(group) === 'unhealthy' ? 'text-red-600 dark:text-red-400' : ''">{{ t('admin.connectionHealth.cards.status.' + groupProbeState(group)) }}</span>
+                  <span class="flex items-center gap-2" :title="group.probeConfig?.lastErrorKey ? readableMessage(group.probeConfig.lastErrorKey) : undefined">
+                    <span :class="groupProbeState(group) === 'healthy' ? 'text-emerald-600 dark:text-emerald-400' : groupProbeState(group) === 'unhealthy' ? 'text-red-600 dark:text-red-400' : ''">{{ t('admin.connectionHealth.cards.status.' + groupProbeState(group)) }}</span>
+                    <span v-if="group.probeConfig">{{ group.probeConfig.enabled ? t('admin.connectionHealth.groupProbe.autoEvery', { seconds: group.probeConfig.intervalSeconds }) : t('admin.connectionHealth.groupProbe.paused') }}</span>
+                  </span>
                   <span>{{ group.multiplierDisplay || '—' }}</span>
                 </span>
               </button>
@@ -322,7 +326,7 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
       <div v-else class="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground"><Layers class="h-8 w-8 opacity-40" /><p class="text-sm">{{ t('admin.connectionHealth.groupProbe.selectGroup') }}</p></div>
     </section>
 
-    <GroupProbeDialog :open="groupProbeOpen" :group="probeGroup" @close="groupProbeOpen = false" @probed="refreshProbeResults" />
+    <GroupProbeDialog :open="groupProbeOpen" :group="probeGroup" @close="groupProbeOpen = false" @saved="refreshProbeResults" />
 
     <GroupHealthSetupDrawer
       :open="setupDrawerOpen"

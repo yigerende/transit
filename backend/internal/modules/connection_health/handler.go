@@ -23,6 +23,8 @@ func RegisterRoutes(mux *http.ServeMux, service *Service) {
 	mux.HandleFunc("GET /api/connection-health/admin-groups", handler.adminGroups)
 	mux.HandleFunc("POST /api/connection-health/admin-groups/{id}/prepare-probe", handler.prepareGroupProbe)
 	mux.HandleFunc("POST /api/connection-health/admin-groups/{id}/probe", handler.probeAdminGroup)
+	mux.HandleFunc("GET /api/connection-health/admin-groups/{id}/probe-config", handler.groupProbeConfiguration)
+	mux.HandleFunc("PUT /api/connection-health/admin-groups/{id}/probe-config", handler.saveGroupProbeConfiguration)
 	mux.HandleFunc("GET /api/connection-health/events", handler.events)
 	mux.HandleFunc("POST /api/connection-health/connections/{id}/probe", handler.probe)
 	mux.HandleFunc("POST /api/connection-health/targets/{id}/probe", handler.probeTarget)

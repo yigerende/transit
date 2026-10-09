@@ -19,6 +19,7 @@ func TestWorkspaceDeleteStatementsCoverAllWorkspaceTables(t *testing.T) {
 		"mass_email_batches",
 		"group_rate_campaign_items",
 		"group_rate_campaigns",
+		"connection_health_group_probe_configs",
 		"connection_health_target_action_states",
 		"connection_health_probe_budget_usage",
 		"connection_health_priority_sync_states",
@@ -80,6 +81,10 @@ func TestLegacyWorkspaceDescriptorsCoverDeleteTables(t *testing.T) {
 		descriptors[table.Name] = table.WorkspaceColumn
 	}
 	for _, stmt := range workspaceDeleteStatements {
+		// Introduced after workspaces: this table has no legacy unscoped rows.
+		if stmt.Name == "connection_health_group_probe_configs" {
+			continue
+		}
 		column, ok := descriptors[stmt.Name]
 		if !ok {
 			t.Fatalf("legacy workspace descriptor missing for delete table %s", stmt.Name)

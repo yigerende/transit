@@ -43,6 +43,7 @@ type AdminGroupHealth struct {
 	RecentProbes        []GroupProbeSample  `json:"recentProbes"`
 	ProbeHistoryError   string              `json:"probeHistoryError,omitempty"`
 	GroupProbeSupported bool                `json:"groupProbeSupported"`
+	ProbeConfig         *GroupProbeConfig   `json:"probeConfig,omitempty"`
 }
 
 // AdminGroupHealthSummary 是单个 admin 分组的探活健康概览，用于主列表快速展示。
@@ -337,6 +338,19 @@ func (s *Service) AdminGroups(ctx context.Context, userID string) ([]AdminGroupH
 		result = append(result, health)
 	}
 	s.attachGroupProbeHistory(ctx, userID, adminAccountID, result)
+	configs, err := s.repo.ListGroupProbeConfigs(ctx, userID, adminAccountID)
+	if err != nil {
+		return nil, err
+	}
+	byGroup := make(map[string]GroupProbeConfig, len(configs))
+	for _, c := range configs {
+		byGroup[c.GroupID] = c
+	}
+	for i := range result {
+		if c, ok := byGroup[result[i].ID]; ok {
+			result[i].ProbeConfig = &c
+		}
+	}
 	return result, nil
 }
 

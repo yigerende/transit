@@ -16,6 +16,10 @@ type groupProbeKeyProvider interface {
 	EnsureSub2APIGroupProbeKey(upstream.Session, string, string) (upstream.ProbeCredential, error)
 }
 
+type groupProbeCustomKeyProvider interface {
+	ResolveSub2APIGroupProbeKey(upstream.Session, string, string, string) (upstream.ProbeCredential, string, error)
+}
+
 type GroupProbePreparation struct {
 	Models               []DiscoveredModel `json:"models"`
 	ModelListUnavailable bool              `json:"modelListUnavailable"`
@@ -25,27 +29,60 @@ func groupProbeTargetID(adminAccountID, groupID string) string {
 	return "group:" + adminAccountID + ":" + groupID
 }
 
-func (s *Service) withGroupProbeCredential(ctx context.Context, userID, groupID string, action func(string, upstream.AdminGroupInfo, upstream.ProbeCredential) error) error {
+func (s *Service) withGroupProbeCredential(ctx context.Context, userID, groupID string, key *string, action func(string, upstream.AdminGroupInfo, upstream.ProbeCredential) error) error {
 	adminAccountID, err := s.currentAdminAccountID(ctx, userID)
 	if err != nil {
 		return err
 	}
-	session, err := s.mySites.RequireSession(ctx, userID, adminAccountID)
+	release, err := s.repo.AcquireTargetLease(ctx, groupProbeTargetID(adminAccountID, groupID))
 	if err != nil {
 		return err
 	}
-	if session.Platform != upstream.PlatformSub2API {
-		return requestError(groupProbePrefix + "unsupported")
+	defer release()
+	group, credential, _, err := s.resolveGroupProbeCredential(ctx, userID, adminAccountID, groupID, key)
+	if err != nil {
+		return err
 	}
-	if strings.TrimSpace(session.AccessToken) == "" {
-		return requestError(groupProbePrefix + "loginRequired")
+	return action(adminAccountID, group, credential)
+}
+
+// Caller holds the group target lease. An explicit workspace is required by
+// background tasks; the user's currently selected workspace is irrelevant.
+func (s *Service) resolveGroupProbeCredential(ctx context.Context, userID, adminAccountID, groupID string, key *string) (upstream.AdminGroupInfo, upstream.ProbeCredential, string, error) {
+	fail := func(err error) (upstream.AdminGroupInfo, upstream.ProbeCredential, string, error) {
+		return upstream.AdminGroupInfo{}, upstream.ProbeCredential{}, "", err
+	}
+	suppliedKey, keyID := "", ""
+	if key != nil {
+		suppliedKey = strings.TrimSpace(*key)
+		if len(suppliedKey) > 4096 {
+			return fail(requestError(groupProbePrefix + "customKeyUnavailable"))
+		}
+	} else {
+		config, err := s.repo.GetGroupProbeConfig(ctx, userID, adminAccountID, groupID)
+		if err != nil {
+			return fail(err)
+		}
+		if config != nil {
+			keyID = config.CustomKeyID
+		}
+	}
+	session, err := s.mySites.RequireSession(ctx, userID, adminAccountID)
+	if err != nil {
+		return fail(requestError(groupProbePrefix + "loginRequired"))
+	}
+	if session.Platform != upstream.PlatformSub2API {
+		return fail(requestError(groupProbePrefix + "unsupported"))
+	}
+	if suppliedKey == "" && keyID == "" && strings.TrimSpace(session.AccessToken) == "" {
+		return fail(requestError(groupProbePrefix + "loginRequired"))
 	}
 	if s.platformGroups == nil {
-		return requestError(ErrorUnknown)
+		return fail(requestError(ErrorUnknown))
 	}
 	groups, err := s.platformGroups.FetchAdminAllGroups(session)
 	if err != nil {
-		return requestError(ErrorRequest)
+		return fail(requestError(ErrorRequest))
 	}
 	var group *upstream.AdminGroupInfo
 	for i := range groups {
@@ -55,32 +92,43 @@ func (s *Service) withGroupProbeCredential(ctx context.Context, userID, groupID 
 		}
 	}
 	if group == nil {
-		return requestError(ErrorNotFound)
+		return fail(requestError(ErrorNotFound))
+	}
+	if suppliedKey != "" || keyID != "" {
+		provider, ok := s.platformGroups.(groupProbeCustomKeyProvider)
+		if !ok {
+			return fail(requestError(groupProbePrefix + "unsupported"))
+		}
+		cred, id, err := provider.ResolveSub2APIGroupProbeKey(session, groupID, suppliedKey, keyID)
+		if err != nil {
+			return fail(requestError(groupProbePrefix + "customKeyUnavailable"))
+		}
+		cred.BaseURL = session.BaseURL
+		return *group, cred, id, nil
 	}
 	provider, ok := s.platformGroups.(groupProbeKeyProvider)
 	if !ok {
-		return requestError(groupProbePrefix + "unsupported")
+		return fail(requestError(groupProbePrefix + "unsupported"))
 	}
-	release, err := s.repo.AcquireTargetLease(ctx, groupProbeTargetID(adminAccountID, groupID))
-	if err != nil {
-		return err
-	}
-	defer release()
 	digest := sha256.Sum256([]byte(userID + "|" + adminAccountID + "|" + groupID))
 	keyName := fmt.Sprintf("monitor-group-%s-%x", groupID, digest[:6])
 	credential, err := provider.EnsureSub2APIGroupProbeKey(session, groupID, keyName)
 	if err != nil {
-		return requestError(groupProbePrefix + "keyUnavailable")
+		return fail(requestError(groupProbePrefix + "keyUnavailable"))
 	}
 	// The gateway address is always taken from the authenticated workspace.
 	credential.BaseURL = session.BaseURL
-	return action(adminAccountID, *group, credential)
+	return *group, credential, "", nil
 }
 
 // Preparing is a POST because the first explicit click may create a remote key.
-func (s *Service) PrepareGroupProbe(ctx context.Context, userID, groupID string) (GroupProbePreparation, error) {
+func (s *Service) PrepareGroupProbe(ctx context.Context, userID, groupID string, key ...*string) (GroupProbePreparation, error) {
 	result := GroupProbePreparation{Models: []DiscoveredModel{}}
-	err := s.withGroupProbeCredential(ctx, userID, groupID, func(_ string, _ upstream.AdminGroupInfo, cred upstream.ProbeCredential) error {
+	var selectedKey *string
+	if len(key) > 0 {
+		selectedKey = key[0]
+	}
+	err := s.withGroupProbeCredential(ctx, userID, groupID, selectedKey, func(_ string, _ upstream.AdminGroupInfo, cred upstream.ProbeCredential) error {
 		models, err := s.modelDiscovery.ListModels(ctx, cred.BaseURL, cred.Key)
 		if err != nil {
 			result.ModelListUnavailable = true
@@ -98,15 +146,22 @@ func (s *Service) ProbeAdminGroup(ctx context.Context, userID, groupID, model st
 		return GroupProbeSample{}, requestError(groupProbePrefix + "modelRequired")
 	}
 	var sample GroupProbeSample
-	err := s.withGroupProbeCredential(ctx, userID, groupID, func(adminAccountID string, group upstream.AdminGroupInfo, cred upstream.ProbeCredential) error {
-		outcome := s.probeRunner.ProbeGroup(ctx, ProbeRequest{BaseURL: cred.BaseURL, UpstreamKey: cred.Key, ProviderFamily: group.Platform, ModelName: model})
-		id, err := newID()
-		if err != nil {
-			return err
-		}
-		sample = GroupProbeSample{ID: id, TargetID: groupProbeTargetID(adminAccountID, groupID), ModelName: model, Result: string(outcome.Result), LatencyMs: &outcome.LatencyMs, CreatedAt: time.Now()}
-		// Group results do not drive account state, policy budgets or remote actions.
-		return s.repo.InsertEvent(ctx, ConnectionHealthEvent{ID: id, ConnectionID: sample.TargetID, UserID: userID, AdminAccountID: adminAccountID, AdminGroupID: groupID, OwnGroupName: group.Name, UpstreamGroupName: group.Name, ModelName: model, Result: sample.Result, LatencyMs: sample.LatencyMs, CreatedAt: sample.CreatedAt})
+	err := s.withGroupProbeCredential(ctx, userID, groupID, nil, func(adminAccountID string, group upstream.AdminGroupInfo, cred upstream.ProbeCredential) error {
+		var probeErr error
+		sample, probeErr = s.probeGroupOnce(ctx, userID, adminAccountID, group, cred, model)
+		return probeErr
 	})
+	return sample, err
+}
+
+func (s *Service) probeGroupOnce(ctx context.Context, userID, adminAccountID string, group upstream.AdminGroupInfo, cred upstream.ProbeCredential, model string) (GroupProbeSample, error) {
+	outcome := s.probeRunner.ProbeGroup(ctx, ProbeRequest{BaseURL: cred.BaseURL, UpstreamKey: cred.Key, ProviderFamily: group.Platform, ModelName: model})
+	id, err := newID()
+	if err != nil {
+		return GroupProbeSample{}, err
+	}
+	sample := GroupProbeSample{ID: id, TargetID: groupProbeTargetID(adminAccountID, group.ID), ModelName: model, Result: string(outcome.Result), LatencyMs: &outcome.LatencyMs, CreatedAt: time.Now()}
+	// Group results do not drive account state, policy budgets or remote actions.
+	err = s.repo.InsertEvent(ctx, ConnectionHealthEvent{ID: id, ConnectionID: sample.TargetID, UserID: userID, AdminAccountID: adminAccountID, AdminGroupID: group.ID, OwnGroupName: group.Name, UpstreamGroupName: group.Name, ModelName: model, Result: sample.Result, LatencyMs: sample.LatencyMs, CreatedAt: sample.CreatedAt})
 	return sample, err
 }

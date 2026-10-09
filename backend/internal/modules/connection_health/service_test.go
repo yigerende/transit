@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,8 @@ import (
 
 // fakeRepository 是 healthRepository 的内存实现，供 service 单测使用，不连接真实数据库。
 type fakeRepository struct {
+	groupProbeMu       sync.Mutex
+	groupProbeConfigs  map[string]GroupProbeConfig
 	policies           []Policy
 	states             map[string]map[string]ConnectionHealthState // connectionID -> modelName -> state
 	events             []ConnectionHealthEvent
@@ -33,6 +36,7 @@ type fakeRepository struct {
 
 func newFakeRepository() *fakeRepository {
 	return &fakeRepository{
+		groupProbeConfigs:  map[string]GroupProbeConfig{},
 		states:             map[string]map[string]ConnectionHealthState{},
 		priorityStates:     map[string]PrioritySyncState{},
 		targetActionStates: map[string]TargetActionState{},

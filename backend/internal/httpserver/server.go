@@ -48,6 +48,7 @@ type Server struct {
 	lotteryFrameAncestorOrigin     func(ctx context.Context, embedToken string) (string, bool)
 	lotteryCancel                  context.CancelFunc
 	lotteryWorker                  *lottery.Worker
+	groupProbeCancel               context.CancelFunc
 }
 
 func New(cfg config.Config, db *pgxpool.Pool, redisClient *redis.Client) *Server {
@@ -244,6 +245,9 @@ func New(cfg config.Config, db *pgxpool.Pool, redisClient *redis.Client) *Server
 	server.lotteryCancel = lotteryCancel
 	server.lotteryWorker = lotteryWorker
 	connHealthService.StartScheduler(context.Background())
+	groupProbeCtx, groupProbeCancel := context.WithCancel(context.Background())
+	server.groupProbeCancel = groupProbeCancel
+	connHealthService.StartGroupProbeScheduler(groupProbeCtx)
 
 	// 策略设置变更时通知上游服务更新定时同步配置。
 	applyRefreshConfig := func(s settings.StrategySettings) {
@@ -418,6 +422,9 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.groupProbeCancel != nil {
+		s.groupProbeCancel()
+	}
 	if s.lotteryCancel != nil {
 		s.lotteryCancel()
 	}
