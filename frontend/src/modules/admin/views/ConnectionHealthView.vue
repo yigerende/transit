@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import {
   Activity,
   BrainCircuit,
+  ChevronDown,
   Layers,
   Loader2,
   RefreshCw,
@@ -35,6 +36,7 @@ import type {
   PolicyInput,
 } from '../types/connectionHealth'
 import { groupAutomationPolicyIds, policyInputWithEnabled } from '../utils/connectionHealthPolicy'
+import { channelAutomationEnabled, channelsByLatestLatency } from '../utils/connectionHealthChannels'
 
 const { t, te } = useI18n()
 const {
@@ -115,6 +117,9 @@ const filteredGroups = computed(() => {
 const readableMessage = (rawKey: string): string => t(connectionHealthMessageKey(rawKey, te))
 
 const selectedGroup = computed(() => filteredGroups.value.find(group => group.id === selectedGroupId.value) ?? filteredGroups.value[0] ?? null)
+const sortedChannels = computed(() => channelsByLatestLatency(selectedGroup.value?.accounts ?? []))
+const automatedChannels = computed(() => sortedChannels.value.filter(channelAutomationEnabled))
+const inactiveChannels = computed(() => sortedChannels.value.filter(account => !channelAutomationEnabled(account)))
 watch(filteredGroups, (next) => {
   if (!next.some(group => group.id === selectedGroupId.value)) selectedGroupId.value = next[0]?.id ?? ''
 }, { immediate: true })
@@ -412,7 +417,17 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
           <p v-if="selectedGroup.accountsError" role="alert" class="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{{ readableMessage(selectedGroup.accountsError) }}</p>
           <p v-else-if="!selectedGroup.accounts.length" class="py-16 text-center text-sm text-muted-foreground">{{ t('admin.connectionHealth.groupDetail.empty') }}</p>
           <p v-if="(selectedGroup.priorityConflictCount ?? 0) > 0" class="text-xs text-amber-600">{{ t('admin.connectionHealth.cards.priorityConflict', { count: selectedGroup.priorityConflictCount }) }}</p>
-          <ChannelHealthCard v-for="account in selectedGroup.accounts" :key="account.targetId" :account="account" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" :show-quality="Boolean(selectedGroup.quality?.enabled)" :quality-enabled="Boolean(selectedGroup.quality?.enabled && selectedGroup.quality?.globalEnabled)" :quality-unavailable="Boolean(selectedGroup.quality?.errorKey)" :quality-busy="qualityBusyTargets.has(account.targetId)" :quality-error="qualityChannelErrors[account.targetId]" @toggle-quality="toggleChannelQuality" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
+          <ChannelHealthCard v-for="account in automatedChannels" :key="account.targetId" :account="account" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" :show-quality="Boolean(selectedGroup.quality?.enabled)" :quality-enabled="Boolean(selectedGroup.quality?.enabled && selectedGroup.quality?.globalEnabled)" :quality-unavailable="Boolean(selectedGroup.quality?.errorKey)" :quality-busy="qualityBusyTargets.has(account.targetId)" :quality-error="qualityChannelErrors[account.targetId]" @toggle-quality="toggleChannelQuality" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
+          <details v-if="inactiveChannels.length" :key="selectedGroup.id" class="group rounded-lg border border-border/60">
+            <summary class="flex cursor-pointer list-none items-center gap-2 rounded-lg px-4 py-3 text-sm text-muted-foreground hover:bg-surface/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary [&::-webkit-details-marker]:hidden">
+              <ChevronDown class="h-4 w-4 shrink-0 -rotate-90 transition-transform group-open:rotate-0" aria-hidden="true" />
+              <span>{{ t('admin.connectionHealth.cards.inactiveChannels') }}</span>
+              <span class="ml-auto tabular-nums">{{ inactiveChannels.length }}</span>
+            </summary>
+            <div class="space-y-2 border-t border-border/60 p-2">
+              <ChannelHealthCard v-for="account in inactiveChannels" :key="account.targetId" :account="account" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
+            </div>
+          </details>
         </div>
       </div>
       <div v-else class="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground"><Layers class="h-8 w-8 opacity-40" /><p class="text-sm">{{ t('admin.connectionHealth.groupProbe.selectGroup') }}</p></div>

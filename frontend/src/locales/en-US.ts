@@ -966,6 +966,7 @@ export default {
         minutesAgo: '{count} min ago',
         loading: 'Loading groups',
         noMatches: 'No matching groups',
+        inactiveChannels: 'Channels without active automation',
         clearFilters: 'Clear filters',
         priorityConflict: '{count} channels have priority conflicts. Review the notices below.',
         status: {

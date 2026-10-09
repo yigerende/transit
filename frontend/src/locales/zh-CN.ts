@@ -966,6 +966,7 @@ export default {
         minutesAgo: '{count} 分钟前',
         loading: '正在加载分组',
         noMatches: '没有匹配的分组',
+        inactiveChannels: '未开启自动策略渠道',
         clearFilters: '清除筛选',
         priorityConflict: '{count} 个渠道的优先级存在冲突，请查看下方提示。',
         status: {

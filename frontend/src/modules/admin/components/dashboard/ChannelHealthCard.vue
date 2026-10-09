@@ -6,18 +6,14 @@ import ProbeHistoryStrip from './ProbeHistoryStrip.vue'
 import QualityHistoryStrip from './QualityHistoryStrip.vue'
 import { connectionHealthStateBadgeClass } from '../../composables/useConnectionHealth'
 import type { AdminGroupAccount } from '../../types/connectionHealth'
+import { channelAutomationEnabled, latestChannelProbe } from '../../utils/connectionHealthChannels'
 
 const props = defineProps<{ account: AdminGroupAccount; historyUnavailable?: boolean; showQuality?: boolean; qualityEnabled?: boolean; qualityUnavailable?: boolean; qualityBusy?: boolean; qualityError?: string }>()
 const emit = defineEmits<{ probe: [account: AdminGroupAccount]; 'view-events': [account: AdminGroupAccount]; 'toggle-quality': [account: AdminGroupAccount] }>()
 const { t } = useI18n()
 const prefix = 'admin.connectionHealth'
-// This flag follows saved channel selection, independently of policy on/off.
-// Fall back to assignment metadata when connected to an older backend.
-const selectedForAutomation = computed(() => props.account.qualitySelected
-  ?? (!props.account.excludedFromGroupPolicy && Boolean(props.account.hasAssignedPolicy
-    ?? props.account.assignedPolicyIds?.length
-    ?? props.account.assignedPolicies?.length)))
-const latest = computed(() => props.account.recentProbes?.[0])
+const selectedForAutomation = computed(() => channelAutomationEnabled(props.account))
+const latest = computed(() => latestChannelProbe(props.account))
 const state = computed(() => {
   if (props.historyUnavailable) return 'loadError'
   if (!props.account.probeAvailable) return 'unavailable'
