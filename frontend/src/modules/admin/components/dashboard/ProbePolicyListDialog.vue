@@ -12,6 +12,7 @@ const props = defineProps<{
   policies: ConnectionHealthPolicy[]
   deletingPolicyId: string
   deleteError: string
+  busyPolicyId?: string
 }>()
 
 const emit = defineEmits<{
@@ -140,8 +141,9 @@ watch(() => props.policies.map(policy => policy.id).join('\u0000'), () => {
                 </div>
                 <div class="flex shrink-0 items-center gap-1.5">
                   <Tooltip :text="policy.enabled ? t(`${prefix}.disable`) : t(`${prefix}.enable`)">
-                    <button type="button" class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-surface-line hover:text-foreground" @click="emit('toggle', policy)">
-                      <Ban v-if="policy.enabled" class="h-4 w-4" />
+                    <button type="button" :disabled="Boolean(busyPolicyId)" :aria-label="policy.enabled ? t(`${prefix}.disable`) : t(`${prefix}.enable`)" class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-surface-line hover:text-foreground disabled:opacity-40" @click="emit('toggle', policy)">
+                      <Loader2 v-if="busyPolicyId === policy.id" class="h-4 w-4 animate-spin" />
+                      <Ban v-else-if="policy.enabled" class="h-4 w-4" />
                       <CheckCircle2 v-else class="h-4 w-4" />
                     </button>
                   </Tooltip>

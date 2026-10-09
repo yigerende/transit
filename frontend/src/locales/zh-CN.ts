@@ -861,6 +861,32 @@ export default {
       saveError: '保存失败，请重试。'
     },
     connectionHealth: {
+      groupAutomation: {
+        groupLabel: '{group} 的自动化策略',
+        none: '策略未配置',
+        configure: '配置分组 {group} 的自动化策略',
+        edit: '编辑分组 {group} 的自动化策略',
+        editPolicy: '编辑策略 {policy}',
+        manage: '展开分组 {group} 的 {count} 条自动化策略',
+        enable: '启用分组 {group} 的策略「{policy}」',
+        disable: '停用分组 {group} 的策略「{policy}」',
+        enabled: '策略已启用',
+        disabled: '策略已停用',
+        unavailable: '策略暂不可用',
+        unavailableHint: '策略详情尚未读取成功，请刷新后重试。',
+        multipleHint: '{count} 条策略，已启用 {enabled} 条；点击展开，分别编辑或开关。',
+        shared: '此策略用于 {count} 个分组，修改与启停会同步生效。',
+        assignments: '管理策略与渠道选择',
+        modes: { monitor: '仅探活', priority: '自动优先级', priorityOnly: '仅优先级', suspend: '可暂停渠道', localSuspend: '探活可暂停', unconfigured: '待配置模型', mixed: '混合策略' },
+        hints: {
+          monitor: '自动探活并记录健康状态，不修改上游优先级、状态或权重。',
+          priority: '自动探活并按倍率和健康配置调整上游优先级，不停用渠道。',
+          priorityOnly: '按分组倍率调整上游优先级，不执行渠道自动探活。',
+          suspend: '已允许按探活结果自动停用和恢复上游渠道；优先级是否调整取决于策略配置。',
+          localSuspend: '允许本地探活进入暂停，但自动远端动作关闭，不会停用上游渠道。',
+          unconfigured: '没有启用的探活模型，请编辑策略配置。',
+        },
+      },
       quality: {
         settingsTitle: '降智检测配置', settingsHint: '当前站点的所有已开启分组共用此配置。保存后在左侧开启分组，仅检测自动化策略中已勾选并保存的渠道。',
         displayOnly: '仅检测展示，不改变渠道状态、优先级或权重。',

@@ -861,6 +861,32 @@ export default {
       saveError: 'Save failed. Please try again.'
     },
     connectionHealth: {
+      groupAutomation: {
+        groupLabel: 'Automation for {group}',
+        none: 'No policy',
+        configure: 'Configure automation for {group}',
+        edit: 'Edit automation for {group}',
+        editPolicy: 'Edit policy {policy}',
+        manage: 'Expand {count} policies for {group}',
+        enable: 'Enable policy "{policy}" for {group}',
+        disable: 'Disable policy "{policy}" for {group}',
+        enabled: 'Policy enabled',
+        disabled: 'Policy disabled',
+        unavailable: 'Policy unavailable',
+        unavailableHint: 'Policy details could not be loaded. Refresh and try again.',
+        multipleHint: '{count} policies, {enabled} enabled. Expand to edit or toggle each one.',
+        shared: 'This policy is used by {count} groups. Edits and toggles apply to all of them.',
+        assignments: 'Manage policies and channels',
+        modes: { monitor: 'Probe only', priority: 'Auto priority', priorityOnly: 'Priority only', suspend: 'Can suspend', localSuspend: 'Local suspension', unconfigured: 'Needs models', mixed: 'Mixed policies' },
+        hints: {
+          monitor: 'Probe and record health without changing upstream priority, status or weight.',
+          priority: 'Probe and adjust upstream priority using multiplier and health settings, without disabling channels.',
+          priorityOnly: 'Adjust priority by group multiplier without automatic channel probes.',
+          suspend: 'Probe results may disable and restore upstream channels. Priority changes depend on policy settings.',
+          localSuspend: 'Local probe suspension is allowed, but remote actions are off: upstream channels stay enabled.',
+          unconfigured: 'No probe model is enabled. Edit the policy to configure models.',
+        },
+      },
       quality: {
         settingsTitle: 'Quality detection settings', settingsHint: 'All enabled groups in this workspace share these settings. Save, then enable groups on the left. Only channels selected and saved in automation policies are tested.',
         displayOnly: 'Results only. Channel status, priority and weight are unaffected.',

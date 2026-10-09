@@ -16,10 +16,11 @@ import { Button } from '@/components/ui/button'
 import { listUpstreamSites } from '../api/upstream'
 import { connectionHealthMessageKey, useConnectionHealth } from '../composables/useConnectionHealth'
 import ChannelHealthCard from '../components/dashboard/ChannelHealthCard.vue'
+import GroupAutomationControl from '../components/dashboard/GroupAutomationControl.vue'
 import ProbeHistoryStrip from '../components/dashboard/ProbeHistoryStrip.vue'
 import GroupProbeDialog from '../components/dashboard/GroupProbeDialog.vue'
 import QualitySettingsDialog from '../components/dashboard/QualitySettingsDialog.vue'
-import { setGroupQuality } from '../api/connectionHealth'
+import { listConnectionHealthPolicies, setGroupQuality } from '../api/connectionHealth'
 import ConnectionHealthEventsDialog from '../components/dashboard/ConnectionHealthEventsDialog.vue'
 import GroupHealthSetupDrawer from '../components/dashboard/GroupHealthSetupDrawer.vue'
 import ManualOneTimeProbeDialog from '../components/dashboard/ManualOneTimeProbeDialog.vue'
@@ -33,7 +34,7 @@ import type {
   ConnectionHealthPolicy,
   PolicyInput,
 } from '../types/connectionHealth'
-import { resolveConnectionHealthStrategyMode } from '../utils/connectionHealthPolicy'
+import { groupAutomationPolicyIds, policyInputWithEnabled } from '../utils/connectionHealthPolicy'
 
 const { t, te } = useI18n()
 const {
@@ -128,6 +129,7 @@ const autoRefresh = async () => {
   try {
     await Promise.all([
       loadAll({ silent: true }),
+      loadPolicies(),
       ...(eventsDialogOpen.value ? [loadEvents(selectedConnectionId.value || undefined)] : []),
     ])
   } finally {
@@ -201,6 +203,24 @@ const policyDrawerOpen = ref(false)
 const editingPolicy = ref<ConnectionHealthPolicy | null>(null)
 const deletingPolicyId = ref('')
 const deletePolicyError = ref('')
+const busyPolicyId = ref('')
+const groupPolicyIds = computed(() => new Map(adminGroups.value.map(group => [group.id, groupAutomationPolicyIds(group)])))
+const groupPolicies = computed(() => {
+  const byId = new Map(policies.value.map(policy => [policy.id, policy]))
+  return new Map(adminGroups.value.map(group => [group.id, (groupPolicyIds.value.get(group.id) ?? [])
+    .map(id => byId.get(id)).filter((policy): policy is ConnectionHealthPolicy => Boolean(policy))]))
+})
+const policyUsageCounts = computed(() => {
+  const counts = new Map<string, number>()
+  for (const ids of groupPolicyIds.value.values()) {
+    for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1)
+  }
+  return counts
+})
+const editingPolicyHint = computed(() => {
+  const count = editingPolicy.value ? policyUsageCounts.value.get(editingPolicy.value.id) ?? 0 : 0
+  return count > 1 ? t('admin.connectionHealth.groupAutomation.shared', { count }) : ''
+})
 const ownGroupOptions = computed<OwnGroupOption[]>(() => groups.value.map((group) => ({ id: group.ownGroupId, name: group.ownGroupName || group.ownGroupId })))
 
 const openCreatePolicy = () => {
@@ -221,33 +241,21 @@ const handleSavePolicy = async (input: PolicyInput) => {
 }
 
 const togglePolicyEnabled = async (policy: ConnectionHealthPolicy) => {
-  await savePolicy({
-    id: policy.id,
-    name: policy.name,
-    enabled: !policy.enabled,
-    ownGroupId: policy.ownGroupId,
-    ownGroupName: policy.ownGroupName,
-    probeIntervalSeconds: policy.probeIntervalSeconds,
-    failureThreshold: policy.failureThreshold,
-    successThreshold: policy.successThreshold,
-    cooldownSeconds: policy.cooldownSeconds,
-    observationSeconds: policy.observationSeconds,
-    recoveryStepPercent: policy.recoveryStepPercent,
-    dailyProbeBudget: policy.dailyProbeBudget,
-    autoDegradeEnabled: policy.autoDegradeEnabled,
-    autoRemoteActionEnabled: policy.autoRemoteActionEnabled,
-    priorityMode: policy.priorityMode ?? 'none',
-    strategyMode: resolveConnectionHealthStrategyMode(policy),
-    modelTargets: policy.modelTargets.map((model) => ({
-      id: model.id,
-      modelName: model.modelName,
-      providerFamily: model.providerFamily,
-      enabled: model.enabled,
-      probePrompt: model.probePrompt,
-      maxProbeTokens: model.maxProbeTokens,
-    })),
-  })
-  await loadAll({ silent: true })
+  if (busyPolicyId.value) return
+  busyPolicyId.value = policy.id
+  try {
+    // Read current settings before a full-policy PUT, so a stale sidebar cannot
+    // undo edits made in another tab. The switch changes enabled only.
+    const latest = (await listConnectionHealthPolicies()).find(item => item.id === policy.id)
+    if (!latest) throw new Error('admin.connectionHealth.errors.notFound')
+    if (await savePolicy(policyInputWithEnabled(latest, !policy.enabled))) {
+      await loadAll({ silent: true })
+    }
+  } catch (err) {
+    errorKey.value = err instanceof Error ? err.message : 'admin.connectionHealth.errors.request'
+  } finally {
+    busyPolicyId.value = ''
+  }
 }
 
 const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
@@ -317,7 +325,17 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
               <button type="button" :disabled="group.groupProbeSupported === false" class="rounded-md p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary disabled:opacity-30" :aria-label="t('admin.connectionHealth.groupProbe.action', { name: group.name })" :title="t(group.groupProbeSupported === false ? 'admin.connectionHealth.groupProbe.unsupported' : 'admin.connectionHealth.groupProbe.buttonHint')" @click="openGroupProbe(group)"><Zap class="h-4 w-4" /></button>
             </div>
             <ProbeHistoryStrip class="mt-2.5" :samples="group.recentProbes" :limit="20" compact :unavailable="Boolean(group.probeHistoryError)" />
-            <button type="button" :disabled="Boolean(qualityBusyGroup) || Boolean(group.quality?.errorKey)" :aria-pressed="Boolean(group.quality?.enabled)" :aria-label="t('admin.connectionHealth.quality.toggleGroup', { name:group.name })" class="mt-3 flex w-full items-center justify-between gap-2 text-[11px] disabled:opacity-50" :class="group.quality?.enabled && group.quality?.globalEnabled ? 'text-primary' : 'text-muted-foreground'" @click="toggleGroupQuality(group)">
+            <GroupAutomationControl
+              :group-name="group.name"
+              :policies="groupPolicies.get(group.id) ?? []"
+              :usage-counts="policyUsageCounts"
+              :busy-policy-id="busyPolicyId"
+              :unavailable="(groupPolicyIds.get(group.id)?.length ?? 0) !== (groupPolicies.get(group.id)?.length ?? 0)"
+              @edit="openEditPolicy"
+              @toggle="togglePolicyEnabled"
+              @setup="openSetup(group)"
+            />
+            <button type="button" :disabled="Boolean(qualityBusyGroup) || Boolean(group.quality?.errorKey)" :aria-pressed="Boolean(group.quality?.enabled)" :aria-label="t('admin.connectionHealth.quality.toggleGroup', { name:group.name })" class="mt-1.5 flex min-h-6 w-full items-center justify-between gap-2 text-[11px] disabled:opacity-50" :class="group.quality?.enabled && group.quality?.globalEnabled ? 'text-primary' : 'text-muted-foreground'" @click="toggleGroupQuality(group)">
               <span class="inline-flex items-center gap-1.5"><Loader2 v-if="qualityBusyGroup === group.id" class="h-3.5 w-3.5 animate-spin" /><BrainCircuit v-else class="h-3.5 w-3.5" />{{ t('admin.connectionHealth.quality.stripTitle') }}<span v-if="group.quality?.enabled && !group.quality?.globalEnabled">· {{ t('admin.connectionHealth.quality.globalPaused') }}</span></span>
               <span class="relative h-4 w-7 shrink-0 rounded-full transition-colors" :class="group.quality?.enabled ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="group.quality?.enabled ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
             </button>
@@ -371,6 +389,7 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
       :policies="policies"
       :deleting-policy-id="deletingPolicyId"
       :delete-error="deletePolicyError"
+      :busy-policy-id="busyPolicyId"
       @close="policyListDialogOpen = false"
       @create="openCreatePolicy"
       @delete="handleDeletePolicy"
@@ -382,6 +401,7 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
       :open="policyDrawerOpen"
       :policy="editingPolicy"
       :own-group-options="ownGroupOptions"
+      :context-hint="editingPolicyHint"
       @close="policyDrawerOpen = false"
       @save="handleSavePolicy"
     />

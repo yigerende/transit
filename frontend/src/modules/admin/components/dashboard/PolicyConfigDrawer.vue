@@ -16,6 +16,7 @@ const props = defineProps<{
   open: boolean
   policy: ConnectionHealthPolicy | null
   ownGroupOptions: OwnGroupOption[]
+  contextHint?: string
 }>()
 
 const emit = defineEmits<{
@@ -240,6 +241,7 @@ const handleSave = () => {
             </div>
 
             <div class="space-y-5 px-5 py-5">
+              <p v-if="contextHint" class="text-xs text-muted-foreground">{{ contextHint }}</p>
               <div v-if="validationError" class="rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-600 dark:text-red-400">
                 {{ validationError }}
               </div>
