@@ -37,6 +37,7 @@ const providerOptions = ['gemini', 'anthropic', 'openai', 'custom']
 // 保守默认值：60s 探活间隔、1 个探活 token、每日预算有限、远端动作默认关闭需要用户显式打开。
 const DEFAULTS = {
   probeIntervalSeconds: 60,
+  maxLatencyMs: 20000,
   failureThreshold: 3,
   successThreshold: 2,
   cooldownSeconds: 300,
@@ -50,6 +51,7 @@ const name = ref('')
 const enabled = ref(true)
 const ownGroupId = ref('')
 const probeIntervalSeconds = ref(DEFAULTS.probeIntervalSeconds)
+const maxLatencyMs = ref(DEFAULTS.maxLatencyMs)
 const failureThreshold = ref(DEFAULTS.failureThreshold)
 const successThreshold = ref(DEFAULTS.successThreshold)
 const cooldownSeconds = ref(DEFAULTS.cooldownSeconds)
@@ -118,6 +120,7 @@ const resetForm = () => {
   enabled.value = p?.enabled ?? true
   ownGroupId.value = p?.ownGroupId ?? ''
   probeIntervalSeconds.value = p?.probeIntervalSeconds ?? DEFAULTS.probeIntervalSeconds
+  maxLatencyMs.value = p?.maxLatencyMs ?? DEFAULTS.maxLatencyMs
   failureThreshold.value = p?.failureThreshold ?? DEFAULTS.failureThreshold
   successThreshold.value = p?.successThreshold ?? DEFAULTS.successThreshold
   cooldownSeconds.value = p?.cooldownSeconds ?? DEFAULTS.cooldownSeconds
@@ -210,6 +213,10 @@ const handleSave = () => {
     return
   }
 
+  if (!Number.isInteger(maxLatencyMs.value) || maxLatencyMs.value < 1 || maxLatencyMs.value > 2147483647) {
+    validationError.value = t('admin.connectionHealth.errors.maxLatencyInvalid')
+    return
+  }
   const ownGroup = props.ownGroupOptions.find(g => g.id === ownGroupId.value)
   const input: PolicyInput = {
     id: props.policy?.id,
@@ -218,6 +225,7 @@ const handleSave = () => {
     ownGroupId: ownGroupId.value,
     ownGroupName: ownGroup?.name ?? '',
     probeIntervalSeconds: probeIntervalSeconds.value,
+    maxLatencyMs: maxLatencyMs.value,
     failureThreshold: failureThreshold.value,
     successThreshold: successThreshold.value,
     cooldownSeconds: cooldownSeconds.value,
@@ -448,6 +456,11 @@ const handleSave = () => {
 
               <!-- 阈值配置 -->
               <div v-if="!isMultiplierOnly" class="grid grid-cols-2 gap-3 border-t border-border/40 pt-4">
+                <div class="col-span-2 space-y-1.5">
+                  <label for="policy-max-latency" class="text-xs font-medium text-muted-foreground">{{ t(`${prefix}.maxLatencyLabel`) }}</label>
+                  <input id="policy-max-latency" v-model.number="maxLatencyMs" type="number" min="1" max="2147483647" step="1" class="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-sm text-foreground" />
+                  <p class="text-xs leading-5 text-muted-foreground">{{ t(`${prefix}.maxLatencyHelp`) }}</p>
+                </div>
                 <div class="space-y-1.5">
                   <label class="flex items-center gap-1 text-xs font-medium text-muted-foreground">
                     {{ t(`${prefix}.probeIntervalLabel`) }}

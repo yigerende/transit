@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"transithub/backend/internal/modules/upstream"
 )
@@ -15,8 +16,8 @@ import (
 // 出的 base_url + key 请求上游 OpenAI 兼容 /v1/models，只把安全字段透出前端。
 // 与 probe_runner.go 的真实探活请求相互独立（发现模型不消耗探活预算、不落库）。
 
-// modelDiscoveryTimeout 与真实探活的 ProbeTimeout 保持一致的保守超时。
-const modelDiscoveryTimeout = ProbeTimeout
+// Model discovery keeps its own deadline, independent of channel probe policies.
+const modelDiscoveryTimeout = 10 * time.Second
 
 // DiscoveredModel 是模型发现接口的对外展示字段，绝不包含 base_url/key 等敏感信息。
 type DiscoveredModel struct {

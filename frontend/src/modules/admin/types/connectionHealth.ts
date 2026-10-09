@@ -256,6 +256,7 @@ export interface ConnectionHealthPolicy {
   modelPattern: string
   probeMode: string
   probeIntervalSeconds: number
+  maxLatencyMs?: number
   failureThreshold: number
   successThreshold: number
   cooldownSeconds: number
@@ -313,6 +314,7 @@ export interface PolicyInput {
   ownGroupName: string
   modelPattern?: string
   probeIntervalSeconds?: number
+  maxLatencyMs?: number
   failureThreshold?: number
   successThreshold?: number
   cooldownSeconds?: number

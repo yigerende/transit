@@ -39,7 +39,7 @@ func TestEditGroupPolicyPostgresAtomicSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	policy, targets, err := buildPolicyAndTargets("user", "site", "p1", PolicyInput{
-		Name: "before", Enabled: true,
+		Name: "before", Enabled: true, MaxLatencyMs: intPtr(45000),
 		ModelTargets: []ModelTargetInput{{ModelName: "old-model", ProviderFamily: ProviderOpenAI, Enabled: true}},
 	})
 	if err != nil {
@@ -57,6 +57,7 @@ func TestEditGroupPolicyPostgresAtomicSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	policy.Name = "after"
+	policy.MaxLatencyMs = 65000
 	policy.AutoSuspendEnabled = true
 	targets[0].ModelName = "new-model"
 	err = repo.UpdatePolicyAndReplaceGroupConfiguration(ctx, policy, targets, "g1", "changed group", []string{"p1"}, []string{"reject-me"}, nil)
@@ -64,7 +65,7 @@ func TestEditGroupPolicyPostgresAtomicSave(t *testing.T) {
 		t.Fatal("expected exclusion constraint to fail")
 	}
 	loaded, err := repo.GetPolicy(ctx, "p1", "user", "site")
-	if err != nil || loaded == nil || loaded.Name != "before" || loaded.AutoSuspendEnabled || len(loaded.ModelTargets) != 1 || loaded.ModelTargets[0].ModelName != "old-model" {
+	if err != nil || loaded == nil || loaded.Name != "before" || loaded.MaxLatencyMs != 45000 || loaded.AutoSuspendEnabled || len(loaded.ModelTargets) != 1 || loaded.ModelTargets[0].ModelName != "old-model" {
 		t.Fatalf("failed selection write must roll back policy and models: %+v %v", loaded, err)
 	}
 	assignments, err := repo.ListGroupPolicyAssignmentsByWorkspace(ctx, "user", "site")
@@ -89,7 +90,7 @@ func TestEditGroupPolicyPostgresAtomicSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	loaded, err = repo.GetPolicy(ctx, "p1", "user", "site")
-	if err != nil || loaded == nil || loaded.Name != "after" || !loaded.AutoSuspendEnabled || loaded.ModelTargets[0].ModelName != "new-model" {
+	if err != nil || loaded == nil || loaded.Name != "after" || loaded.MaxLatencyMs != 65000 || !loaded.AutoSuspendEnabled || loaded.ModelTargets[0].ModelName != "new-model" {
 		t.Fatalf("successful save lost policy or model changes: %+v %v", loaded, err)
 	}
 	exclusions, err = repo.ListGroupTargetExclusionsByWorkspace(ctx, "user", "site")
@@ -104,6 +105,39 @@ func TestEditGroupPolicyPostgresAtomicSave(t *testing.T) {
 		err := repo.UpdatePolicyAndReplaceGroupConfiguration(ctx, invalid, nil, "g1", "group", nil, nil, nil)
 		if err == nil || err.Error() != ErrorPolicyNotFound {
 			t.Fatalf("missing/foreign policy must not be upserted: %v", err)
+		}
+	}
+	// Upgrade a policy created before configurable deadlines existed.
+	if _, err := pool.Exec(ctx, "ALTER TABLE connection_health_policies DROP COLUMN max_latency_ms"); err != nil {
+		t.Fatal(err)
+	}
+	migration, err := os.ReadFile("../../database/migrations/000022_connection_health_max_latency.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, string(migration)); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = repo.GetPolicy(ctx, "p1", "user", "site")
+	if err != nil || loaded == nil || loaded.MaxLatencyMs != 20000 {
+		t.Fatalf("existing policy must receive the new 20s default: %+v %v", loaded, err)
+	}
+	if err := repo.SavePolicyWithTargets(ctx, policy, targets); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.EnsureSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, string(migration)); err != nil {
+		t.Fatal(err)
+	}
+	for _, list := range []func() ([]Policy, error){
+		func() ([]Policy, error) { return repo.ListPolicies(ctx, "user", "site") },
+		func() ([]Policy, error) { return repo.ListEnabledPolicies(ctx) },
+	} {
+		policies, err := list()
+		if err != nil || len(policies) != 1 || policies[0].MaxLatencyMs != 65000 {
+			t.Fatalf("editor/scheduler must retain custom latency after schema checks: %+v %v", policies, err)
 		}
 	}
 }

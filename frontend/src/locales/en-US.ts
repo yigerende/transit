@@ -1318,6 +1318,8 @@ export default {
         multiplierOnlySummary: 'No probes; priority follows multiplier'
       },
       policyDrawer: {
+        maxLatencyLabel: 'Maximum response latency (ms)',
+        maxLatencyHelp: 'Maximum wait for a channel probe response. Defaults to 20000 ms (20 seconds); requests exceeding it are recorded as timeouts.',
         saving: 'Saving…',
         channels: {
           title: 'Participating channels',
@@ -1498,6 +1500,7 @@ export default {
         credentialsRedacted: 'Upstream credentials are redacted and cannot be used for probing.',
         modelListUnavailable: 'Could not fetch the upstream model list. Please try again later.',
         modelListInvalid: 'The upstream model list response format is not recognized.',
+        maxLatencyInvalid: 'Enter a valid positive integer for maximum response latency (milliseconds).',
         multiplierRequired: 'This group has no valid multiplier. Set it upstream before enabling multiplier sorting.',
         manualModelsRequired: 'Please select at least one model before starting the test.',
         policyNotFound: 'The selected policy does not exist or is not in the current workspace.'

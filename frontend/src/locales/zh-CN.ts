@@ -1318,6 +1318,8 @@ export default {
         multiplierOnlySummary: '不执行探活，按倍率同步优先级'
       },
       policyDrawer: {
+        maxLatencyLabel: '最大对话延迟（ms）',
+        maxLatencyHelp: '单次渠道探活请求的最长等待时间，默认 20000 ms（20 秒）。超过此时间按超时记录。',
         saving: '保存中…',
         channels: {
           title: '参与渠道',
@@ -1498,6 +1500,7 @@ export default {
         credentialsRedacted: '上游凭据已脱敏，无法用于探活。',
         modelListUnavailable: '无法获取上游模型列表，请稍后重试。',
         modelListInvalid: '上游模型列表响应格式无法识别。',
+        maxLatencyInvalid: '最大对话延迟请输入有效的正整数（毫秒）',
         multiplierRequired: '当前分组没有有效倍率，请先在上游设置倍率后再启用倍率排序。',
         manualModelsRequired: '请至少选择一个模型再开始测试。',
         policyNotFound: '所选策略不存在或不属于当前工作区。'

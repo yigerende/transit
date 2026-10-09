@@ -12,8 +12,8 @@ import (
 	"time"
 )
 
-// ProbeTimeout 是单次真实探活请求的超时时间，任务书要求默认 10s。
-const ProbeTimeout = 10 * time.Second
+// DefaultMaxLatencyMs is the default deadline for a complete channel probe response.
+const DefaultMaxLatencyMs = 20000
 
 const defaultProbePrompt = "hi"
 
@@ -26,21 +26,24 @@ type ProbeRequest struct {
 	ModelName      string
 	MaxTokens      int
 	ProbePrompt    string
+	MaxLatencyMs   int
 }
 
 // RealProbeRunner 按 provider family 构造最小请求，对上游 AI 端点发起一次性轻量调用。
-// 不经过任何现有请求转发路径，独立的 http.Client，超时 10s。
+// 不经过任何现有请求转发路径，每次请求使用所属策略的超时，避免并发策略相互覆盖。
 type RealProbeRunner struct {
 	client *http.Client
 }
 
 func NewRealProbeRunner() *RealProbeRunner {
-	return &RealProbeRunner{client: &http.Client{Timeout: ProbeTimeout}}
+	return &RealProbeRunner{client: &http.Client{}}
 }
 
 // Probe 发起一次真实轻量探活，返回分类后的结果。err 只用于调用方感知调用本身是否被 ctx 取消，
 // 正常的上游错误都归类进 ProbeOutcome.Result，不通过 error 返回。
 func (r *RealProbeRunner) Probe(ctx context.Context, req ProbeRequest) ProbeOutcome {
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(defaultInt(req.MaxLatencyMs, DefaultMaxLatencyMs))*time.Millisecond)
+	defer cancel()
 	maxTokens := req.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = 1
@@ -63,7 +66,11 @@ func (r *RealProbeRunner) Probe(ctx context.Context, req ProbeRequest) ProbeOutc
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	latencyMs = int(time.Since(started).Milliseconds())
+	if readErr != nil {
+		return ProbeOutcome{Result: classifyTransportError(readErr), LatencyMs: latencyMs, Detail: redact(readErr.Error(), req.UpstreamKey)}
+	}
 	return classifyHTTPResponse(resp.StatusCode, body, req.UpstreamKey, latencyMs)
 }
 

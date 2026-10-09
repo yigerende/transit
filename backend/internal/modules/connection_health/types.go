@@ -81,6 +81,7 @@ const (
 	// ErrorMultiplierRequired 表示用户尝试给没有有效倍率的分组启用倍率优先级策略。
 	// 前端应提示先在上游配置倍率；后端绝不使用 1x 等猜测值代替。
 	ErrorMultiplierRequired = "admin.connectionHealth.errors.multiplierRequired"
+	ErrorMaxLatencyInvalid  = "admin.connectionHealth.errors.maxLatencyInvalid"
 )
 
 // PolicyAssignment 对应 connection_health_policy_assignments 表：一条「target 显式绑定某条策略」
@@ -168,6 +169,7 @@ type Policy struct {
 	ModelPattern            string    `json:"modelPattern"`
 	ProbeMode               string    `json:"probeMode"`
 	ProbeIntervalSeconds    int       `json:"probeIntervalSeconds"`
+	MaxLatencyMs            int       `json:"maxLatencyMs"`
 	FailureThreshold        int       `json:"failureThreshold"`
 	SuccessThreshold        int       `json:"successThreshold"`
 	CooldownSeconds         int       `json:"cooldownSeconds"`

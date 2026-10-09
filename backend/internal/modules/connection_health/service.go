@@ -658,6 +658,7 @@ type PolicyInput struct {
 	OwnGroupName            string             `json:"ownGroupName"`
 	ModelPattern            string             `json:"modelPattern"`
 	ProbeIntervalSeconds    int                `json:"probeIntervalSeconds"`
+	MaxLatencyMs            *int               `json:"maxLatencyMs,omitempty"`
 	FailureThreshold        int                `json:"failureThreshold"`
 	SuccessThreshold        int                `json:"successThreshold"`
 	CooldownSeconds         int                `json:"cooldownSeconds"`
@@ -707,6 +708,9 @@ func (s *Service) SavePolicy(ctx context.Context, userID string, in PolicyInput)
 		if strings.TrimSpace(in.StrategyMode) == "" {
 			in.StrategyMode = existing.StrategyMode
 		}
+		if in.MaxLatencyMs == nil {
+			in.MaxLatencyMs = intPtr(defaultInt(existing.MaxLatencyMs, DefaultMaxLatencyMs))
+		}
 	}
 
 	policy, targets, err := buildPolicyAndTargets(userID, adminAccountID, id, in)
@@ -745,11 +749,19 @@ func (s *Service) DeletePolicy(ctx context.Context, userID string, id string) er
 }
 
 func buildPolicyAndTargets(userID string, adminAccountID string, id string, in PolicyInput) (Policy, []ModelTarget, error) {
+	maxLatencyMs := DefaultMaxLatencyMs
+	if in.MaxLatencyMs != nil {
+		if *in.MaxLatencyMs < 1 || *in.MaxLatencyMs > 2147483647 {
+			return Policy{}, nil, requestError(ErrorMaxLatencyInvalid)
+		}
+		maxLatencyMs = *in.MaxLatencyMs
+	}
 	strategyMode := normalizeStrategyMode(in.StrategyMode)
 	policy := Policy{
 		ID: id, UserID: userID, AdminAccountID: adminAccountID, Name: strings.TrimSpace(in.Name), Enabled: in.Enabled,
 		OwnGroupID: in.OwnGroupID, OwnGroupName: in.OwnGroupName, ModelPattern: defaultString(in.ModelPattern, "*"),
 		ProbeMode: "real_model", ProbeIntervalSeconds: defaultInt(in.ProbeIntervalSeconds, 60),
+		MaxLatencyMs:     maxLatencyMs,
 		FailureThreshold: defaultInt(in.FailureThreshold, 3), SuccessThreshold: defaultInt(in.SuccessThreshold, 2),
 		CooldownSeconds: defaultInt(in.CooldownSeconds, 300), ObservationSeconds: defaultInt(in.ObservationSeconds, 300),
 		RecoveryStepPercent: defaultInt(in.RecoveryStepPercent, 25), AutoDegradeEnabled: in.AutoDegradeEnabled,
@@ -1020,7 +1032,8 @@ func (s *Service) probeOnce(ctx context.Context, conn my_sites.RealConnection, p
 	}
 
 	outcome := s.probeRunner.Probe(ctx, ProbeRequest{
-		BaseURL: site.BaseURL, UpstreamKey: conn.UpstreamKey, ProviderFamily: target.ProviderFamily,
+		MaxLatencyMs: policy.MaxLatencyMs,
+		BaseURL:      site.BaseURL, UpstreamKey: conn.UpstreamKey, ProviderFamily: target.ProviderFamily,
 		ModelName: target.ModelName, MaxTokens: target.MaxProbeTokens, ProbePrompt: target.ProbePrompt,
 	})
 

@@ -439,7 +439,8 @@ func (s *Service) probeTargetOnce(ctx context.Context, userID string, adminAccou
 		providerFamily = target.ProviderFamily
 	}
 	outcome := s.probeRunner.Probe(ctx, ProbeRequest{
-		BaseURL: cred.BaseURL, UpstreamKey: cred.Key, ProviderFamily: providerFamily,
+		MaxLatencyMs: spec.policy.MaxLatencyMs,
+		BaseURL:      cred.BaseURL, UpstreamKey: cred.Key, ProviderFamily: providerFamily,
 		ModelName: spec.modelName, MaxTokens: spec.maxProbeTokens, ProbePrompt: spec.probePrompt,
 	})
 
