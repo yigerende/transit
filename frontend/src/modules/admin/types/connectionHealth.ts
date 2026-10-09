@@ -99,6 +99,8 @@ export interface AdminGroupAccount {
   latencyPriority?: LatencyPriorityDecision
   latencyPriorityError?: boolean
   qualityEnabled?: boolean
+  suspensionEnabled?: boolean
+  suspensionSupported?: boolean
   qualitySelected?: boolean
   qualityState?: import('./quality').QualityState
   qualityHistory?: import('./quality').QualitySample[]

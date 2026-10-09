@@ -653,7 +653,8 @@ func (s *Service) currentScheduledModels(ctx context.Context, job adminProbeJob)
 		}
 		effective = mergePoliciesByID(effective, groupPolicies[group.ID])
 	}
-	specs := candidateModelSpecs(job.target.Models, effective)
+	suspensionEnabled, readErr := s.repo.GetChannelSuspension(ctx, job.userID, job.adminAccountID, job.target.TargetID)
+	specs := candidateModelSpecs(job.target.Models, channelSuspensionPolicies(effective, readErr == nil && suspensionEnabled))
 	for i := range specs {
 		source := sources[specs[i].policy.ID]
 		specs[i].eventGroupResolved, specs[i].eventAdminGroupID, specs[i].eventAdminGroupName = source.resolved, source.adminGroupID, source.adminGroupName

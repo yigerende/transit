@@ -68,6 +68,8 @@ type AdminGroupHealthSummary struct {
 // 只要后端能安全解析 base_url + key + model 就可独立探活，不再需要 real_connections。
 // 绝不包含 key / token / cookie / credentials / secret / authorization 明文。
 type AdminGroupAccount struct {
+	SuspensionEnabled    bool                     `json:"suspensionEnabled"`
+	SuspensionSupported  bool                     `json:"suspensionSupported"`
 	QualityEnabled       bool                     `json:"qualityEnabled"`
 	QualitySelected      bool                     `json:"qualitySelected"`
 	QualityState         *QualityState            `json:"qualityState,omitempty"`
@@ -152,6 +154,10 @@ func (s *Service) AdminGroups(ctx context.Context, userID string) ([]AdminGroupH
 		return nil, err
 	}
 	states, err := s.repo.ListStatesByWorkspace(ctx, userID, adminAccountID)
+	if err != nil {
+		return nil, err
+	}
+	suspensionSettings, err := s.repo.ListChannelSuspensions(ctx, userID, adminAccountID)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +276,14 @@ func (s *Service) AdminGroups(ctx context.Context, userID string) ([]AdminGroupH
 					effectivePolicies = append(effectivePolicies, policy)
 				}
 			}
-			activeSpecs := candidateModelSpecs(splitModelList(acc.Models), effectivePolicies)
+			suspensionSupported := false
+			for _, policy := range effectivePolicies {
+				if policy.Enabled && policySupportsProbing(policy) && policy.AutoDegradeEnabled && policy.AutoSuspendEnabled {
+					suspensionSupported = true
+				}
+			}
+			suspensionEnabled := channelSuspensionEnabled(suspensionSettings, targetID)
+			activeSpecs := candidateModelSpecs(splitModelList(acc.Models), channelSuspensionPolicies(effectivePolicies, suspensionEnabled))
 			hasProbePolicy := hasEnabledProbePolicy(effectivePolicies)
 			modelHealth, unprobedModels := modelHealthForSpecs(stateIndex[targetID], activeSpecs)
 			if credentialReason := latestCredentialUnavailableReason(modelHealth); credentialReason != "" {
@@ -286,6 +299,8 @@ func (s *Service) AdminGroups(ctx context.Context, userID string) ([]AdminGroupH
 			}
 
 			item := AdminGroupAccount{
+				SuspensionEnabled:          suspensionEnabled,
+				SuspensionSupported:        suspensionSupported,
 				QualitySelected:            qualitySelection.selected(group.ID, targetID),
 				ID:                         acc.ID,
 				Name:                       acc.Name,

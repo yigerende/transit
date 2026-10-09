@@ -160,6 +160,13 @@ func (s *Service) syncWorkspacePriorities(
 	healthStates []ConnectionHealthState,
 	syncStates []PrioritySyncState,
 ) {
+	suspensionSettings, err := s.repo.ListChannelSuspensions(ctx, userID, adminAccountID)
+	if err != nil {
+		return
+	}
+	for targetID, item := range inventory {
+		item.policies = channelSuspensionPolicies(item.policies, channelSuspensionEnabled(suspensionSettings, targetID))
+	}
 	statesByTarget := make(map[string][]ConnectionHealthState)
 	for _, state := range healthStates {
 		if _, isTarget := parseTargetID(state.ConnectionID); isTarget {

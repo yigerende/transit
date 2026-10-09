@@ -861,6 +861,11 @@ export default {
       saveError: '保存失败，请重试。'
     },
     connectionHealth: {
+      channelSuspension: {
+        label: '允许暂停',
+        toggle: '允许自动暂停渠道 {name}',
+        hint: '关闭后，该渠道只探活和调整优先级，不会自动暂停；共享分组同步生效。系统此前暂停的渠道会自动恢复，人工停用不受影响。开启仍需分组策略授权。'
+      },
       latencyPriority: {
   "help": "仅调整上游优先级。选定一个探活模型，只用有效期内成功的自动探活计算加权延迟。",
   "model": "用于延迟判定的模型",

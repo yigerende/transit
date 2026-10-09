@@ -445,7 +445,7 @@ func (s *Service) probeTargetOnce(ctx context.Context, userID string, adminAccou
 	})
 
 	now := time.Now()
-	spec.policy = s.currentActionPermissions(ctx, spec.policy)
+	spec.policy = s.currentTargetActionPermissions(ctx, userID, adminAccountID, target.TargetID, spec.policy)
 	normalized := stateWithoutSuspension(*current, spec.policy)
 	current = &normalized
 	transitionOut := Transition(TransitionInput{
@@ -508,7 +508,7 @@ func (s *Service) finishTargetProbeBatch(ctx context.Context, userID string, adm
 	}
 	currentSpecs := append([]probeModelSpec(nil), specs...)
 	for i := range currentSpecs {
-		currentSpecs[i].policy = s.currentActionPermissions(ctx, currentSpecs[i].policy)
+		currentSpecs[i].policy = s.currentTargetActionPermissions(ctx, userID, adminAccountID, target.TargetID, currentSpecs[i].policy)
 	}
 	remoteAction, actionErr := s.reconcileTargetRemoteAction(ctx, userID, adminAccountID, session, target, currentSpecs)
 	if actionErr != nil {

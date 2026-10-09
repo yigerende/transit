@@ -861,6 +861,11 @@ export default {
       saveError: 'Save failed. Please try again.'
     },
     connectionHealth: {
+      channelSuspension: {
+        label: 'Allow suspension',
+        toggle: 'Allow automatic suspension of {name}',
+        hint: 'Off: continue probing and priority updates without automatic suspension. Applies across all groups sharing this channel. System-suspended channels are restored; manual disables are preserved. On still requires policy permission.'
+      },
       latencyPriority: {
   "help": "Only updates upstream priority. Average recent successful automatic probes of one selected model.",
   "model": "Model for latency ranking",

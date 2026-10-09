@@ -8,8 +8,8 @@ import { connectionHealthStateBadgeClass } from '../../composables/useConnection
 import type { AdminGroupAccount } from '../../types/connectionHealth'
 import { channelAutomationEnabled, latestChannelProbe } from '../../utils/connectionHealthChannels'
 
-const props = defineProps<{ account: AdminGroupAccount; historyUnavailable?: boolean; showQuality?: boolean; qualityEnabled?: boolean; qualityUnavailable?: boolean; qualityBusy?: boolean; qualityError?: string }>()
-const emit = defineEmits<{ probe: [account: AdminGroupAccount]; 'view-events': [account: AdminGroupAccount]; 'toggle-quality': [account: AdminGroupAccount] }>()
+const props = defineProps<{ account: AdminGroupAccount; historyUnavailable?: boolean; showQuality?: boolean; qualityEnabled?: boolean; qualityUnavailable?: boolean; qualityBusy?: boolean; qualityError?: string; suspensionBusy?: boolean; suspensionError?: string }>()
+const emit = defineEmits<{ probe: [account: AdminGroupAccount]; 'view-events': [account: AdminGroupAccount]; 'toggle-quality': [account: AdminGroupAccount]; 'toggle-suspension': [account: AdminGroupAccount] }>()
 const { t } = useI18n()
 const prefix = 'admin.connectionHealth'
 const selectedForAutomation = computed(() => channelAutomationEnabled(props.account))
@@ -37,11 +37,17 @@ const state = computed(() => {
         <h3 class="text-sm font-medium text-foreground" :class="selectedForAutomation ? 'break-words' : 'truncate'" :title="account.name || account.id">{{ account.name || account.id }}</h3>
       </div>
       <div class="flex shrink-0 items-center gap-2">
+        <button v-if="selectedForAutomation && account.suspensionSupported" type="button" role="switch" :aria-checked="account.suspensionEnabled !== false" :aria-label="t(`${prefix}.channelSuspension.toggle`, { name: account.name || account.id })" :title="t(`${prefix}.channelSuspension.hint`)" :disabled="suspensionBusy" class="flex items-center gap-1.5 rounded px-1 py-2 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50" @click.stop="emit('toggle-suspension', account)">
+          <span>{{ t(`${prefix}.channelSuspension.label`) }}</span>
+          <Loader2 v-if="suspensionBusy" class="h-4 w-7 animate-spin" />
+          <span v-else class="relative h-4 w-7 rounded-full transition-colors" :class="account.suspensionEnabled !== false ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="account.suspensionEnabled !== false ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
+        </button>
         <span class="rounded-full px-2.5 py-1 text-xs" :class="state === 'healthy' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : state === 'unhealthy' ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-surface text-muted-foreground'">{{ t(`${prefix}.cards.status.${state}`) }}</span>
         <button type="button" class="rounded-lg border border-border/70 p-2 text-muted-foreground hover:text-primary disabled:opacity-40" :disabled="!account.probeAvailable" :aria-label="t(`${prefix}.actions.probe`)" :title="t(`${prefix}.actions.probe`)" @click="emit('probe', account)"><Zap class="h-3.5 w-3.5" /></button>
         <button type="button" class="rounded-lg border border-border/70 p-2 text-muted-foreground hover:text-primary" :aria-label="t(`${prefix}.actions.viewEvents`)" :title="t(`${prefix}.actions.viewEvents`)" @click="emit('view-events', account)"><Eye class="h-3.5 w-3.5" /></button>
       </div>
     </div>
+    <p v-if="suspensionError" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ suspensionError }}</p>
     <ProbeHistoryStrip v-if="selectedForAutomation" :samples="account.recentProbes" :unavailable="historyUnavailable">
       <template #before-stats>
         <span class="text-muted-foreground">{{ t(`${prefix}.groupDetail.columns.priority`) }} {{ account.priority ?? '—' }}</span>

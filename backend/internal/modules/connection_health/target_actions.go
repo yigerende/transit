@@ -23,6 +23,15 @@ func (s *Service) reconcileTargetRemoteAction(
 	target AdminProbeTarget,
 	specs []probeModelSpec,
 ) (string, error) {
+	release, err := s.channelActionLease(ctx, userID, adminAccountID, target.TargetID)
+	if err != nil {
+		return "", err
+	}
+	defer release()
+	enabled, err := s.repo.GetChannelSuspension(ctx, userID, adminAccountID, target.TargetID)
+	if err != nil || !enabled {
+		return "", err
+	}
 	if !targetSuspensionAllowed(specs) {
 		return "", nil
 	}
@@ -148,106 +157,121 @@ func (s *Service) restoreUnmanagedTargetActions(
 	states []TargetActionState,
 	inventoryCache adminInventoryCache,
 ) {
-	if len(states) == 0 {
+	for _, stored := range states {
+		s.restoreUnmanagedTargetAction(ctx, policies, targetAssignments, groupAssignments, exclusions, stored, inventoryCache)
+	}
+}
+
+func (s *Service) restoreUnmanagedTargetAction(ctx context.Context, policies []Policy, targetAssignments []PolicyAssignment, groupAssignments []GroupPolicyAssignment, exclusions []GroupTargetExclusion, stored TargetActionState, inventoryCache adminInventoryCache) {
+	release, err := s.channelActionLease(ctx, stored.UserID, stored.AdminAccountID, stored.TargetID)
+	if err != nil {
+		return
+	}
+	defer release()
+	latest, err := s.repo.GetTargetActionState(ctx, stored.UserID, stored.AdminAccountID, stored.TargetID)
+	if err != nil || latest == nil {
+		return
+	}
+	stored = *latest
+	enabled, err := s.repo.GetChannelSuspension(ctx, stored.UserID, stored.AdminAccountID, stored.TargetID)
+	if err != nil {
 		return
 	}
 	targetPolicies := assignedEnabledPoliciesByTarget(policies, targetAssignments)
 	groupPolicies := assignedEnabledPoliciesByGroup(policies, groupAssignments)
 	excluded := groupTargetExclusionIndex(exclusions)
-	for _, stored := range states {
-		inventory, err := s.loadAdminInventory(ctx, stored.UserID, stored.AdminAccountID, inventoryCache)
-		if err != nil {
-			log.Printf("[connection-health] restore unmanaged target inventory failed target_id=%s err=%v", stored.TargetID, err)
+	inventory, err := s.loadAdminInventory(ctx, stored.UserID, stored.AdminAccountID, inventoryCache)
+	if err != nil {
+		log.Printf("[connection-health] restore unmanaged target inventory failed target_id=%s err=%v", stored.TargetID, err)
+		return
+	}
+	inventoryComplete := true
+	for _, groupInventory := range inventory.groups {
+		if groupInventory.err != nil {
+			inventoryComplete = false
+			break
+		}
+	}
+	if !inventoryComplete {
+		// 任一分组成员读取失败时无法证明目标已经失去全部管理关系，保持当前状态更安全。
+		return
+	}
+	var target AdminProbeTarget
+	found := false
+	effectivePolicies := append([]Policy(nil), targetPolicies[stored.UserID+"|"+stored.AdminAccountID][stored.TargetID]...)
+	for _, groupInventory := range inventory.groups {
+		if groupInventory.err != nil {
 			continue
 		}
-		inventoryComplete := true
-		for _, groupInventory := range inventory.groups {
-			if groupInventory.err != nil {
-				inventoryComplete = false
-				break
-			}
-		}
-		if !inventoryComplete {
-			// 任一分组成员读取失败时无法证明目标已经失去全部管理关系，保持当前状态更安全。
-			continue
-		}
-		var target AdminProbeTarget
-		found := false
-		effectivePolicies := append([]Policy(nil), targetPolicies[stored.UserID+"|"+stored.AdminAccountID][stored.TargetID]...)
-		for _, groupInventory := range inventory.groups {
-			if groupInventory.err != nil {
+		for _, account := range groupInventory.accounts {
+			targetID := buildTargetID(string(inventory.session.Platform), stored.AdminAccountID, account.ID)
+			if targetID != stored.TargetID {
 				continue
 			}
-			for _, account := range groupInventory.accounts {
-				targetID := buildTargetID(string(inventory.session.Platform), stored.AdminAccountID, account.ID)
-				if targetID != stored.TargetID {
-					continue
+			if !found {
+				target = AdminProbeTarget{
+					TargetID: targetID, Platform: string(inventory.session.Platform),
+					AdminGroupID: groupInventory.group.ID, AdminGroupName: groupInventory.group.Name,
+					AccountID: account.ID, AccountName: account.Name, AccountStatus: account.Status,
+					AccountWeight: cloneIntPointer(account.Weight), ProviderFamily: account.Platform,
+					Models: splitModelList(account.Models),
 				}
-				if !found {
-					target = AdminProbeTarget{
-						TargetID: targetID, Platform: string(inventory.session.Platform),
-						AdminGroupID: groupInventory.group.ID, AdminGroupName: groupInventory.group.Name,
-						AccountID: account.ID, AccountName: account.Name, AccountStatus: account.Status,
-						AccountWeight: cloneIntPointer(account.Weight), ProviderFamily: account.Platform,
-						Models: splitModelList(account.Models),
-					}
-					found = true
-				}
-				workspaceKey := stored.UserID + "|" + stored.AdminAccountID
-				if !excluded[workspaceKey][groupInventory.group.ID][targetID] {
-					effectivePolicies = mergePoliciesByID(effectivePolicies, groupPolicies[workspaceKey][groupInventory.group.ID])
-				}
+				found = true
+			}
+			workspaceKey := stored.UserID + "|" + stored.AdminAccountID
+			if !excluded[workspaceKey][groupInventory.group.ID][targetID] {
+				effectivePolicies = mergePoliciesByID(effectivePolicies, groupPolicies[workspaceKey][groupInventory.group.ID])
 			}
 		}
-		if hasRemoteActionModel(candidateModelSpecs(target.Models, effectivePolicies)) {
-			continue
+	}
+	if enabled && hasRemoteActionModel(candidateModelSpecs(target.Models, effectivePolicies)) {
+		return
+	}
+	targetVisible := found
+	if !found {
+		parsed, ok := parseTargetID(stored.TargetID)
+		if !ok || parsed.adminAccountID != stored.AdminAccountID || parsed.platform != string(inventory.session.Platform) {
+			return
 		}
-		targetVisible := found
-		if !found {
-			parsed, ok := parseTargetID(stored.TargetID)
-			if !ok || parsed.adminAccountID != stored.AdminAccountID || parsed.platform != string(inventory.session.Platform) {
-				continue
-			}
-			// The account can remain upstream after being removed from every group. We no longer
-			// have a list snapshot for conflict detection, but restoring the captured original
-			// value is safer than leaving a system-disabled account stuck forever.
-			target = AdminProbeTarget{
-				TargetID: stored.TargetID, Platform: parsed.platform, AccountID: parsed.accountID,
-				AccountStatus: stored.LastAppliedStatus, AccountWeight: cloneIntPointer(stored.LastAppliedWeight),
-			}
+		// The account can remain upstream after being removed from every group. We no longer
+		// have a list snapshot for conflict detection, but restoring the captured original
+		// value is safer than leaving a system-disabled account stuck forever.
+		target = AdminProbeTarget{
+			TargetID: stored.TargetID, Platform: parsed.platform, AccountID: parsed.accountID,
+			AccountStatus: stored.LastAppliedStatus, AccountWeight: cloneIntPointer(stored.LastAppliedWeight),
 		}
-		currentStatus := normalizeTargetStatus(target.Platform, target.AccountStatus)
-		currentWeight := normalizedTargetWeight(target)
-		if stored.Conflict || (targetVisible && targetActionCheckpointConflicted(target, &stored, currentStatus, currentWeight)) {
-			stored.Conflict = true
-			stored.PendingStatus = ""
-			stored.PendingWeight = nil
-			if err := s.repo.UpsertTargetActionState(ctx, stored); err != nil {
-				log.Printf("[connection-health] store unmanaged target conflict failed target_id=%s err=%v", stored.TargetID, err)
-			}
-			continue
-		}
-		if targetVisible && targetStateEqual(target, currentStatus, currentWeight, stored.OriginalStatus, stored.OriginalWeight) {
-			if err := s.repo.DeleteTargetActionState(ctx, stored.UserID, stored.AdminAccountID, stored.TargetID); err != nil {
-				log.Printf("[connection-health] clear restored target action state failed target_id=%s err=%v", stored.TargetID, err)
-			}
-			continue
-		}
-		stored.PendingStatus = stored.OriginalStatus
-		stored.PendingWeight = cloneIntPointer(stored.OriginalWeight)
+	}
+	currentStatus := normalizeTargetStatus(target.Platform, target.AccountStatus)
+	currentWeight := normalizedTargetWeight(target)
+	if stored.Conflict || (targetVisible && targetActionCheckpointConflicted(target, &stored, currentStatus, currentWeight)) {
+		stored.Conflict = true
+		stored.PendingStatus = ""
+		stored.PendingWeight = nil
 		if err := s.repo.UpsertTargetActionState(ctx, stored); err != nil {
-			log.Printf("[connection-health] store unmanaged target restore intent failed target_id=%s err=%v", stored.TargetID, err)
-			continue
+			log.Printf("[connection-health] store unmanaged target conflict failed target_id=%s err=%v", stored.TargetID, err)
 		}
-		action, actionErr := s.dispatcher.ApplyTargetState(ctx, inventory.session, target, stored.OriginalWeight, stored.OriginalStatus)
-		if actionErr != nil {
-			log.Printf("[connection-health] restore unmanaged target failed target_id=%s action=%s err=%v", stored.TargetID, action, actionErr)
-			continue
-		}
-		s.recordTargetEvent(ctx, stored.UserID, stored.AdminAccountID, target, "", "*", "policy_unmanaged_restore", "", "", nil, "", "", action)
+		return
+	}
+	if targetVisible && targetStateEqual(target, currentStatus, currentWeight, stored.OriginalStatus, stored.OriginalWeight) {
 		if err := s.repo.DeleteTargetActionState(ctx, stored.UserID, stored.AdminAccountID, stored.TargetID); err != nil {
-			log.Printf("[connection-health] clear unmanaged target action state failed target_id=%s err=%v", stored.TargetID, err)
+			log.Printf("[connection-health] clear restored target action state failed target_id=%s err=%v", stored.TargetID, err)
 		}
+		return
+	}
+	stored.PendingStatus = stored.OriginalStatus
+	stored.PendingWeight = cloneIntPointer(stored.OriginalWeight)
+	if err := s.repo.UpsertTargetActionState(ctx, stored); err != nil {
+		log.Printf("[connection-health] store unmanaged target restore intent failed target_id=%s err=%v", stored.TargetID, err)
+		return
+	}
+	action, actionErr := s.dispatcher.ApplyTargetState(ctx, inventory.session, target, stored.OriginalWeight, stored.OriginalStatus)
+	if actionErr != nil {
+		log.Printf("[connection-health] restore unmanaged target failed target_id=%s action=%s err=%v", stored.TargetID, action, actionErr)
+		return
+	}
+	s.recordTargetEvent(ctx, stored.UserID, stored.AdminAccountID, target, "", "*", "policy_unmanaged_restore", "", "", nil, "", "", action)
+	if err := s.repo.DeleteTargetActionState(ctx, stored.UserID, stored.AdminAccountID, stored.TargetID); err != nil {
+		log.Printf("[connection-health] clear unmanaged target action state failed target_id=%s err=%v", stored.TargetID, err)
 	}
 }
 

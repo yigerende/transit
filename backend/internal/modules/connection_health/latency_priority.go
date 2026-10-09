@@ -298,6 +298,7 @@ func (s *Service) prioritySamples(ctx context.Context, userID, adminAccountID st
 }
 
 func (s *Service) attachLatencyPriorities(ctx context.Context, userID, adminAccountID string, platform upstream.Platform, groups []AdminGroupHealth, policies []Policy, states []ConnectionHealthState, syncStates []PrioritySyncState) {
+	suspensionSettings, suspensionErr := s.repo.ListChannelSuspensions(ctx, userID, adminAccountID)
 	policyByID := map[string]Policy{}
 	for _, p := range policies {
 		policyByID[p.ID] = p
@@ -334,7 +335,7 @@ func (s *Service) attachLatencyPriorities(ctx context.Context, userID, adminAcco
 			if !hasLatencyPriorityPolicy(policiesByTarget[a.TargetID]) {
 				continue
 			}
-			if err != nil {
+			if err != nil || suspensionErr != nil {
 				a.LatencyPriorityError = true
 				continue
 			}
@@ -342,7 +343,8 @@ func (s *Service) attachLatencyPriorities(ctx context.Context, userID, adminAcco
 			if st, ok := previous[a.TargetID]; ok {
 				prior = &st
 			}
-			a.LatencyPriority = latencyDecisionForTarget(platform, policiesByTarget[a.TargetID], statesByTarget[a.TargetID], samples[a.TargetID], prior, now)
+			effective := channelSuspensionPolicies(policiesByTarget[a.TargetID], channelSuspensionEnabled(suspensionSettings, a.TargetID))
+			a.LatencyPriority = latencyDecisionForTarget(platform, effective, statesByTarget[a.TargetID], samples[a.TargetID], prior, now)
 		}
 	}
 }

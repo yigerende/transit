@@ -61,13 +61,19 @@ func TestSuspensionOffClearsOldStatesAndKeepsManualDisable(t *testing.T) {
 
 func TestProbeTarget_SuspensionPermissionAndInFlightRevocation(t *testing.T) {
 	for _, platformName := range []upstream.Platform{upstream.PlatformSub2API, upstream.PlatformNewAPI} {
-		for _, mode := range []string{"default_off", "enabled", "revoked_in_flight"} {
+		for _, mode := range []string{"default_off", "enabled", "revoked_in_flight", "channel_off", "channel_revoked_in_flight"} {
 			t.Run(fmt.Sprintf("%s/%s", platformName, mode), func(t *testing.T) {
 				repo := newFakeRepository()
 				policy := sub2APIProbePolicy(true)
 				policy.AutoSuspendEnabled = mode != "default_off"
 				repo.policies = []Policy{policy}
+				if mode == "channel_off" {
+					_ = repo.SetChannelSuspension(context.Background(), "user1", "ws1", string(platformName)+":ws1:100", false)
+				}
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if mode == "channel_revoked_in_flight" {
+						_ = repo.SetChannelSuspension(r.Context(), "user1", "ws1", string(platformName)+":ws1:100", false)
+					}
 					if mode == "revoked_in_flight" {
 						repo.policies[0].AutoSuspendEnabled = false
 					}
