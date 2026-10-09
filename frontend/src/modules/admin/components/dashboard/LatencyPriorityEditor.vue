@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Trash2 } from 'lucide-vue-next'
 import type { LatencyPriorityConfig, ModelTargetInput } from '../../types/connectionHealth'
+import { defaultLatencyWeights } from '../../utils/latencyPriority'
 
 const props = defineProps<{ modelValue: LatencyPriorityConfig; models: ModelTargetInput[] }>()
 const emit = defineEmits<{ 'update:modelValue': [value: LatencyPriorityConfig] }>()
@@ -12,7 +13,7 @@ const enabledModels = computed(() => props.models.filter(m => m.enabled && m.mod
 const patch = (value: Partial<LatencyPriorityConfig>) => emit('update:modelValue', { ...props.modelValue, ...value })
 const setCount = (value: number) => {
   const size = Math.max(1, Math.min(20, Math.trunc(value) || 1))
-  const weights = size === 3 ? [50, 30, 20] : Array.from({ length: size }, (_, i) => size - i)
+  const weights = defaultLatencyWeights(size)
   patch({ sampleCount: size, minSamples: Math.min(size, props.modelValue.minSamples), weights })
 }
 const setWeight = (index: number, value: number) => {

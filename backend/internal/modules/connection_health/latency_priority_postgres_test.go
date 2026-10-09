@@ -43,7 +43,7 @@ func TestLatencyPriorityPostgresPersistenceAndSamples(t *testing.T) {
 		t.Fatal("schema upgrade is not idempotent", err)
 	}
 	p := latencyTestPolicy()
-	p.LatencyPriority.Weights = []float64{6, 3, 1}
+	p.LatencyPriority.Weights = []float64{6, 3, 2, 1, 1}
 	p.LatencyPriority.MaxAgeSeconds = 240
 	p.LatencyPriority.Bands[1].Priority = 21
 	if err = repo.SavePolicyWithTargets(ctx, p, p.ModelTargets); err != nil {

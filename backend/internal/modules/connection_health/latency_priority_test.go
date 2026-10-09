@@ -19,7 +19,9 @@ func TestLatencyAverageUsesOnlyFreshSelectedModel(t *testing.T) {
 	now := time.Now()
 	p := latencyTestPolicy()
 	samples := []PriorityProbeSample{
-		{ID: "old", ModelName: "model", LatencyMs: 100, CreatedAt: now.Add(-181 * time.Second)},
+		{ID: "old", ModelName: "model", LatencyMs: 100, CreatedAt: now.Add(-301 * time.Second)},
+		{ID: "fifth", ModelName: "model", LatencyMs: 2000, CreatedAt: now.Add(-240 * time.Second)},
+		{ID: "fourth", ModelName: "model", LatencyMs: 3000, CreatedAt: now.Add(-180 * time.Second)},
 		{ID: "third", ModelName: "model", LatencyMs: 4000, CreatedAt: now.Add(-120 * time.Second)},
 		{ID: "other", ModelName: "other-model", LatencyMs: 10, CreatedAt: now},
 		{ID: "latest", ModelName: "model", LatencyMs: 8000, CreatedAt: now},
@@ -27,7 +29,7 @@ func TestLatencyAverageUsesOnlyFreshSelectedModel(t *testing.T) {
 		{ID: "future", ModelName: "model", LatencyMs: 1, CreatedAt: now.Add(time.Second)},
 	}
 	d := evaluateLatencyPriority(p, nil, samples, nil, now)
-	if d.AverageMs == nil || math.Abs(*d.AverageMs-6300) > .001 || d.SampleCount != 3 || d.Priority != 2 {
+	if d.AverageMs == nil || math.Abs(*d.AverageMs-5100) > .001 || d.SampleCount != 5 || d.Priority != 2 {
 		t.Fatalf("unexpected average: %+v", d)
 	}
 	p.LatencyPriority.SampleCount = 2
@@ -36,12 +38,12 @@ func TestLatencyAverageUsesOnlyFreshSelectedModel(t *testing.T) {
 	if *d.AverageMs != 7250 || d.SampleCount != 2 {
 		t.Fatalf("custom sample count/weights ignored: %+v", d)
 	}
-	d = evaluateLatencyPriority(p, nil, samples[:len(samples)-1], nil, now.Add(180*time.Second))
+	d = evaluateLatencyPriority(p, nil, samples[:len(samples)-1], nil, now.Add(300*time.Second))
 	if d.SampleCount != 1 || *d.AverageMs != 8000 {
 		t.Fatalf("expiry boundary/partial weight normalization: %+v", d)
 	}
 	p.LatencyPriority.MinSamples = 2
-	d = evaluateLatencyPriority(p, nil, samples[:len(samples)-1], nil, now.Add(180*time.Second))
+	d = evaluateLatencyPriority(p, nil, samples[:len(samples)-1], nil, now.Add(300*time.Second))
 	if d.Reason != "insufficient" || d.Priority != 50 {
 		t.Fatalf("minimum sample threshold: %+v", d)
 	}

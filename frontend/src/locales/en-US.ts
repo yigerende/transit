@@ -874,7 +874,7 @@ export default {
   "maxAge": "Sample validity (seconds)",
   "minSamples": "Minimum samples",
   "hysteresis": "Band margin (seconds)",
-  "windowHelp": "Defaults for 60-second probes: 3 samples within 180 seconds. Available weights are normalized when fewer samples exist; below the minimum uses the insufficient-data priority. Set the band margin to 0 to disable it.",
+  "windowHelp": "Defaults for 60-second probes: 5 successful samples within 300 seconds (5 minutes), weighted 30/25/20/15/10 from newest to oldest. Available weights are normalized when fewer samples exist; below the minimum uses the insufficient-data priority. Set the band margin to 0 to disable it.",
   "weights": "Weights, newest to oldest (normalized automatically)",
   "weightItem": "Sample {n}",
   "bandsHelp": "Contiguous ranges must start at 0, with no overlaps. The boundary belongs to the preceding band; leave the final upper bound empty. Lower numbers are preferred by Sub2API; NewAPI prefers higher numbers.",
@@ -1147,7 +1147,7 @@ export default {
           options: {
             multiplier: {
               title: 'Latency Priority',
-              description: 'Map the weighted latency of the latest 3 successful probes within 180 seconds to configured upstream priorities.'
+              description: 'Map the weighted latency of the latest 5 successful probes within 300 seconds to configured upstream priorities.'
             },
             multiplierOnly: {
               title: 'Multiplier Only',
@@ -1193,7 +1193,7 @@ export default {
           remoteAction: 'Upstream Automation',
           enabled: 'Enabled',
           disabled: 'Disabled',
-          multiplierRule: 'Latency rule: use the latest 3 successful probes within 180 seconds with weights 50/30/20, then map the average to a configured priority. Shared channels use the least preferred result. Failure and recovery thresholds still apply; manual priority edits stop automatic overwrites.',
+          multiplierRule: 'Latency rule: use the latest 5 successful probes within 300 seconds with weights 30/25/20/15/10, then map the average to a configured priority. Shared channels use the least preferred result. Failure and recovery thresholds still apply; manual priority edits stop automatic overwrites.',
           multiplierOnlyRule: 'Multiplier-only rule: health state is ignored and no model probes run. Targets in multiple groups use the lowest multiplier. Disabling or unbinding restores the original priority; manual edits remain protected by conflict detection.'
         },
         back: 'Back',

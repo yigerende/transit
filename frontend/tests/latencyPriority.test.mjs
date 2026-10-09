@@ -34,7 +34,7 @@ test('sample and band validation rejects ambiguous priority mappings', () => {
   assert.equal(validLatencyPriority(defaultLatencyPriority()), true)
   for (const mutate of [
     c => { c.sampleCount = 0 }, c => { c.sampleCount = 21 }, c => { c.sampleCount = 2.5 },
-    c => { c.minSamples = 4 }, c => { c.maxAgeSeconds = 0 }, c => { c.weights = [1] },
+    c => { c.minSamples = c.sampleCount + 1 }, c => { c.maxAgeSeconds = 0 }, c => { c.weights = [1] },
     c => { c.weights[0] = 0 }, c => { c.weights[0] = NaN }, c => { c.hysteresisSeconds = -1 },
     c => { c.bands[1].minSeconds = 4 }, c => { c.bands[1].minSeconds = 6 },
     c => { c.bands[3].maxSeconds = 20 }, c => { c.bands[1].priority = 1 },

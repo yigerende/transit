@@ -36,7 +36,7 @@ func latencyFloat(v float64) *float64 { return &v }
 
 func defaultLatencyPriorityConfig() *LatencyPriorityConfig {
 	return &LatencyPriorityConfig{
-		SampleCount: 3, MinSamples: 1, MaxAgeSeconds: 180, Weights: []float64{50, 30, 20}, HysteresisSeconds: .5,
+		SampleCount: 5, MinSamples: 1, MaxAgeSeconds: 300, Weights: []float64{30, 25, 20, 15, 10}, HysteresisSeconds: .5,
 		Bands:                []LatencyPriorityBand{{0, latencyFloat(5), 1}, {5, latencyFloat(10), 2}, {10, latencyFloat(15), 3}, {15, nil, 4}},
 		InsufficientPriority: 50, DegradedPriority: 100, SuspendedPriority: 10000,
 	}

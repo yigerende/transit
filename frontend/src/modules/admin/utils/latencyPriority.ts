@@ -1,8 +1,11 @@
 import type { LatencyPriorityConfig } from '../types/connectionHealth'
 
+export const defaultLatencyWeights = (size: number): number[] =>
+  size === 5 ? [30, 25, 20, 15, 10] : size === 3 ? [50, 30, 20] : Array.from({ length: size }, (_, i) => size - i)
+
 export const defaultLatencyPriority = (): LatencyPriorityConfig => ({
-  modelName: '', sampleCount: 3, minSamples: 1, maxAgeSeconds: 180,
-  weights: [50, 30, 20], hysteresisSeconds: 0.5,
+  modelName: '', sampleCount: 5, minSamples: 1, maxAgeSeconds: 300,
+  weights: defaultLatencyWeights(5), hysteresisSeconds: 0.5,
   bands: [
     { minSeconds: 0, maxSeconds: 5, priority: 1 },
     { minSeconds: 5, maxSeconds: 10, priority: 2 },
