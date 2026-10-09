@@ -21,6 +21,8 @@ func RegisterRoutes(mux *http.ServeMux, service *Service) {
 	mux.HandleFunc("GET /api/connection-health/stored-summary", handler.storedSummary)
 	mux.HandleFunc("GET /api/connection-health/groups", handler.groups)
 	mux.HandleFunc("GET /api/connection-health/admin-groups", handler.adminGroups)
+	mux.HandleFunc("POST /api/connection-health/admin-groups/{id}/prepare-probe", handler.prepareGroupProbe)
+	mux.HandleFunc("POST /api/connection-health/admin-groups/{id}/probe", handler.probeAdminGroup)
 	mux.HandleFunc("GET /api/connection-health/events", handler.events)
 	mux.HandleFunc("POST /api/connection-health/connections/{id}/probe", handler.probe)
 	mux.HandleFunc("POST /api/connection-health/targets/{id}/probe", handler.probeTarget)
@@ -299,8 +301,8 @@ func (h *Handler) discoverTargetModels(w http.ResponseWriter, r *http.Request) {
 	httpjson.Write(w, http.StatusOK, models)
 }
 
-// manualProbeTarget 一次性手动探活：不写状态/事件、不消耗策略预算、不触发状态机或远端动作，
-// 结果仅用于弹窗内即时展示。models 必须非空。
+// Manual results can optionally be recorded for the channel timeline, without
+// changing policy state, consuming its budget or triggering remote actions.
 func (h *Handler) manualProbeTarget(w http.ResponseWriter, r *http.Request) {
 	userID, ok := authctx.UserID(r.Context())
 	if !ok {
@@ -315,7 +317,7 @@ func (h *Handler) manualProbeTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := h.service.ManualProbeTarget(r.Context(), userID, targetID, input.Models)
+	results, err := h.service.manualProbeTarget(r.Context(), userID, targetID, input.Models, input.RecordHistory)
 	if err != nil {
 		writeError(w, err)
 		return

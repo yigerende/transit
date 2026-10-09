@@ -12,6 +12,7 @@ import type {
   OwnGroupHealth,
   PolicyInput,
   TargetPolicyAssignments,
+  GroupProbeSample,
 } from '../types/connectionHealth'
 import {
   authUnauthorizedErrorKey,
@@ -107,13 +108,19 @@ export const probeTarget = async (targetId: string, models?: string[]): Promise<
 export const discoverTargetModels = async (targetId: string): Promise<ManualProbeModelOption[]> =>
   requestJson<ManualProbeModelOption[]>(`/connection-health/targets/${encodeURIComponent(targetId)}/models`)
 
-// manualProbeOnce 触发一次「一次性」探活：不写策略状态/事件，结果仅用于弹窗内即时展示。
+// 手动探活保存渠道历史，不修改策略状态或触发远端动作。
 // models 必须非空——手动一次性探活没有候选池概念，必须由用户在弹窗里显式勾选。
 export const manualProbeOnce = async (targetId: string, models: string[]): Promise<ManualProbeResult[]> =>
   requestJson<ManualProbeResult[]>(`/connection-health/targets/${encodeURIComponent(targetId)}/manual-probe`, {
     method: 'POST',
-    body: JSON.stringify({ models }),
+    body: JSON.stringify({ models, recordHistory: true }),
   })
+
+export const prepareGroupProbe = (groupId: string): Promise<{ models: ManualProbeModelOption[]; modelListUnavailable: boolean }> =>
+  requestJson(`/connection-health/admin-groups/${encodeURIComponent(groupId)}/prepare-probe`, { method: 'POST' })
+
+export const probeAdminGroup = (groupId: string, model: string): Promise<GroupProbeSample> =>
+  requestJson(`/connection-health/admin-groups/${encodeURIComponent(groupId)}/probe`, { method: 'POST', body: JSON.stringify({ model }) })
 
 // getTargetPolicyAssignments / setTargetPolicyAssignments 管理「账号/channel 显式分配策略」
 // 关系：只有分配了已启用策略的 target，后台调度器才会自动探活。

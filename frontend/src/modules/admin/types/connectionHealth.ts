@@ -96,6 +96,7 @@ export interface AdminGroupUnprobedModel {
 }
 
 export interface AdminGroupAccount {
+  recentProbes?: GroupProbeSample[]
   id: string
   name: string
   platform: string
@@ -135,7 +136,17 @@ export interface AdminGroupAccount {
   effectiveMultiplier?: number | null
 }
 
+export interface GroupProbeSample {
+  id: string
+  targetId: string
+  modelName: string
+  result: string
+  latencyMs: number | null
+  createdAt: string
+}
+
 export interface AdminGroupHealth {
+  groupProbeSupported?: boolean
   id: string
   name: string
   platform: string
@@ -159,6 +170,8 @@ export interface AdminGroupHealth {
   // accountsError 非空（i18n key）表示该分组账号列表加载失败，其余分组不受影响。
   accountsError?: string
   accounts: AdminGroupAccount[]
+  recentProbes?: GroupProbeSample[]
+  probeHistoryError?: string
 }
 
 export interface ConnectionHealthEvent {

@@ -126,11 +126,9 @@ func parseJSON(reader io.Reader, reqURL string) (any, error) {
 	}
 	var payload any
 	if err := json.Unmarshal(data, &payload); err != nil {
-		preview := string(data)
-		if len(preview) > 500 {
-			preview = preview[:500] + "...(truncated)"
-		}
-		log.Printf("[http-client] JSON 解析失败 url=%s len=%d preview=%s", reqURL, len(data), preview)
+		// Key list/create responses can contain credentials even when truncated
+		// or malformed. Never include their raw body in diagnostics.
+		log.Printf("[http-client] JSON 解析失败 url=%s len=%d", reqURL, len(data))
 		return nil, newRequestError(ErrorInvalidResponse, "")
 	}
 	return payload, nil

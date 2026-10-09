@@ -317,6 +317,16 @@ func (f *fakeRepository) ListRecentEventsByWorkspace(ctx context.Context, userID
 	return out, nil
 }
 
+func (f *fakeRepository) ListRecentProbesByTargets(ctx context.Context, userID, adminAccountID string, targetIDs []string) ([]GroupProbeSample, error) {
+	result := []GroupProbeSample{}
+	for _, event := range f.events {
+		if event.UserID == userID && event.AdminAccountID == adminAccountID && slices.Contains(targetIDs, event.ConnectionID) && slices.Contains(probeResultKeys(), event.Result) {
+			result = append(result, GroupProbeSample{ID: event.ID, TargetID: event.ConnectionID, ModelName: event.ModelName, Result: event.Result, LatencyMs: event.LatencyMs, CreatedAt: event.CreatedAt})
+		}
+	}
+	return result, nil
+}
+
 func (f *fakeRepository) CountFailureEventsSince(ctx context.Context, userID string, adminAccountID string, since time.Time) (int, error) {
 	count := 0
 	for _, event := range f.events {

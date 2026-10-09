@@ -4,21 +4,19 @@ import { useDocumentVisibility, useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import {
   Activity,
-  AlertTriangle,
-  ArrowDownUp,
-  CheckCircle2,
-  Gauge,
   Layers,
   Loader2,
   RefreshCw,
   Search,
   Settings2,
-  ShieldCheck,
+  Zap,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { listUpstreamSites } from '../api/upstream'
 import { connectionHealthMessageKey, useConnectionHealth } from '../composables/useConnectionHealth'
-import AdminGroupHealthDetail from '../components/dashboard/AdminGroupHealthDetail.vue'
+import ChannelHealthCard from '../components/dashboard/ChannelHealthCard.vue'
+import ProbeHistoryStrip from '../components/dashboard/ProbeHistoryStrip.vue'
+import GroupProbeDialog from '../components/dashboard/GroupProbeDialog.vue'
 import ConnectionHealthEventsDialog from '../components/dashboard/ConnectionHealthEventsDialog.vue'
 import GroupHealthSetupDrawer from '../components/dashboard/GroupHealthSetupDrawer.vue'
 import ManualOneTimeProbeDialog from '../components/dashboard/ManualOneTimeProbeDialog.vue'
@@ -36,7 +34,6 @@ import { resolveConnectionHealthStrategyMode } from '../utils/connectionHealthPo
 
 const { t, te } = useI18n()
 const {
-  overview,
   groups,
   adminGroups,
   events,
@@ -53,6 +50,8 @@ const {
 const searchText = ref('')
 const selectedType = ref('')
 const selectedGroupId = ref('')
+const groupProbeOpen = ref(false)
+const probeGroup = ref<AdminGroupHealth | null>(null)
 const selectedConnectionId = ref('')
 const eventsDialogOpen = ref(false)
 const siteNameMap = ref<Map<string, string>>(new Map())
@@ -71,19 +70,22 @@ const filteredGroups = computed(() => {
   })
 })
 
-const selectedGroup = computed(() => adminGroups.value.find((group) => group.id === selectedGroupId.value) ?? filteredGroups.value[0] ?? null)
-
-watch(filteredGroups, (nextGroups) => {
-  if (nextGroups.some((group) => group.id === selectedGroupId.value)) return
-  selectedGroupId.value = nextGroups[0]?.id ?? ''
-}, { immediate: true })
-
-const groupMonitoringEnabled = (group: AdminGroupHealth): boolean =>
-  group.hasEnabledProbePolicy ?? group.hasEnabledPolicy ?? group.assignedPolicies?.some((policy) => policy.enabled) ?? Boolean(group.hasAssignedPolicy)
-
-const monitoredGroupCount = computed(() => adminGroups.value.filter(groupMonitoringEnabled).length)
-const conflictCount = computed(() => adminGroups.value.reduce((sum, group) => sum + (group.priorityConflictCount ?? 0), 0))
 const readableMessage = (rawKey: string): string => t(connectionHealthMessageKey(rawKey, te))
+
+const selectedGroup = computed(() => filteredGroups.value.find(group => group.id === selectedGroupId.value) ?? filteredGroups.value[0] ?? null)
+watch(filteredGroups, (next) => {
+  if (!next.some(group => group.id === selectedGroupId.value)) selectedGroupId.value = next[0]?.id ?? ''
+}, { immediate: true })
+const openGroupProbe = (group: AdminGroupHealth) => {
+  probeGroup.value = group
+  groupProbeOpen.value = true
+}
+const groupProbeState = (group: AdminGroupHealth): string => {
+  if (group.probeHistoryError) return 'loadError'
+  const latest = group.recentProbes?.[0]
+  return latest ? (latest.result === 'ok' ? 'healthy' : 'unhealthy') : 'pending'
+}
+const refreshProbeResults = async () => { await loadAll({ silent: true }) }
 
 const loadSiteNames = async () => {
   try {
@@ -107,7 +109,10 @@ const autoRefresh = async () => {
   if (documentVisibility.value !== 'visible' || autoRefreshInFlight) return
   autoRefreshInFlight = true
   try {
-    await Promise.all([loadAll({ silent: true }), loadEvents(selectedConnectionId.value || undefined)])
+    await Promise.all([
+      loadAll({ silent: true }),
+      ...(eventsDialogOpen.value ? [loadEvents(selectedConnectionId.value || undefined)] : []),
+    ])
   } finally {
     autoRefreshInFlight = false
   }
@@ -119,7 +124,7 @@ watch(documentVisibility, (visibility) => {
 })
 
 const refresh = async () => {
-  await Promise.all([loadAll(), loadPolicies(), loadEvents()])
+  await Promise.all([loadAll(), loadPolicies(), loadEvents(selectedConnectionId.value || undefined)])
 }
 
 const siteName = (siteId: string): string => siteNameMap.value.get(siteId) ?? siteId
@@ -138,19 +143,19 @@ const onSetupSaved = async () => {
   await Promise.all([loadAll({ silent: true }), loadPolicies()])
 }
 
-// 一次性手动探活：不写状态/事件，不触发远端动作。
+// 手动探活记录历史，不改变策略状态或触发远端动作。
 const probeDialogOpen = ref(false)
 const probeDialogTarget = ref<ManualProbeTargetSummary | null>(null)
 
-const onProbeAccount = (account: AdminGroupAccount) => {
-  if (!selectedGroup.value || !account.probeAvailable) return
+const onProbeAccount = (group: AdminGroupHealth, account: AdminGroupAccount) => {
+  if (!account.probeAvailable) return
   probeDialogTarget.value = {
     targetId: account.targetId,
     accountName: account.name || account.id,
-    platform: selectedGroup.value.platform,
+    platform: group.platform,
     type: account.type,
     status: account.status,
-    groupName: selectedGroup.value.name,
+    groupName: group.name,
   }
   probeDialogOpen.value = true
 }
@@ -245,138 +250,79 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
 </script>
 
 <template>
-  <div class="space-y-5">
-    <header class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-      <div class="min-w-0">
-        <h1 class="text-xl font-semibold text-foreground">{{ t('admin.connectionHealth.title') }}</h1>
-        <p class="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">{{ t('admin.connectionHealth.simplifiedSubtitle') }}</p>
-      </div>
+  <div class="space-y-4">
+    <header class="flex flex-wrap items-center justify-between gap-3">
+      <h1 class="text-xl font-semibold text-foreground">{{ t('admin.connectionHealth.title') }}</h1>
       <div class="flex flex-wrap items-center gap-2">
         <Button variant="secondary" size="sm" @click="policyListDialogOpen = true">
-          <Settings2 class="h-4 w-4" />
-          {{ t('admin.connectionHealth.topActions.policies') }}
+          <Settings2 class="h-4 w-4" />{{ t('admin.connectionHealth.topActions.policies') }}
         </Button>
         <Button variant="secondary" size="sm" @click="openAllEvents">
-          <Activity class="h-4 w-4" />
-          {{ t('admin.connectionHealth.topActions.events') }}
+          <Activity class="h-4 w-4" />{{ t('admin.connectionHealth.topActions.events') }}
         </Button>
         <Button variant="secondary" size="sm" :disabled="isLoading" @click="refresh">
           <Loader2 v-if="isLoading" class="h-4 w-4 animate-spin" />
-          <RefreshCw v-else class="h-4 w-4" />
-          {{ t('admin.connectionHealth.refresh') }}
+          <RefreshCw v-else class="h-4 w-4" />{{ t('admin.connectionHealth.refresh') }}
         </Button>
       </div>
     </header>
 
-    <!-- 汇总与主列表使用同一 admin target 数据源。 -->
-    <section class="overflow-hidden rounded-lg border border-border/60 bg-card" :aria-label="t('admin.connectionHealth.summaryLabel')">
-      <dl class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
-        <div class="border-b border-r border-border/50 px-4 py-3 xl:border-b-0">
-          <dt class="text-xs font-medium text-muted-foreground">{{ t('admin.connectionHealth.summary.total') }}</dt>
-          <dd class="mt-1 text-xl font-semibold tabular-nums text-foreground">{{ overview?.totalConnections ?? 0 }}</dd>
-        </div>
-        <div class="border-b border-border/50 px-4 py-3 sm:border-r xl:border-b-0">
-          <dt class="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400"><CheckCircle2 class="h-3.5 w-3.5" />{{ t('admin.connectionHealth.stateLabels.healthy') }}</dt>
-          <dd class="mt-1 text-xl font-semibold tabular-nums text-foreground">{{ overview?.healthy ?? 0 }}</dd>
-        </div>
-        <div class="border-b border-r border-border/50 px-4 py-3 xl:border-b-0">
-          <dt class="flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400"><AlertTriangle class="h-3.5 w-3.5" />{{ t('admin.connectionHealth.stateLabels.degraded') }}</dt>
-          <dd class="mt-1 text-xl font-semibold tabular-nums text-foreground">{{ overview?.degraded ?? 0 }}</dd>
-        </div>
-        <div class="border-b border-border/50 px-4 py-3 sm:border-r xl:border-b-0">
-          <dt class="flex items-center gap-1 text-xs font-medium text-destructive"><Gauge class="h-3.5 w-3.5" />{{ t('admin.connectionHealth.stateLabels.suspended') }}</dt>
-          <dd class="mt-1 text-xl font-semibold tabular-nums text-foreground">{{ overview?.suspended ?? 0 }}</dd>
-        </div>
-        <div class="border-r border-border/50 px-4 py-3">
-          <dt class="flex items-center gap-1 text-xs font-medium text-primary"><ShieldCheck class="h-3.5 w-3.5" />{{ t('admin.connectionHealth.summary.monitoredGroups') }}</dt>
-          <dd class="mt-1 text-xl font-semibold tabular-nums text-foreground">{{ monitoredGroupCount }}</dd>
-        </div>
-        <div class="px-4 py-3">
-          <dt class="flex items-center gap-1 text-xs font-medium" :class="conflictCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'"><ArrowDownUp class="h-3.5 w-3.5" />{{ t('admin.connectionHealth.summary.priorityConflicts') }}</dt>
-          <dd class="mt-1 text-xl font-semibold tabular-nums text-foreground">{{ conflictCount }}</dd>
-        </div>
-      </dl>
-    </section>
+    <p v-if="errorKey" role="alert" class="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{{ readableMessage(errorKey) }}</p>
 
-    <p v-if="errorKey" class="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{{ readableMessage(errorKey) }}</p>
-
-    <section class="overflow-hidden rounded-lg border border-border/60 bg-card text-card-foreground shadow-sm">
-      <div v-if="isLoading && adminGroups.length === 0" class="grid min-h-[34rem] lg:grid-cols-[19rem_minmax(0,1fr)]">
-        <div class="space-y-3 border-r border-border/50 p-4">
-          <div class="h-10 animate-pulse rounded-lg bg-surface" />
-          <div v-for="index in 6" :key="index" class="h-16 animate-pulse rounded-lg bg-surface/70" />
-        </div>
-        <div class="space-y-5 p-6">
-          <div class="h-8 w-48 animate-pulse rounded bg-surface" />
-          <div class="h-20 animate-pulse rounded-lg bg-surface/70" />
-          <div class="h-72 animate-pulse rounded-lg bg-surface/70" />
-        </div>
-      </div>
-
-      <div v-else class="grid min-h-[34rem] lg:grid-cols-[19rem_minmax(0,1fr)]">
-        <aside class="flex min-h-0 flex-col border-b border-border/50 lg:border-b-0 lg:border-r">
-          <div class="space-y-3 border-b border-border/50 p-4">
-            <div class="relative">
-              <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <input
-                v-model="searchText"
-                type="search"
-                :placeholder="t('admin.connectionHealth.filters.searchGroup')"
-                class="h-10 w-full rounded-lg border border-border/60 bg-background pl-9 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20"
-              >
-            </div>
-            <select v-model="selectedType" class="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-sm text-foreground">
-              <option value="">{{ t('admin.connectionHealth.filters.allTypes') }}</option>
-              <option v-for="type in groupTypes" :key="type" :value="type">{{ groupTypeLabel(type) }}</option>
-            </select>
+    <section class="grid min-h-[34rem] min-w-0 rounded-xl border border-border/70 bg-card lg:grid-cols-[18rem_minmax(0,1fr)]">
+      <aside class="min-w-0 border-b border-border/60 lg:border-b-0 lg:border-r">
+        <div class="space-y-2 border-b border-border/60 p-4">
+          <div class="relative">
+            <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input v-model="searchText" type="search" :aria-label="t('admin.connectionHealth.filters.searchGroup')" :placeholder="t('admin.connectionHealth.filters.searchGroup')" class="h-9 w-full rounded-lg border border-border/70 bg-background pl-9 pr-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30">
           </div>
-
-          <nav class="max-h-[28rem] flex-1 overflow-y-auto p-2 lg:max-h-[calc(100dvh-20rem)]" :aria-label="t('admin.connectionHealth.groupListLabel')">
-            <div v-if="filteredGroups.length === 0" class="flex min-h-48 flex-col items-center justify-center px-5 text-center">
-              <Layers class="h-8 w-8 text-muted-foreground/40" />
-              <p class="mt-3 text-sm text-muted-foreground">{{ t('admin.connectionHealth.adminEmpty') }}</p>
-            </div>
-            <template v-else>
-              <button
-                v-for="group in filteredGroups"
-                :key="group.id"
-                type="button"
-                class="mb-1 flex w-full items-start gap-3 rounded-lg px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                :class="selectedGroup?.id === group.id ? 'bg-primary/[0.08]' : 'hover:bg-surface/60'"
-                @click="selectedGroupId = group.id"
-              >
-                <span
-                  class="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-                  :class="groupMonitoringEnabled(group) ? 'bg-emerald-500' : group.priorityMode === 'multiplier' ? 'bg-primary' : 'bg-muted-foreground/35'"
-                />
-                <span class="min-w-0 flex-1">
-                  <span class="flex items-center justify-between gap-2">
-                    <span class="truncate text-sm font-medium text-foreground">{{ group.name }}</span>
-                    <ArrowDownUp v-if="group.priorityMode === 'multiplier'" class="h-3.5 w-3.5 shrink-0 text-primary" />
-                  </span>
-                  <span class="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <span>{{ t('admin.connectionHealth.groupList.monitored', { count: group.monitoredAccountCount ?? 0, total: group.accountCount }) }}</span>
-                    <span>{{ group.multiplierDisplay || '-' }}</span>
-                  </span>
+          <select v-model="selectedType" :aria-label="t('admin.connectionHealth.filters.allTypes')" class="h-9 w-full rounded-lg border border-border/70 bg-background px-3 text-sm text-foreground">
+            <option value="">{{ t('admin.connectionHealth.filters.allTypes') }}</option>
+            <option v-for="type in groupTypes" :key="type" :value="type">{{ groupTypeLabel(type) }}</option>
+          </select>
+        </div>
+        <nav class="max-h-80 space-y-1.5 overflow-y-auto p-2 lg:max-h-[calc(100dvh-17rem)]" :aria-label="t('admin.connectionHealth.groupListLabel')">
+          <div v-if="isLoading && !adminGroups.length" class="space-y-2 p-2" aria-busy="true"><div v-for="i in 5" :key="i" class="h-24 animate-pulse rounded-lg bg-surface" /></div>
+          <div v-for="group in filteredGroups" :key="group.id" class="rounded-lg border p-3 transition-colors" :class="selectedGroup?.id === group.id ? 'border-primary/20 bg-primary/[0.06]' : 'border-transparent hover:bg-surface/60'">
+            <div class="flex items-start gap-2">
+              <button type="button" class="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" :aria-current="selectedGroup?.id === group.id ? 'true' : undefined" @click="selectedGroupId = group.id">
+                <span class="block truncate text-sm font-medium text-foreground" :title="group.name">{{ group.name }}</span>
+                <span class="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                  <span :class="groupProbeState(group) === 'healthy' ? 'text-emerald-600 dark:text-emerald-400' : groupProbeState(group) === 'unhealthy' ? 'text-red-600 dark:text-red-400' : ''">{{ t('admin.connectionHealth.cards.status.' + groupProbeState(group)) }}</span>
+                  <span>{{ group.multiplierDisplay || '—' }}</span>
                 </span>
               </button>
-            </template>
-          </nav>
-        </aside>
+              <button type="button" :disabled="group.groupProbeSupported === false" class="rounded-md p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary disabled:opacity-30" :aria-label="t('admin.connectionHealth.groupProbe.action', { name: group.name })" :title="t(group.groupProbeSupported === false ? 'admin.connectionHealth.groupProbe.unsupported' : 'admin.connectionHealth.groupProbe.buttonHint')" @click="openGroupProbe(group)"><Zap class="h-4 w-4" /></button>
+            </div>
+            <ProbeHistoryStrip class="mt-2.5" :samples="group.recentProbes" :limit="20" compact :unavailable="Boolean(group.probeHistoryError)" />
+          </div>
+          <p v-if="!isLoading && !filteredGroups.length" class="px-3 py-8 text-center text-sm text-muted-foreground">{{ t(adminGroups.length ? 'admin.connectionHealth.cards.noMatches' : 'admin.connectionHealth.adminEmpty') }}</p>
+        </nav>
+      </aside>
 
-        <div v-if="!selectedGroup" class="flex min-h-[30rem] flex-col items-center justify-center text-center">
-          <Layers class="h-9 w-9 text-muted-foreground/40" />
-          <p class="mt-3 text-sm text-muted-foreground">{{ t('admin.connectionHealth.adminEmpty') }}</p>
+      <div v-if="selectedGroup" class="min-w-0">
+        <header class="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 p-5">
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2"><h2 class="break-words text-lg font-semibold text-foreground">{{ selectedGroup.name }}</h2><span class="rounded bg-surface px-2 py-0.5 text-xs text-muted-foreground">{{ selectedGroup.platform }}</span></div>
+            <p class="mt-1 text-xs text-muted-foreground">{{ t('admin.connectionHealth.groupProbe.channelCount', { count: selectedGroup.monitoredAccountCount ?? 0, total: selectedGroup.accountCount }) }}</p>
+          </div>
+          <Button variant="secondary" size="sm" @click="openSetup(selectedGroup)"><Settings2 class="h-4 w-4" />{{ t('admin.connectionHealth.groupDetail.manageMonitoring') }}</Button>
+        </header>
+        <div class="space-y-3 p-3 sm:p-5">
+          <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span>{{ t('admin.connectionHealth.groupProbe.channels') }}</span>
+            <div class="flex flex-wrap gap-3"><span class="inline-flex items-center gap-1"><i class="h-2 w-2 rounded-sm bg-emerald-500" />{{ t('admin.connectionHealth.cards.success') }}</span><span class="inline-flex items-center gap-1"><i class="h-2 w-2 rounded-sm bg-amber-400" />{{ t('admin.connectionHealth.cards.slowLegend') }}</span><span class="inline-flex items-center gap-1"><i class="h-2 w-2 rounded-sm bg-red-500" />{{ t('admin.connectionHealth.cards.failure') }}</span></div>
+          </div>
+          <p v-if="selectedGroup.accountsError" role="alert" class="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{{ readableMessage(selectedGroup.accountsError) }}</p>
+          <p v-else-if="!selectedGroup.accounts.length" class="py-16 text-center text-sm text-muted-foreground">{{ t('admin.connectionHealth.groupDetail.empty') }}</p>
+          <p v-if="(selectedGroup.priorityConflictCount ?? 0) > 0" class="text-xs text-amber-600">{{ t('admin.connectionHealth.cards.priorityConflict', { count: selectedGroup.priorityConflictCount }) }}</p>
+          <ChannelHealthCard v-for="account in selectedGroup.accounts" :key="account.targetId" :account="account" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
         </div>
-        <AdminGroupHealthDetail
-          v-else
-          :group="selectedGroup"
-          @setup="openSetup"
-          @probe="onProbeAccount"
-          @view-events="onViewEventsAccount"
-        />
       </div>
+      <div v-else class="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground"><Layers class="h-8 w-8 opacity-40" /><p class="text-sm">{{ t('admin.connectionHealth.groupProbe.selectGroup') }}</p></div>
     </section>
+
+    <GroupProbeDialog :open="groupProbeOpen" :group="probeGroup" @close="groupProbeOpen = false" @probed="refreshProbeResults" />
 
     <GroupHealthSetupDrawer
       :open="setupDrawerOpen"
@@ -389,6 +335,7 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
     <ManualOneTimeProbeDialog
       :open="probeDialogOpen"
       :target="probeDialogTarget"
+      @probed="refreshProbeResults"
       @close="probeDialogOpen = false"
     />
 

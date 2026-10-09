@@ -26,6 +26,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (event: 'close'): void
+  (event: 'probed'): void
 }>()
 
 const { t, te } = useI18n()
@@ -112,9 +113,13 @@ const retryLoad = async () => {
 
 const startTest = async () => {
   if (!canStartTest.value || !props.target) return
+  const sequence = loadSequence
+  const targetId = props.target.targetId
   phase.value = 'testing'
   testErrorKey.value = ''
-  const outcome = await runManualProbeOnce(props.target.targetId, Array.from(selected.value))
+  const outcome = await runManualProbeOnce(targetId, Array.from(selected.value))
+  if (!('errorKey' in outcome)) emit('probed')
+  if (sequence !== loadSequence || !props.open || props.target?.targetId !== targetId) return
   if ('errorKey' in outcome) {
     testErrorKey.value = outcome.errorKey
     phase.value = 'ready'

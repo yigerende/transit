@@ -98,6 +98,22 @@ func TestManualProbeTarget_SuccessDoesNotTouchStateOrEvents(t *testing.T) {
 	if len(repo.events) != 0 {
 		t.Fatalf("manual one-time probe must not write any event, got %+v", repo.events)
 	}
+	svc.dispatcher = panicIfCalledRemoteActionRunner{}
+	results, err = svc.manualProbeTarget(context.Background(), "user1", "newapi:ws1:100", []string{"model-a"}, true)
+	if err != nil || len(results) != 1 || len(repo.events) != 1 {
+		t.Fatalf("opt-in history was not saved: %v", err)
+	}
+	event := repo.events[0]
+	if event.ConnectionID != "newapi:ws1:100" || event.AdminAccountID != "ws1" || event.UserID != "user1" || event.Result != "ok" || event.LatencyMs == nil {
+		t.Fatal("incorrect channel history")
+	}
+	if len(repo.states) != 0 || len(repo.budgetClaims) != 0 || len(repo.targetActionStates) != 0 {
+		t.Fatal("history opt-in must not touch policy state/budget/actions")
+	}
+	visible, err := svc.Events(context.Background(), "user1", "newapi:ws1:100", 100)
+	if err != nil || len(visible) != 1 {
+		t.Fatalf("manual events should be visible without a policy: %v", err)
+	}
 }
 
 // TestManualProbeTarget_FailureResultIncludesRedactedDetail 验证探活失败时结果携带脱敏后的

@@ -3,6 +3,7 @@ package connection_health
 import (
 	"context"
 	"log"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ type healthRepository interface {
 	InsertEvent(ctx context.Context, e ConnectionHealthEvent) error
 	ListEventsByConnection(ctx context.Context, connectionID string, userID string, adminAccountID string, limit int) ([]ConnectionHealthEvent, error)
 	ListRecentEventsByWorkspace(ctx context.Context, userID string, adminAccountID string, limit int) ([]ConnectionHealthEvent, error)
+	ListRecentProbesByTargets(ctx context.Context, userID string, adminAccountID string, targetIDs []string) ([]GroupProbeSample, error)
 	CountFailureEventsSince(ctx context.Context, userID string, adminAccountID string, since time.Time) (int, error)
 	CountProbesToday(ctx context.Context, userID string, adminAccountID string, policyID string, dayStart time.Time) (int, error)
 	TryConsumeProbeBudget(ctx context.Context, userID string, adminAccountID string, policyID string, dayStart time.Time, limit int) (bool, error)
@@ -479,7 +481,7 @@ func accumulateOverviewState(resp *OverviewResponse, state State) {
 }
 
 // filterToAssignedTargetEvents 过滤掉「admin target 维度但该 target 当前没有被分配任何策略」的
-// 事件行：全局/大屏「探活事件」只展示已分配策略的 target 的策略探活事件。
+// 策略事件行；独立手动探活记录始终保留。
 // 只对 ConnectionID 能解析成 targetId 形态（parseTargetID 成功）的行生效——旧
 // real_connections 事件的 connection_id 是 UUID，解析不出 targetId 结构，原样保留，不受影响。
 // 历史上曾经存在过、后来取消分配的 target 事件会被这里过滤掉，但不会删库数据。
@@ -519,6 +521,12 @@ func (s *Service) filterToAssignedTargetEvents(ctx context.Context, userID strin
 	out := make([]ConnectionHealthEvent, 0, len(events))
 	for _, e := range events {
 		if _, ok := parseTargetID(e.ConnectionID); ok {
+			// Standalone manual samples have no policy or state transition. Keep
+			// these visible even when the channel has no automatic assignment.
+			if e.PolicyID == "" && e.FromState == "" && e.ToState == "" && e.LatencyMs != nil && slices.Contains(probeResultKeys(), e.Result) {
+				out = append(out, e)
+				continue
+			}
 			if e.Result == "policy_unmanaged_restore" {
 				// This event is emitted after the final assignment is removed. Filtering it by
 				// current assignments would make the automatic upstream restore impossible to audit.
@@ -581,8 +589,7 @@ func (s *Service) Events(ctx context.Context, userID string, connectionID string
 				if err != nil {
 					return nil, err
 				}
-				// 聚焦查看某个 target 的事件：该 target 没有分配任何策略时，filterToAssignedTargetEvents
-				// 会把这些行全部过滤掉，天然返回空数组，前端展示「暂无策略探活事件」。
+				// 保留独立手动记录；策略事件按当前分配范围过滤。
 				events, err = s.filterToAssignedTargetEvents(ctx, userID, adminAccountID, events)
 				if err != nil {
 					return nil, err
@@ -795,7 +802,8 @@ func policyRemoteActionEnabled(policy Policy) bool {
 // 保持旧行为：探活该连接匹配到的全部启用模型目标。Models 非空时只探活其中命中匹配目标
 // 的模型名，不允许探活策略之外的模型（绕过策略配置）。
 type ProbeConnectionInput struct {
-	Models []string `json:"models"`
+	Models        []string `json:"models"`
+	RecordHistory bool     `json:"recordHistory"`
 }
 
 // ProbeConnection 手动触发一次真实探活：对该连接匹配到的全部（或 input.Models 指定的）
