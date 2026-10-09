@@ -14,6 +14,14 @@ const { t } = useI18n()
 const prefix = 'admin.connectionHealth'
 const selectedForAutomation = computed(() => channelAutomationEnabled(props.account))
 const latest = computed(() => latestChannelProbe(props.account))
+const latencyPrefix = `${prefix}.latencyPriority`
+const priorityDecision = computed(() => props.account.latencyPriority)
+const sampleWeight = (index: number): string => {
+  const d = priorityDecision.value
+  if (!d) return '0'
+  const sum = d.weights.slice(0, d.sampleCount).reduce((a, b) => a + b, 0)
+  return sum > 0 ? ((d.weights[index] ?? 0) / sum * 100).toFixed(1) : '0'
+}
 const state = computed(() => {
   if (props.historyUnavailable) return 'loadError'
   if (!props.account.probeAvailable) return 'unavailable'
@@ -39,6 +47,23 @@ const state = computed(() => {
         <span class="text-muted-foreground">{{ t(`${prefix}.groupDetail.columns.priority`) }} {{ account.priority ?? '—' }}</span>
       </template>
     </ProbeHistoryStrip>
+    <details v-if="selectedForAutomation && priorityDecision" class="rounded-md bg-surface/40 px-2 py-1.5 text-xs">
+      <summary class="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
+        <span>{{ t(`${latencyPrefix}.average`) }} <strong class="font-semibold text-foreground">{{ priorityDecision.averageMs != null ? `${(priorityDecision.averageMs / 1000).toFixed(2)}s` : '—' }}</strong></span>
+        <span>{{ t(`${latencyPrefix}.samples`, { used: priorityDecision.sampleCount, total: priorityDecision.requiredSamples }) }}</span>
+        <span>{{ t(`${latencyPrefix}.decision`, { priority: priorityDecision.priority }) }}</span>
+        <span class="ml-auto text-primary">{{ t(`${latencyPrefix}.details`) }}</span>
+      </summary>
+      <div class="mt-2 space-y-1.5 break-words border-t border-border/40 pt-2 text-muted-foreground">
+        <p>{{ t(`${latencyPrefix}.policyLine`, { name: priorityDecision.policyName }) }}</p>
+        <p>{{ t(`${latencyPrefix}.modelLine`, { model: priorityDecision.modelName, seconds: priorityDecision.maxAgeSeconds }) }}</p>
+        <p>{{ t(`${latencyPrefix}.reasons.${priorityDecision.reason}`, { n: (priorityDecision.bandIndex ?? 0) + 1 }) }}</p>
+        <p v-if="priorityDecision.sharedPolicyCount > 1">{{ t(`${latencyPrefix}.shared`, { count: priorityDecision.sharedPolicyCount }) }}</p>
+        <p v-if="account.priorityConflict" class="text-amber-600 dark:text-amber-400">{{ t(`${latencyPrefix}.conflict`) }}</p>
+        <p v-for="(sample, i) in priorityDecision.samples" :key="sample.id">{{ t(`${latencyPrefix}.sampleLine`, { time: new Date(sample.createdAt).toLocaleTimeString(), seconds: (sample.latencyMs / 1000).toFixed(2), weight: sampleWeight(i) }) }}</p>
+      </div>
+    </details>
+    <p v-if="selectedForAutomation && account.latencyPriorityError" class="text-xs text-amber-600 dark:text-amber-400">{{ t(`${latencyPrefix}.unavailable`) }}</p>
     <template v-if="selectedForAutomation && showQuality">
       <QualityHistoryStrip :samples="account.qualityHistory" :state="account.qualityState" :enabled="qualityEnabled && account.qualityEnabled !== false" :selected="account.qualitySelected" :unavailable="qualityUnavailable">
         <template #controls>

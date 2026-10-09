@@ -96,6 +96,8 @@ export interface AdminGroupUnprobedModel {
 }
 
 export interface AdminGroupAccount {
+  latencyPriority?: LatencyPriorityDecision
+  latencyPriorityError?: boolean
   qualityEnabled?: boolean
   qualitySelected?: boolean
   qualityState?: import('./quality').QualityState
@@ -170,6 +172,7 @@ export interface AdminGroupHealth {
   hasAssignedPolicy?: boolean
   hasEnabledPolicy?: boolean
   hasEnabledProbePolicy?: boolean
+  latencyPriority?: LatencyPriorityConfig
   priorityMode?: ConnectionHealthPriorityMode
   priorityConflictCount?: number
   healthSummary: AdminGroupHealthSummary
@@ -263,6 +266,7 @@ export interface ConnectionHealthPolicy {
   autoDegradeEnabled: boolean
   autoRemoteActionEnabled: boolean
   autoSuspendEnabled?: boolean
+  latencyPriority?: LatencyPriorityConfig
   priorityMode?: ConnectionHealthPriorityMode
   strategyMode?: ConnectionHealthStrategyMode
   dailyProbeBudget: number
@@ -318,13 +322,14 @@ export interface PolicyInput {
   autoDegradeEnabled: boolean
   autoRemoteActionEnabled: boolean
   autoSuspendEnabled?: boolean
+  latencyPriority?: LatencyPriorityConfig
   priorityMode?: ConnectionHealthPriorityMode
   strategyMode?: ConnectionHealthStrategyMode
   dailyProbeBudget?: number
   modelTargets: ModelTargetInput[]
 }
 
-export type ConnectionHealthPriorityMode = 'none' | 'multiplier'
+export type ConnectionHealthPriorityMode = 'none' | 'multiplier' | 'latency'
 export type ConnectionHealthStrategyMode = 'health_probe' | 'multiplier_only'
 
 // AdminGroupPolicyConfiguration 对应分组级动态策略配置。排除列表只影响分组继承，不会清除
@@ -342,4 +347,32 @@ export interface AdminGroupPolicyConfigurationInput {
   excludedTargetIds: string[]
   quickPolicy?: PolicyInput
   editPolicy?: PolicyInput
+}
+
+export interface LatencyPriorityConfig {
+  modelName: string
+  sampleCount: number
+  minSamples: number
+  maxAgeSeconds: number
+  weights: number[]
+  hysteresisSeconds: number
+  bands: { minSeconds: number; maxSeconds: number | null; priority: number }[]
+  insufficientPriority: number
+  degradedPriority: number
+  suspendedPriority: number
+}
+export interface LatencyPriorityDecision {
+  policyId: string
+  policyName: string
+  modelName: string
+  averageMs: number | null
+  sampleCount: number
+  requiredSamples: number
+  maxAgeSeconds: number
+  samples: { id: string; latencyMs: number; createdAt: string }[]
+  weights: number[]
+  bandIndex: number | null
+  priority: number
+  reason: 'latency' | 'insufficient' | 'degraded' | 'suspended'
+  sharedPolicyCount: number
 }

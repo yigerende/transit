@@ -206,12 +206,12 @@ const excludedCount = computed(() => Math.max(0, (props.group?.accounts.length ?
 const models = computed(() => dedupeModels(modelText.value))
 const readableMessage = (rawKey: string): string => t(connectionHealthMessageKey(rawKey, te))
 const effectivePriorityMode = computed<ConnectionHealthPriorityMode>(() =>
-  mode.value === 'multiplier' || mode.value === 'multiplierOnly' ? 'multiplier' : 'none',
+  mode.value === 'multiplierOnly' ? 'multiplier' : mode.value === 'multiplier' ? 'latency' : 'none',
 )
 const selectedExistingPolicies = computed(() => props.policies.filter((policy) => selectedPolicyIds.value.has(policy.id)))
 const hasGroupMultiplier = computed(() => typeof props.group?.multiplier === 'number' && Number.isFinite(props.group.multiplier))
 const requiresGroupMultiplier = computed(() => {
-  if (mode.value === 'multiplier' || mode.value === 'multiplierOnly') return true
+  if (mode.value === 'multiplierOnly') return true
   if (mode.value !== 'existing') return false
   return selectedExistingPolicies.value.some((policy) => policy.enabled && policy.priorityMode === 'multiplier')
 })

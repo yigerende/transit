@@ -159,30 +159,31 @@ type TargetActionState struct {
 // Policy 对应 connection_health_policies 表：一条健康探活/降级策略，
 // 按 own_group_id 匹配对接链路（own_group_id 为空表示匹配该 workspace 下全部已对接分组）。
 type Policy struct {
-	ID                      string    `json:"id"`
-	UserID                  string    `json:"-"`
-	AdminAccountID          string    `json:"-"`
-	Name                    string    `json:"name"`
-	Enabled                 bool      `json:"enabled"`
-	OwnGroupID              string    `json:"ownGroupId"`
-	OwnGroupName            string    `json:"ownGroupName"`
-	ModelPattern            string    `json:"modelPattern"`
-	ProbeMode               string    `json:"probeMode"`
-	ProbeIntervalSeconds    int       `json:"probeIntervalSeconds"`
-	MaxLatencyMs            int       `json:"maxLatencyMs"`
-	FailureThreshold        int       `json:"failureThreshold"`
-	SuccessThreshold        int       `json:"successThreshold"`
-	CooldownSeconds         int       `json:"cooldownSeconds"`
-	ObservationSeconds      int       `json:"observationSeconds"`
-	RecoveryStepPercent     int       `json:"recoveryStepPercent"`
-	AutoDegradeEnabled      bool      `json:"autoDegradeEnabled"`
-	AutoRemoteActionEnabled bool      `json:"autoRemoteActionEnabled"`
-	AutoSuspendEnabled      bool      `json:"autoSuspendEnabled"`
-	PriorityMode            string    `json:"priorityMode"`
-	StrategyMode            string    `json:"strategyMode"`
-	DailyProbeBudget        int       `json:"dailyProbeBudget"`
-	CreatedAt               time.Time `json:"createdAt"`
-	UpdatedAt               time.Time `json:"updatedAt"`
+	ID                      string                 `json:"id"`
+	UserID                  string                 `json:"-"`
+	AdminAccountID          string                 `json:"-"`
+	Name                    string                 `json:"name"`
+	Enabled                 bool                   `json:"enabled"`
+	OwnGroupID              string                 `json:"ownGroupId"`
+	OwnGroupName            string                 `json:"ownGroupName"`
+	ModelPattern            string                 `json:"modelPattern"`
+	ProbeMode               string                 `json:"probeMode"`
+	ProbeIntervalSeconds    int                    `json:"probeIntervalSeconds"`
+	MaxLatencyMs            int                    `json:"maxLatencyMs"`
+	FailureThreshold        int                    `json:"failureThreshold"`
+	SuccessThreshold        int                    `json:"successThreshold"`
+	CooldownSeconds         int                    `json:"cooldownSeconds"`
+	ObservationSeconds      int                    `json:"observationSeconds"`
+	RecoveryStepPercent     int                    `json:"recoveryStepPercent"`
+	AutoDegradeEnabled      bool                   `json:"autoDegradeEnabled"`
+	AutoRemoteActionEnabled bool                   `json:"autoRemoteActionEnabled"`
+	AutoSuspendEnabled      bool                   `json:"autoSuspendEnabled"`
+	PriorityMode            string                 `json:"priorityMode"`
+	LatencyPriority         *LatencyPriorityConfig `json:"latencyPriority,omitempty"`
+	StrategyMode            string                 `json:"strategyMode"`
+	DailyProbeBudget        int                    `json:"dailyProbeBudget"`
+	CreatedAt               time.Time              `json:"createdAt"`
+	UpdatedAt               time.Time              `json:"updatedAt"`
 	// ModelTargets 不是数据库列，是查询时一并装载的关联目标（connection_health_model_targets）。
 	ModelTargets []ModelTarget `json:"modelTargets"`
 }

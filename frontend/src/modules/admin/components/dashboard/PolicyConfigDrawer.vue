@@ -3,6 +3,8 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowDownUp, BookOpenText, Radar, X, ShieldCheck, Plus, Trash2 } from 'lucide-vue-next'
 import { HelpTooltip } from '@/components/ui/tooltip'
+import LatencyPriorityEditor from './LatencyPriorityEditor.vue'
+import { defaultLatencyPriority, validLatencyPriority } from '../../utils/latencyPriority'
 import PolicyRunFlowDialog from './PolicyRunFlowDialog.vue'
 import { getAdminGroupPolicyConfiguration } from '../../api/connectionHealth'
 import { connectionHealthMessageKey } from '../../composables/useConnectionHealth'
@@ -56,6 +58,7 @@ const autoDegradeEnabled = ref(true)
 const autoRemoteActionEnabled = ref(false)
 const autoSuspendEnabled = ref(false)
 const priorityMode = ref<ConnectionHealthPriorityMode>('none')
+const latencyPriority = ref(defaultLatencyPriority())
 const strategyMode = ref<ConnectionHealthStrategyMode>('health_probe')
 const modelTargets = ref<ModelTargetInput[]>([])
 const validationError = ref<string | null>(null)
@@ -121,7 +124,8 @@ const resetForm = () => {
   autoDegradeEnabled.value = p?.autoDegradeEnabled ?? true
   autoRemoteActionEnabled.value = autoDegradeEnabled.value && (p?.autoRemoteActionEnabled ?? false)
   autoSuspendEnabled.value = p?.autoSuspendEnabled ?? false
-  priorityMode.value = p?.priorityMode === 'multiplier' ? 'multiplier' : 'none'
+  priorityMode.value = p?.priorityMode ?? 'none'
+  latencyPriority.value = p?.latencyPriority ? JSON.parse(JSON.stringify(p.latencyPriority)) : defaultLatencyPriority()
   strategyMode.value = p ? resolveConnectionHealthStrategyMode(p) : 'health_probe'
 
   // 已有模型目标全部同一个 provider 时直接复用该 provider 初始化——必须从"唯一值"取，
@@ -152,7 +156,7 @@ const resetForm = () => {
   validationError.value = null
 }
 
-watch(() => [props.open, props.group?.id, props.policy?.id] as const, ([isOpen]) => {
+watch([() => props.open, () => props.group?.id, () => props.policy?.id], ([isOpen]) => {
   if (isOpen) {
     resetForm()
     channelSearch.value = ''
@@ -208,6 +212,9 @@ const handleSave = () => {
     validationError.value = t('admin.connectionHealth.errors.maxLatencyInvalid')
     return
   }
+  if (priorityMode.value === 'latency' && !isMultiplierOnly.value && (!validLatencyPriority(latencyPriority.value) || (latencyPriority.value.modelName && !targets.some(m => m.enabled && m.modelName === latencyPriority.value.modelName)))) {
+    validationError.value = t('admin.connectionHealth.errors.latencyPriorityInvalid'); return
+  }
   const ownGroup = props.ownGroupOptions.find(g => g.id === ownGroupId.value)
   const input: PolicyInput = {
     id: props.policy?.id,
@@ -225,6 +232,7 @@ const handleSave = () => {
     autoSuspendEnabled: isMultiplierOnly.value ? false : autoSuspendEnabled.value,
     priorityMode: isMultiplierOnly.value ? 'multiplier' : priorityMode.value,
     strategyMode: strategyMode.value,
+    latencyPriority: JSON.parse(JSON.stringify(latencyPriority.value)),
     modelTargets: targets,
   }
   const excludedTargetIds = props.group?.accounts
@@ -487,9 +495,9 @@ const handleSave = () => {
                     {{ t(`${prefix}.priorityModeLabel`) }}
                     <HelpTooltip :text="t(`${prefix}.tooltips.priorityMode`)" />
                   </div>
-                  <div class="grid grid-cols-2 gap-1 rounded-lg bg-surface p-1" role="radiogroup" :aria-label="t(`${prefix}.priorityModeLabel`)">
+                  <div class="grid grid-cols-1 gap-1 rounded-lg bg-surface p-1 sm:grid-cols-3" role="radiogroup" :aria-label="t(`${prefix}.priorityModeLabel`)">
                     <button
-                      v-for="mode in (['none', 'multiplier'] as const)"
+                      v-for="mode in (['none', 'latency', 'multiplier'] as const)"
                       :key="mode"
                       type="button"
                       role="radio"
@@ -502,6 +510,7 @@ const handleSave = () => {
                     </button>
                   </div>
                   <p class="text-xs leading-5 text-muted-foreground">{{ t(`${prefix}.priorityModeHelp`) }}</p>
+                  <LatencyPriorityEditor v-if="priorityMode === 'latency'" v-model="latencyPriority" :models="modelTargets" />
                 </div>
                 <div class="flex items-center justify-between rounded-lg border border-border/40 bg-surface/30 px-4 py-3">
                   <div>

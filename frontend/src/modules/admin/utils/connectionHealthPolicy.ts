@@ -39,7 +39,7 @@ export const automationCapability = (policy: ConnectionHealthPolicy): Automation
   if (policy.autoDegradeEnabled && policy.autoSuspendEnabled) {
     return policy.autoRemoteActionEnabled ? 'suspend' : 'localSuspend'
   }
-  return policy.priorityMode === 'multiplier' ? 'priority' : 'monitor'
+  return policy.priorityMode === 'multiplier' || policy.priorityMode === 'latency' ? 'priority' : 'monitor'
 }
 
 // Switching a policy must preserve every setting, including suspension permission
@@ -60,6 +60,7 @@ export const policyInputWithEnabled = (policy: ConnectionHealthPolicy, enabled: 
   autoRemoteActionEnabled: policy.autoRemoteActionEnabled,
   autoSuspendEnabled: policy.autoSuspendEnabled ?? false,
   priorityMode: policy.priorityMode ?? 'none',
+  ...(policy.latencyPriority ? { latencyPriority: JSON.parse(JSON.stringify(policy.latencyPriority)) } : {}),
   strategyMode: resolveConnectionHealthStrategyMode(policy),
   modelTargets: policy.modelTargets.map(model => ({
     id: model.id, modelName: model.modelName, providerFamily: model.providerFamily,

@@ -994,3 +994,17 @@ func TestProbeConnection_CannotProbeConnectionFromOtherWorkspace(t *testing.T) {
 		t.Fatalf("expected ErrorNotFound, got %v", err)
 	}
 }
+
+func (f *fakeRepository) ListPriorityProbeSamples(ctx context.Context, userID, adminAccountID string, targetIDs []string, since time.Time) ([]PriorityProbeSample, error) {
+	allowed := map[string]bool{}
+	for _, id := range targetIDs {
+		allowed[id] = true
+	}
+	out := []PriorityProbeSample{}
+	for _, e := range f.events {
+		if allowed[e.ConnectionID] && e.UserID == userID && e.AdminAccountID == adminAccountID && e.Result == "ok" && e.PolicyID != "" && e.LatencyMs != nil && *e.LatencyMs >= 0 && !e.CreatedAt.Before(since) {
+			out = append(out, PriorityProbeSample{ID: e.ID, TargetID: e.ConnectionID, ModelName: e.ModelName, LatencyMs: *e.LatencyMs, CreatedAt: e.CreatedAt})
+		}
+	}
+	return out, nil
+}

@@ -861,6 +861,46 @@ export default {
       saveError: '保存失败，请重试。'
     },
     connectionHealth: {
+      latencyPriority: {
+  "help": "仅调整上游优先级。选定一个探活模型，只用有效期内成功的自动探活计算加权延迟。",
+  "model": "用于延迟判定的模型",
+  "firstModel": "自动选择首个启用模型（按名称排序）",
+  "sampleCount": "平均样本数",
+  "maxAge": "样本有效期（秒）",
+  "minSamples": "最少有效样本数",
+  "hysteresis": "档位切换余量（秒）",
+  "windowHelp": "默认按 60 秒探活：最近 3 次、有效期 180 秒。不足 3 次时按已有样本重新分配权重；少于最少样本数则使用样本不足优先级。切换余量用于减少边界波动，设为 0 即关闭。",
+  "weights": "样本权重（从最新到最旧，自动归一化）",
+  "weightItem": "第 {n} 次",
+  "bandsHelp": "区间从 0 秒开始，必须连续且不重叠；边界属于前一档，最后一档上限留空。各档优先级可自行填写，Sub2API 数字越小越优先，NewAPI 相反。",
+  "from": "起始（秒）",
+  "to": "截至（秒）",
+  "unbounded": "不限",
+  "priority": "优先级",
+  "removeBand": "删除第 {n} 档",
+  "addBand": "增加档位",
+  "insufficientPriority": "样本不足优先级",
+  "degradedPriority": "降级优先级",
+  "suspendedPriority": "暂停/禁用优先级",
+  "sharedHelp": "同一渠道共享一个上游优先级；多个延迟策略同时生效时采用调度优先级更低的结果。健康降级仍按失败/恢复阈值执行。",
+  "average": "加权延迟",
+  "samples": "{used}/{total} 次成功",
+  "decision": "判定优先级 {priority}",
+  "details": "判定明细",
+  "modelLine": "模型：{model} · 有效期：{seconds}s",
+  "policyLine": "采用策略：{name}",
+  "shared": "共享渠道，综合 {count} 个延迟策略",
+  "sampleLine": "{time} · {seconds}s · 权重 {weight}%",
+  "reasons": {
+    "latency": "延迟档位 {n}",
+    "insufficient": "有效样本不足",
+    "degraded": "连续失败已降级",
+    "suspended": "探活暂停/禁用"
+  },
+  "unavailable": "延迟判定暂不可用",
+  "conflict": "上游被人工修改，已停止自动覆盖",
+  "partial": "样本不足时显示的平均值仅供参考"
+},
       groupAutomation: {
         groupLabel: '{group} 的自动化策略',
         none: '策略未配置',
@@ -880,7 +920,7 @@ export default {
         modes: { monitor: '仅探活', priority: '自动优先级', priorityOnly: '仅优先级', suspend: '可暂停渠道', localSuspend: '探活可暂停', unconfigured: '待配置模型', mixed: '混合策略' },
         hints: {
           monitor: '自动探活并记录健康状态，不修改上游优先级、状态或权重。',
-          priority: '自动探活并按倍率和健康配置调整上游优先级，不停用渠道。',
+          priority: '自动探活并按配置的延迟或倍率调整上游优先级，不停用渠道。',
           priorityOnly: '按分组倍率调整上游优先级，不执行渠道自动探活。',
           suspend: '已允许按探活结果自动停用和恢复上游渠道；优先级是否调整取决于策略配置。',
           localSuspend: '允许本地探活进入暂停，但自动远端动作关闭，不会停用上游渠道。',
@@ -1101,8 +1141,8 @@ export default {
           description: '可以创建探活策略、仅倍率优先级策略，也可以绑定已有高级策略。',
           options: {
             multiplier: {
-              title: '倍率优先',
-              description: '健康目标中，倍率越低，上游优先级越高；故障目标仍会优先降级。'
+              title: '延迟优先',
+              description: '按近期加权对话延迟调整优先级，默认 3 次成功样本、180 秒有效期；可在自动化策略中修改档位。'
             },
             multiplierOnly: {
               title: '仅倍率优先级',
@@ -1148,7 +1188,7 @@ export default {
           remoteAction: '上游自动动作',
           enabled: '已启用',
           disabled: '未启用',
-          multiplierRule: '倍率排序规则：健康状态优先于价格；同一目标属于多个分组时使用最低倍率；倍率越低，写入上游的优先级越高。若检测到人工修改，系统会停止覆盖并提示冲突。',
+          multiplierRule: '延迟排序规则：默认取 180 秒内最近 3 次成功探活，按 50/30/20 加权，映射到配置的优先级档位。共享渠道采用多个策略中较低的优先级。失败和恢复仍按连续次数阈值判断；检测到人工修改时停止覆盖。',
           multiplierOnlyRule: '仅倍率规则：不读取健康状态、不发起模型探活；同一目标属于多个分组时使用最低倍率。停用或解绑策略后会恢复接管前的优先级，人工修改仍受冲突保护。'
         },
         back: '上一步',
@@ -1371,10 +1411,11 @@ export default {
         autoSuspendHelp: '默认关闭。关闭时不出现探活暂停，只调整优先级；开启后才允许自动暂停渠道。',
         priorityModeLabel: '上游流量优先级',
         priorityModes: {
+          latency: '按对话延迟排序',
           none: '保持上游设置',
           multiplier: '按分组倍率排序'
         },
-        priorityModeHelp: '开启倍率排序后，系统会在健康目标中优先使用更低倍率的上游；故障状态始终优先降级。',
+        priorityModeHelp: '可按近期加权对话延迟映射优先级，或保留旧的倍率排序。仅调整渠道优先级，实际请求由上游调度。',
         multiplierOnlySummaryTitle: '倍率越低，优先级越高',
         multiplierOnlySummary: '系统约每 30 秒读取最新分组倍率并同步上游优先级，不解析探活凭据、不请求模型、不消耗探活预算，也不执行自动降级或远端动作。检测到人工修改时会停止覆盖。',
         providerLabel: '模型 Provider',
@@ -1393,7 +1434,7 @@ export default {
           autoDegrade: '开启后按连续失败和连续成功阈值更新健康状态。允许暂停渠道关闭时仅影响优先级；关闭自动降级后仅记录探活结果。',
           autoRemoteAction: '必须同时开启自动降级、自动远端动作和允许暂停渠道，才会按健康状态修改 Sub2API 账号启停状态或 NewAPI 渠道状态/权重。上游流量优先级由单独的排序配置控制。',
           autoSuspend: '开启后允许连续失败达到阈值时进入探活暂停；实际停用上游还需开启自动降级和自动远端动作。关闭时只影响健康和优先级，并按原状态恢复由系统停用的渠道，人工停用不受影响。',
-          priorityMode: '按分组倍率排序会把较低倍率映射为较高的上游优先级。健康等级先于价格排序；同一目标属于多个分组时取最低倍率；检测到人工修改时会停止自动覆盖。'
+          priorityMode: '延迟模式按近期成功探活、权重和档位计算；倍率模式保留旧规则。检测到人工修改时停止自动覆盖。'
         },
         runFlow: {
           buttonLabel: '运行流程',
@@ -1497,6 +1538,7 @@ export default {
         credentialsRedacted: '上游凭据已脱敏，无法用于探活。',
         modelListUnavailable: '无法获取上游模型列表，请稍后重试。',
         modelListInvalid: '上游模型列表响应格式无法识别。',
+        latencyPriorityInvalid: '延迟配置无效：检查样本数、权重、模型、优先级，以及从 0 开始连续且最后不限的延迟区间。',
         maxLatencyInvalid: '最大对话延迟请输入有效的正整数（毫秒）',
         multiplierRequired: '当前分组没有有效倍率，请先在上游设置倍率后再启用倍率排序。',
         manualModelsRequired: '请至少选择一个模型再开始测试。',

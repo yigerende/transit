@@ -32,6 +32,7 @@ type healthRepository interface {
 	ListEventsByConnection(ctx context.Context, connectionID string, userID string, adminAccountID string, limit int) ([]ConnectionHealthEvent, error)
 	ListRecentEventsByWorkspace(ctx context.Context, userID string, adminAccountID string, limit int) ([]ConnectionHealthEvent, error)
 	ListRecentProbesByTargets(ctx context.Context, userID string, adminAccountID string, targetIDs []string) ([]GroupProbeSample, error)
+	ListPriorityProbeSamples(ctx context.Context, userID, adminAccountID string, targetIDs []string, since time.Time) ([]PriorityProbeSample, error)
 	CountFailureEventsSince(ctx context.Context, userID string, adminAccountID string, since time.Time) (int, error)
 	CountProbesToday(ctx context.Context, userID string, adminAccountID string, policyID string, dayStart time.Time) (int, error)
 	TryConsumeProbeBudget(ctx context.Context, userID string, adminAccountID string, policyID string, dayStart time.Time, limit int) (bool, error)
@@ -651,26 +652,27 @@ type ModelTargetInput struct {
 }
 
 type PolicyInput struct {
-	ID                      string             `json:"id"`
-	Name                    string             `json:"name"`
-	Enabled                 bool               `json:"enabled"`
-	OwnGroupID              string             `json:"ownGroupId"`
-	OwnGroupName            string             `json:"ownGroupName"`
-	ModelPattern            string             `json:"modelPattern"`
-	ProbeIntervalSeconds    int                `json:"probeIntervalSeconds"`
-	MaxLatencyMs            *int               `json:"maxLatencyMs,omitempty"`
-	FailureThreshold        int                `json:"failureThreshold"`
-	SuccessThreshold        int                `json:"successThreshold"`
-	CooldownSeconds         int                `json:"cooldownSeconds"`
-	ObservationSeconds      int                `json:"observationSeconds"`
-	RecoveryStepPercent     int                `json:"recoveryStepPercent"`
-	AutoDegradeEnabled      bool               `json:"autoDegradeEnabled"`
-	AutoRemoteActionEnabled bool               `json:"autoRemoteActionEnabled"`
-	AutoSuspendEnabled      bool               `json:"autoSuspendEnabled"`
-	PriorityMode            string             `json:"priorityMode"`
-	StrategyMode            string             `json:"strategyMode"`
-	DailyProbeBudget        int                `json:"dailyProbeBudget"`
-	ModelTargets            []ModelTargetInput `json:"modelTargets"`
+	ID                      string                 `json:"id"`
+	Name                    string                 `json:"name"`
+	Enabled                 bool                   `json:"enabled"`
+	OwnGroupID              string                 `json:"ownGroupId"`
+	OwnGroupName            string                 `json:"ownGroupName"`
+	ModelPattern            string                 `json:"modelPattern"`
+	ProbeIntervalSeconds    int                    `json:"probeIntervalSeconds"`
+	MaxLatencyMs            *int                   `json:"maxLatencyMs,omitempty"`
+	FailureThreshold        int                    `json:"failureThreshold"`
+	SuccessThreshold        int                    `json:"successThreshold"`
+	CooldownSeconds         int                    `json:"cooldownSeconds"`
+	ObservationSeconds      int                    `json:"observationSeconds"`
+	RecoveryStepPercent     int                    `json:"recoveryStepPercent"`
+	AutoDegradeEnabled      bool                   `json:"autoDegradeEnabled"`
+	AutoRemoteActionEnabled bool                   `json:"autoRemoteActionEnabled"`
+	AutoSuspendEnabled      bool                   `json:"autoSuspendEnabled"`
+	PriorityMode            string                 `json:"priorityMode"`
+	LatencyPriority         *LatencyPriorityConfig `json:"latencyPriority,omitempty"`
+	StrategyMode            string                 `json:"strategyMode"`
+	DailyProbeBudget        int                    `json:"dailyProbeBudget"`
+	ModelTargets            []ModelTargetInput     `json:"modelTargets"`
 }
 
 func (s *Service) ListPolicies(ctx context.Context, userID string) ([]Policy, error) {
@@ -707,6 +709,9 @@ func (s *Service) SavePolicy(ctx context.Context, userID string, in PolicyInput)
 		// 旧客户端把 multiplier_only 静默改回探活模式。
 		if strings.TrimSpace(in.StrategyMode) == "" {
 			in.StrategyMode = existing.StrategyMode
+		}
+		if in.LatencyPriority == nil {
+			in.LatencyPriority = existing.LatencyPriority
 		}
 		if in.MaxLatencyMs == nil {
 			in.MaxLatencyMs = intPtr(defaultInt(existing.MaxLatencyMs, DefaultMaxLatencyMs))
@@ -798,10 +803,32 @@ func buildPolicyAndTargets(userID string, adminAccountID string, id string, in P
 		})
 	}
 	policy.ModelTargets = targets
+	policy.LatencyPriority = in.LatencyPriority
+	if policy.LatencyPriority == nil && policy.PriorityMode == PriorityModeLatency {
+		policy.LatencyPriority = defaultLatencyPriorityConfig()
+	}
+	if policy.LatencyPriority != nil && !validateLatencyPriority(*policy.LatencyPriority) {
+		return Policy{}, nil, requestError(ErrorLatencyPriorityInvalid)
+	}
+	if policy.PriorityMode == PriorityModeLatency {
+		model := latencyPriorityModel(policy)
+		found := false
+		for _, t := range targets {
+			if t.Enabled && t.ModelName == model {
+				found = true
+			}
+		}
+		if !found {
+			return Policy{}, nil, requestError(ErrorLatencyPriorityInvalid)
+		}
+	}
 	return policy, targets, nil
 }
 
 func normalizePriorityMode(mode string) string {
+	if strings.TrimSpace(mode) == PriorityModeLatency {
+		return PriorityModeLatency
+	}
 	if strings.TrimSpace(mode) == PriorityModeMultiplier {
 		return PriorityModeMultiplier
 	}

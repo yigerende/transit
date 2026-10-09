@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"sort"
+	"time"
 
 	"transithub/backend/internal/modules/upstream"
 )
@@ -167,10 +168,24 @@ func (s *Service) syncWorkspacePriorities(
 	}
 
 	managed := make(map[string]*priorityTargetInventory)
+	now := time.Now()
+	latencyPolicies := []Policy{}
+	latencyTargets := []string{}
+	for targetID, item := range inventory {
+		if hasLatencyPriorityPolicy(item.policies) {
+			latencyTargets = append(latencyTargets, targetID)
+			latencyPolicies = mergePoliciesByID(latencyPolicies, item.policies)
+		}
+	}
+	latencySamples, sampleErr := s.prioritySamples(ctx, userID, adminAccountID, latencyPolicies, latencyTargets, now)
 	missingMultiplier := make(map[string]struct{})
 	distinctMultipliers := make([]float64, 0)
 	seenMultipliers := make(map[float64]struct{})
 	for targetID, item := range inventory {
+		if hasLatencyPriorityPolicy(item.policies) {
+			managed[targetID] = item
+			continue
+		}
 		if !hasMultiplierPriorityPolicy(item.policies) {
 			continue
 		}
@@ -200,7 +215,15 @@ func (s *Service) syncWorkspacePriorities(
 	}
 
 	for targetID, item := range managed {
-		multiplier := item.multipliers[0]
+		latencyMode := hasLatencyPriorityPolicy(item.policies)
+		// A database read failure must not be mistaken for expired or missing data.
+		if latencyMode && sampleErr != nil {
+			continue
+		}
+		multiplier := 0.0
+		if !latencyMode {
+			multiplier = item.multipliers[0]
+		}
 		activeModels := make(map[string]Policy)
 		if !hasMultiplierOnlyPolicy(item.policies) {
 			for _, spec := range candidateModelSpecs(item.target.Models, item.policies) {
@@ -221,6 +244,14 @@ func (s *Service) syncWorkspacePriorities(
 			session.Platform, activeStates, multiplierRank[multiplier], len(activeModels),
 		)
 		stored, exists := storedByTarget[targetID]
+		if latencyMode {
+			var previous *PrioritySyncState
+			if exists {
+				previous = &stored
+			}
+			decision := latencyDecisionForTarget(session.Platform, item.policies, statesByTarget[targetID], latencySamples[targetID], previous, now)
+			desired = decision.Priority
+		}
 		if !exists {
 			stored = PrioritySyncState{
 				UserID: userID, AdminAccountID: adminAccountID, TargetID: targetID,

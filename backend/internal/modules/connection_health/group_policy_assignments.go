@@ -112,6 +112,9 @@ func (s *Service) SetAdminGroupPolicyConfiguration(ctx context.Context, userID s
 		if strings.TrimSpace(edit.StrategyMode) == "" {
 			edit.StrategyMode = existing.StrategyMode
 		}
+		if edit.LatencyPriority == nil {
+			edit.LatencyPriority = existing.LatencyPriority
+		}
 		if edit.MaxLatencyMs == nil {
 			edit.MaxLatencyMs = intPtr(defaultInt(existing.MaxLatencyMs, DefaultMaxLatencyMs))
 		}
