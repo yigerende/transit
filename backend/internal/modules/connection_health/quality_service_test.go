@@ -94,7 +94,7 @@ func (r *fakeQualityRepo) SaveQualityResult(_ context.Context, u, w string, grou
 	r.history[key] = append(r.history[key], st.Latest)
 	return true, nil
 }
-func (r *fakeQualityRepo) ListQualityHistory(_ context.Context, u, w string, targets []string, revision string, limit int) ([]QualitySample, error) {
+func (r *fakeQualityRepo) ListQualityHistory(_ context.Context, u, w string, targets []string, limit int) ([]QualitySample, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	out := []QualitySample{}

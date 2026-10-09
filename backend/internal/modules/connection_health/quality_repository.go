@@ -49,7 +49,7 @@ type qualityRepository interface {
 	SetQualityGroup(context.Context, string, string, string, bool) error
 	ListQualityStates(context.Context, string, string) ([]QualityState, error)
 	SaveQualityResult(context.Context, string, string, []string, QualitySettings, QualityState) (bool, error)
-	ListQualityHistory(context.Context, string, string, []string, string, int) ([]QualitySample, error)
+	ListQualityHistory(context.Context, string, string, []string, int) ([]QualitySample, error)
 }
 
 func (r *Repository) GetQualitySettings(ctx context.Context, user, workspace string) (QualitySettings, error) {
@@ -186,12 +186,15 @@ func (r *Repository) SaveQualityResult(ctx context.Context, user, workspace stri
 	}
 	return true, tx.Commit(ctx)
 }
-func (r *Repository) ListQualityHistory(ctx context.Context, user, workspace string, targets []string, revision string, limit int) ([]QualitySample, error) {
+
+// The timeline spans configuration revisions; only current verdicts and in-flight
+// writes are revision-scoped. Saving settings must not hide completed checks.
+func (r *Repository) ListQualityHistory(ctx context.Context, user, workspace string, targets []string, limit int) ([]QualitySample, error) {
 	if limit < 1 || limit > 1000 {
 		limit = 100
 	}
 	rows, err := r.db.Query(ctx, `SELECT h.sample FROM unnest($3::text[]) AS target(id) CROSS JOIN LATERAL
-	 (SELECT sample FROM connection_health_quality_history WHERE user_id=$1 AND admin_account_id=$2 AND target_id=target.id AND revision=$4 ORDER BY created_at DESC,id DESC LIMIT $5)h`, user, workspace, targets, revision, limit)
+	 (SELECT sample FROM connection_health_quality_history WHERE user_id=$1 AND admin_account_id=$2 AND target_id=target.id ORDER BY created_at DESC,id DESC LIMIT $4)h`, user, workspace, targets, limit)
 	if err != nil {
 		return nil, err
 	}

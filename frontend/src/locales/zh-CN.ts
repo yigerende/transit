@@ -869,7 +869,7 @@ export default {
         questionBank: '检测题库', add: '新增题目', newQuestion: '新题目', questionName: '题目名称', maxDurationMs: '耗时阈值（ms）', prompt: '题目内容', matchMode: '匹配方式',
         matchModes: { answer: '标准答案', keyword: '包含关键词', regex: '正则表达式' }, answer: '答案 / 关键词 / 正则', answerHint: '标准答案支持纯答案或唯一的 FINAL_ANSWER= 行。每次有效答题后轮换到下一道已启用题目。',
         intervalSeconds: '正常检测间隔（秒）', retrySeconds: '异常 / 失败复测间隔（秒）', failureLimit: '连续异常次数', recoveryLimit: '连续正常恢复次数', concurrency: '检测并发数（1～32）', timeoutSeconds: '请求超时（秒）', maxTokens: '最大输出 Token', historyLimit: '每渠道历史上限（1～1000）',
-        scheduleHint: '连续次数只影响降智状态显示。网络错误、限流、空响应和未完成响应记为检测失败，不累计答错次数。记录条展示当前配置最近最多 100 次检测。',
+        scheduleHint: '连续次数只影响降智状态显示。网络错误、限流、空响应和未完成响应记为检测失败，不累计答错次数。记录条展示该渠道最近最多 100 次检测；修改配置或暂停检测会保留已有记录，新配置的连续次数重新计算。',
         importConfig: '导入 Qerkai 题目配置', importHint: '导入后默认关闭检测，确认题目和参数后再启用并保存。', importFailed: '导入失败，请选择不超过 1 MB 的有效 Qerkai JSON 题库配置。',
         save: '保存配置', saving: '保存中…', loading: '加载中…', close: '关闭', retry: '重试', moveUp: '上移题目', moveDown: '下移题目', enableQuestion: '启用题目 {name}', removeQuestion: '删除题目 {name}',
         stripTitle: '降智检测', toggleGroup: '切换分组 {name} 的降智检测', globalPaused: '全局暂停', configureFirst: '请先启用并保存全局降智检测配置，再开启左侧分组。',

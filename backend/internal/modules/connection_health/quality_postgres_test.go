@@ -68,7 +68,7 @@ func TestQualityPostgresPersistenceIsolationAndStaleWrites(t *testing.T) {
 			t.Fatalf("saving quality result: %v", err)
 		}
 	}
-	history, err := repo.ListQualityHistory(ctx, "user", "site", []string{"target"}, "v1", 100)
+	history, err := repo.ListQualityHistory(ctx, "user", "site", []string{"target"}, 100)
 	if err != nil || len(history) != 2 || history[0].CreatedAt.Before(history[1].CreatedAt) {
 		t.Fatal("history retention/order failed")
 	}
@@ -77,7 +77,7 @@ func TestQualityPostgresPersistenceIsolationAndStaleWrites(t *testing.T) {
 		t.Fatal("state not persisted")
 	}
 	for _, scope := range [][2]string{{"other", "site"}, {"user", "other"}} {
-		history, err := repo.ListQualityHistory(ctx, scope[0], scope[1], []string{"target"}, "v1", 100)
+		history, err := repo.ListQualityHistory(ctx, scope[0], scope[1], []string{"target"}, 100)
 		if err != nil || len(history) != 0 {
 			t.Fatal("history crossed scope")
 		}
@@ -99,9 +99,9 @@ func TestQualityPostgresPersistenceIsolationAndStaleWrites(t *testing.T) {
 	if ok, err := repo.SaveQualityResult(ctx, "user", "site", []string{"group"}, q, st); err != nil || ok {
 		t.Fatal("stale revision accepted")
 	}
-	history, err = repo.ListQualityHistory(ctx, "user", "site", []string{"target"}, "v2", 100)
-	if err != nil || len(history) != 0 {
-		t.Fatal("old results presented as current")
+	history, err = repo.ListQualityHistory(ctx, "user", "site", []string{"target"}, 100)
+	if err != nil || len(history) != 2 {
+		t.Fatal("configuration change hid completed checks from the timeline")
 	}
 	_, err = pool.Exec(ctx, `DELETE FROM connection_health_quality_settings WHERE user_id='user' AND admin_account_id='site'`)
 	if err != nil {
@@ -168,4 +168,68 @@ func TestQualityPostgresSchedulerRunsWithoutBrowser(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestQualityPostgresHistorySurvivesConfigurationChanges(t *testing.T) {
+	ctx, pool := qualityTestPool(t)
+	svc, _, _, _ := qualityTestService(t)
+	svc.qualityRepo = NewRepository(pool)
+	q := defaultQualitySettings()
+	q.Enabled = true
+	var err error
+	q, err = svc.SaveQualityConfiguration(ctx, "user", q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SetGroupQuality(ctx, "user", "one", true); err != nil {
+		t.Fatal(err)
+	}
+	scope := QualityScope{UserID: "user", WorkspaceID: "ws1"}
+	tokens := make(chan struct{}, 32)
+	read := func(count int, current bool) {
+		t.Helper()
+		// A fresh service/repository read models both polling and page reloads.
+		restarted := *svc
+		restarted.qualityRepo = NewRepository(pool)
+		groups := []AdminGroupHealth{{ID: "one", Accounts: []AdminGroupAccount{{TargetID: "sub2api:ws1:a"}}}}
+		restarted.attachQuality(ctx, "user", "ws1", groups)
+		account := groups[0].Accounts[0]
+		if len(account.QualityHistory) != count {
+			t.Fatalf("configuration change hid channel history: got %d, want %d", len(account.QualityHistory), count)
+		}
+		if (account.QualityState != nil) != current {
+			t.Fatal("history from an earlier configuration became the current verdict")
+		}
+		if current && account.QualityState.Successes != 1 {
+			t.Fatal("old answers counted toward the new configuration's streak")
+		}
+		for i := 1; i < len(account.QualityHistory); i++ {
+			if !account.QualityHistory[i-1].CreatedAt.After(account.QualityHistory[i].CreatedAt) {
+				t.Fatal("history is not ordered newest first")
+			}
+		}
+	}
+	for i := 1; i <= 3; i++ {
+		svc.runQualityScope(ctx, scope, tokens)
+		read(i, true)
+		q.IntervalSeconds += 10
+		if i == 2 {
+			q.Model = "changed-model"
+		}
+		q, err = svc.SaveQualityConfiguration(ctx, "user", q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		read(i, false)
+	}
+	for _, enabled := range []bool{false, true} {
+		q.Enabled = enabled
+		q, err = svc.SaveQualityConfiguration(ctx, "user", q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		read(3, false)
+	}
+	svc.runQualityScope(ctx, scope, tokens)
+	read(4, true)
 }
