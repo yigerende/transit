@@ -42,6 +42,7 @@ const lastProbe = computed(() => {
     <div v-else class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-xs sm:text-sm">
       <div class="flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums">
         <span class="text-muted-foreground">{{ t(`${prefix}.recent`, { count: samples.length }) }}</span>
+        <slot name="before-stats" />
         <template v-if="samples.length">
           <span :class="slow ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'">{{ t(`${prefix}.slow`, { count: slow }) }}</span>
           <span :class="errors ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'">{{ t(`${prefix}.errors`, { count: errors }) }}</span>
