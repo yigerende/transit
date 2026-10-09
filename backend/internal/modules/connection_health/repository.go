@@ -1017,6 +1017,37 @@ func (r *Repository) CreatePolicyAndReplaceGroupConfiguration(ctx context.Contex
 	return tx.Commit(ctx)
 }
 
+// UpdatePolicyAndReplaceGroupConfiguration commits policy settings, model targets and
+// current-group channel selection together. Lock ownership before upsert so a deleted
+// or foreign policy cannot be recreated by this edit operation.
+func (r *Repository) UpdatePolicyAndReplaceGroupConfiguration(ctx context.Context, policy Policy, targets []ModelTarget, adminGroupID string, adminGroupName string, policyIDs []string, excludedTargetIDs []string, groupTargetIDs []string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var ownedID string
+	err = tx.QueryRow(ctx, `SELECT id FROM connection_health_policies
+		WHERE id = $1 AND user_id = $2 AND admin_account_id = $3 FOR UPDATE`,
+		policy.ID, policy.UserID, policy.AdminAccountID).Scan(&ownedID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return requestError(ErrorPolicyNotFound)
+	}
+	if err != nil {
+		return err
+	}
+	if err := upsertPolicyWithExecutor(ctx, tx, policy); err != nil {
+		return err
+	}
+	if err := replaceModelTargetsTx(ctx, tx, policy.ID, targets); err != nil {
+		return err
+	}
+	if err := replaceGroupPolicyConfigurationTx(ctx, tx, policy.UserID, policy.AdminAccountID, adminGroupID, adminGroupName, policyIDs, excludedTargetIDs, groupTargetIDs); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func replaceGroupPolicyConfigurationTx(ctx context.Context, tx pgx.Tx, userID string, adminAccountID string, adminGroupID string, adminGroupName string, policyIDs []string, excludedTargetIDs []string, groupTargetIDs []string) error {
 
 	if _, err := tx.Exec(ctx, `

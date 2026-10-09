@@ -1318,6 +1318,18 @@ export default {
         multiplierOnlySummary: 'No probes; priority follows multiplier'
       },
       policyDrawer: {
+        saving: 'Saving…',
+        channels: {
+          title: 'Participating channels',
+          selected: '{selected}/{total} selected',
+          hint: 'This selection applies to all policies and quality checks in this group only.',
+          loading: 'Loading channel selection…',
+          retry: 'Retry',
+          selectAll: 'Select all',
+          clear: 'Clear',
+          search: 'Search channels',
+          empty: 'No matching channels',
+        },
         createTitle: 'New Automation Policy',
         editTitle: 'Edit Automation Policy',
         nameLabel: 'Policy Name',

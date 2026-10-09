@@ -49,6 +49,7 @@ const {
   loadPolicies,
   removePolicy,
   savePolicy,
+  saveAdminGroupPolicyConfiguration,
 } = useConnectionHealth()
 
 const searchText = ref('')
@@ -201,6 +202,9 @@ const showAllEvents = async () => {
 const policyListDialogOpen = ref(false)
 const policyDrawerOpen = ref(false)
 const editingPolicy = ref<ConnectionHealthPolicy | null>(null)
+const editingPolicyGroup = ref<AdminGroupHealth | null>(null)
+const policySaving = ref(false)
+const policySaveError = ref('')
 const deletingPolicyId = ref('')
 const deletePolicyError = ref('')
 const busyPolicyId = ref('')
@@ -225,18 +229,40 @@ const ownGroupOptions = computed<OwnGroupOption[]>(() => groups.value.map((group
 
 const openCreatePolicy = () => {
   editingPolicy.value = null
+  editingPolicyGroup.value = null
+  policySaveError.value = ''
   policyDrawerOpen.value = true
 }
 
-const openEditPolicy = (policy: ConnectionHealthPolicy) => {
+const openEditPolicy = (policy: ConnectionHealthPolicy, group: AdminGroupHealth | null = null) => {
   editingPolicy.value = policy
+  editingPolicyGroup.value = group
+  policySaveError.value = ''
   policyDrawerOpen.value = true
 }
 
-const handleSavePolicy = async (input: PolicyInput) => {
-  if (await savePolicy(input)) {
+const handleSavePolicy = async (input: PolicyInput, excludedTargetIds?: string[]) => {
+  if (policySaving.value) return
+  policySaving.value = true
+  policySaveError.value = ''
+  try {
+    if (editingPolicyGroup.value) {
+      if (!excludedTargetIds) return
+      const result = await saveAdminGroupPolicyConfiguration(editingPolicyGroup.value.id, {
+        policyIds: [], excludedTargetIds, editPolicy: input,
+      })
+      if ('errorKey' in result) {
+        policySaveError.value = t(connectionHealthMessageKey(result.errorKey, te))
+        return
+      }
+    } else if (!await savePolicy(input)) {
+      policySaveError.value = t(connectionHealthMessageKey(errorKey.value, te))
+      return
+    }
     policyDrawerOpen.value = false
-    await loadAll({ silent: true })
+    await Promise.all([loadAll({ silent: true }), loadPolicies()])
+  } finally {
+    policySaving.value = false
   }
 }
 
@@ -331,7 +357,7 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
               :usage-counts="policyUsageCounts"
               :busy-policy-id="busyPolicyId"
               :unavailable="(groupPolicyIds.get(group.id)?.length ?? 0) !== (groupPolicies.get(group.id)?.length ?? 0)"
-              @edit="openEditPolicy"
+              @edit="openEditPolicy($event, group)"
               @toggle="togglePolicyEnabled"
               @setup="openSetup(group)"
             />
@@ -402,7 +428,10 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
       :policy="editingPolicy"
       :own-group-options="ownGroupOptions"
       :context-hint="editingPolicyHint"
-      @close="policyDrawerOpen = false"
+      :group="editingPolicyGroup"
+      :saving="policySaving"
+      :save-error="policySaveError"
+      @close="!policySaving && (policyDrawerOpen = false)"
       @save="handleSavePolicy"
     />
 

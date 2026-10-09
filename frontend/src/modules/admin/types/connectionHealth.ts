@@ -344,4 +344,5 @@ export interface AdminGroupPolicyConfigurationInput {
   policyIds: string[]
   excludedTargetIds: string[]
   quickPolicy?: PolicyInput
+  editPolicy?: PolicyInput
 }

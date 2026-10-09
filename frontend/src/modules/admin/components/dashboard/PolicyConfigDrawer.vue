@@ -4,7 +4,9 @@ import { useI18n } from 'vue-i18n'
 import { ArrowDownUp, BookOpenText, Radar, X, ShieldCheck, Plus, Trash2 } from 'lucide-vue-next'
 import { HelpTooltip } from '@/components/ui/tooltip'
 import PolicyRunFlowDialog from './PolicyRunFlowDialog.vue'
-import type { ConnectionHealthPolicy, ConnectionHealthPriorityMode, ConnectionHealthStrategyMode, ModelTargetInput, PolicyInput } from '../../types/connectionHealth'
+import { getAdminGroupPolicyConfiguration } from '../../api/connectionHealth'
+import { connectionHealthMessageKey } from '../../composables/useConnectionHealth'
+import type { AdminGroupHealth, ConnectionHealthPolicy, ConnectionHealthPriorityMode, ConnectionHealthStrategyMode, ModelTargetInput, PolicyInput } from '../../types/connectionHealth'
 import { resolveConnectionHealthStrategyMode } from '../../utils/connectionHealthPolicy'
 
 export interface OwnGroupOption {
@@ -17,14 +19,17 @@ const props = defineProps<{
   policy: ConnectionHealthPolicy | null
   ownGroupOptions: OwnGroupOption[]
   contextHint?: string
+  group?: AdminGroupHealth | null
+  saving?: boolean
+  saveError?: string
 }>()
 
 const emit = defineEmits<{
   (event: 'close'): void
-  (event: 'save', input: PolicyInput): void
+  (event: 'save', input: PolicyInput, excludedTargetIds?: string[]): void
 }>()
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const prefix = 'admin.connectionHealth.policyDrawer'
 
 const providerOptions = ['gemini', 'anthropic', 'openai', 'custom']
@@ -59,6 +64,44 @@ const strategyMode = ref<ConnectionHealthStrategyMode>('health_probe')
 const modelTargets = ref<ModelTargetInput[]>([])
 const validationError = ref<string | null>(null)
 const runFlowOpen = ref(false)
+const selectedTargetIds = ref<Set<string>>(new Set())
+const channelsLoading = ref(false)
+const channelsError = ref('')
+const channelSearch = ref('')
+let channelLoadSequence = 0
+const filteredChannels = computed(() => {
+  const query = channelSearch.value.trim().toLocaleLowerCase()
+  return (props.group?.accounts ?? []).filter(account =>
+    !query || `${account.name} ${account.id}`.toLocaleLowerCase().includes(query))
+})
+const loadChannels = async () => {
+  const sequence = ++channelLoadSequence
+  const group = props.group
+  selectedTargetIds.value = new Set()
+  channelsError.value = ''
+  channelsLoading.value = Boolean(group)
+  if (!group) return
+  try {
+    if (group.accountsError) throw new Error(group.accountsError)
+    const configuration = await getAdminGroupPolicyConfiguration(group.id)
+    if (sequence !== channelLoadSequence) return
+    const excluded = new Set(configuration.excludedTargetIds)
+    selectedTargetIds.value = new Set(group.accounts
+      .filter(account => !excluded.has(account.targetId))
+      .map(account => account.targetId))
+  } catch (err) {
+    if (sequence === channelLoadSequence) {
+      channelsError.value = err instanceof Error ? err.message : 'admin.connectionHealth.errors.request'
+    }
+  } finally {
+    if (sequence === channelLoadSequence) channelsLoading.value = false
+  }
+}
+const selectAllChannels = () => {
+  selectedTargetIds.value = new Set(props.group?.accounts.map(account => account.targetId) ?? [])
+}
+const close = () => { if (!props.saving) emit('close') }
+
 
 // 单策略单 provider：策略级选择，下方所有模型目标共用同一个 provider。
 // policyProvider 为空字符串是一个专门状态，只在"编辑一个历史遗留的混用 provider 策略"
@@ -115,7 +158,15 @@ const resetForm = () => {
   validationError.value = null
 }
 
-watch(() => props.open, (isOpen) => { if (isOpen) resetForm() })
+watch(() => [props.open, props.group?.id, props.policy?.id] as const, ([isOpen]) => {
+  if (isOpen) {
+    resetForm()
+    channelSearch.value = ''
+    void loadChannels()
+  } else {
+    ++channelLoadSequence
+  }
+}, { immediate: true })
 
 // 切换策略级 provider 时同步更新表单内所有模型目标的 providerFamily，保持实时一致；
 // 混用警告状态下 policyProvider 初始为空，此时不覆盖已有目标，等用户真正选择后再统一。
@@ -137,6 +188,7 @@ const removeModelTarget = (index: number) => {
 }
 
 const handleSave = () => {
+  if (props.saving || channelsLoading.value || channelsError.value) return
   validationError.value = null
   if (!name.value.trim()) {
     validationError.value = t(`${prefix}.errors.nameRequired`)
@@ -179,7 +231,10 @@ const handleSave = () => {
     strategyMode: strategyMode.value,
     modelTargets: targets,
   }
-  emit('save', input)
+  const excludedTargetIds = props.group?.accounts
+    .filter(account => !selectedTargetIds.value.has(account.targetId))
+    .map(account => account.targetId)
+  emit('save', input, excludedTargetIds)
 }
 </script>
 
@@ -194,7 +249,7 @@ const handleSave = () => {
       leave-to-class="opacity-0"
     >
       <div v-if="open" class="fixed inset-0 z-[150]">
-        <div class="absolute inset-0 bg-background/60 backdrop-blur-sm" @click="emit('close')" />
+        <div class="absolute inset-0 bg-background/60 backdrop-blur-sm" @click="close" />
 
         <Transition
           enter-active-class="transition duration-250 ease-out"
@@ -233,18 +288,50 @@ const handleSave = () => {
                 <button
                   type="button"
                   class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
-                  @click="emit('close')"
+                  @click="close"
                 >
                   <X class="h-4 w-4" />
                 </button>
               </div>
             </div>
 
-            <div class="space-y-5 px-5 py-5">
+            <fieldset :disabled="saving" class="min-w-0 space-y-5 px-5 py-5">
               <p v-if="contextHint" class="text-xs text-muted-foreground">{{ contextHint }}</p>
               <div v-if="validationError" class="rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-600 dark:text-red-400">
                 {{ validationError }}
               </div>
+
+              <section v-if="group" class="space-y-2.5 rounded-lg border border-border/60 p-3" :aria-label="t(`${prefix}.channels.title`)">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <h4 class="text-sm font-medium text-foreground">{{ t(`${prefix}.channels.title`) }}</h4>
+                    <p class="truncate text-xs text-muted-foreground" :title="group.name">{{ group.name }}</p>
+                  </div>
+                  <span v-if="!channelsLoading && !channelsError" class="shrink-0 text-xs text-muted-foreground">
+                    {{ t(`${prefix}.channels.selected`, { selected: selectedTargetIds.size, total: group.accounts.length }) }}
+                  </span>
+                </div>
+                <p class="text-xs leading-5 text-muted-foreground">{{ t(`${prefix}.channels.hint`) }}</p>
+                <p v-if="channelsLoading" role="status" class="text-xs text-muted-foreground">{{ t(`${prefix}.channels.loading`) }}</p>
+                <div v-else-if="channelsError" role="alert" class="text-xs text-red-600 dark:text-red-400">
+                  {{ t(connectionHealthMessageKey(channelsError, te)) }}
+                  <button type="button" class="ml-2 underline" @click="loadChannels">{{ t(`${prefix}.channels.retry`) }}</button>
+                </div>
+                <template v-else>
+                  <div v-if="group.accounts.length" class="flex items-center gap-3 text-xs">
+                    <button type="button" class="text-primary hover:underline" @click="selectAllChannels">{{ t(`${prefix}.channels.selectAll`) }}</button>
+                    <button type="button" class="text-muted-foreground hover:underline" @click="selectedTargetIds = new Set()">{{ t(`${prefix}.channels.clear`) }}</button>
+                  </div>
+                  <input v-if="group.accounts.length > 8" v-model="channelSearch" type="search" :aria-label="t(`${prefix}.channels.search`)" :placeholder="t(`${prefix}.channels.search`)" class="h-8 w-full rounded-md border border-border/60 bg-background px-2 text-xs" />
+                  <div class="max-h-44 space-y-1 overflow-y-auto overscroll-contain">
+                    <label v-for="account in filteredChannels" :key="account.targetId" class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-surface-elevated">
+                      <input v-model="selectedTargetIds" type="checkbox" :value="account.targetId" :aria-label="account.name || account.id" class="h-4 w-4 shrink-0 accent-primary" />
+                      <span class="min-w-0 truncate" :title="account.name || account.id">{{ account.name || account.id }}</span>
+                    </label>
+                    <p v-if="!filteredChannels.length" class="py-2 text-xs text-muted-foreground">{{ t(`${prefix}.channels.empty`) }}</p>
+                  </div>
+                </template>
+              </section>
 
               <!-- 基础信息 -->
               <div class="space-y-3">
@@ -485,15 +572,16 @@ const handleSave = () => {
                 <p class="mt-1 text-xs leading-5 text-muted-foreground">{{ t(`${prefix}.multiplierOnlySummary`) }}</p>
               </div>
 
+              <p v-if="saveError" role="alert" class="text-sm text-red-600 dark:text-red-400">{{ saveError }}</p>
               <div class="flex items-center justify-end gap-2 border-t border-border/40 pt-4">
-                <button type="button" class="rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:bg-surface-line" @click="emit('close')">
+                <button type="button" class="rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:bg-surface-line" @click="close">
                   {{ t(`${prefix}.cancel`) }}
                 </button>
-                <button type="button" class="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90" @click="handleSave">
-                  {{ t(`${prefix}.save`) }}
+                <button type="button" class="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50" :disabled="saving || channelsLoading || Boolean(channelsError)" @click="handleSave">
+                  {{ t(`${prefix}.${saving ? 'saving' : 'save'}`) }}
                 </button>
               </div>
-            </div>
+            </fieldset>
           </div>
         </Transition>
       </div>

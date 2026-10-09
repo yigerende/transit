@@ -1318,6 +1318,18 @@ export default {
         multiplierOnlySummary: '不执行探活，按倍率同步优先级'
       },
       policyDrawer: {
+        saving: '保存中…',
+        channels: {
+          title: '参与渠道',
+          selected: '已选 {selected}/{total}',
+          hint: '渠道范围仅影响当前分组，应用于该分组的所有策略及降智检测。',
+          loading: '正在加载渠道选择…',
+          retry: '重试',
+          selectAll: '全选',
+          clear: '清空',
+          search: '搜索渠道',
+          empty: '暂无匹配的渠道',
+        },
         createTitle: '新建自动化策略',
         editTitle: '编辑自动化策略',
         nameLabel: '策略名称',

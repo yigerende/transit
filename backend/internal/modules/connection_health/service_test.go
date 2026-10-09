@@ -473,6 +473,13 @@ func (f *fakeRepository) ReplaceGroupPolicyConfiguration(ctx context.Context, us
 	return nil
 }
 
+func (f *fakeRepository) UpdatePolicyAndReplaceGroupConfiguration(ctx context.Context, policy Policy, targets []ModelTarget, adminGroupID string, adminGroupName string, policyIDs []string, excludedTargetIDs []string, groupTargetIDs []string) error {
+	if err := f.SavePolicyWithTargets(ctx, policy, targets); err != nil {
+		return err
+	}
+	return f.ReplaceGroupPolicyConfiguration(ctx, policy.UserID, policy.AdminAccountID, adminGroupID, adminGroupName, policyIDs, excludedTargetIDs, groupTargetIDs)
+}
+
 func (f *fakeRepository) CreatePolicyAndReplaceGroupConfiguration(ctx context.Context, policy Policy, targets []ModelTarget, adminGroupID string, adminGroupName string, policyIDs []string, excludedTargetIDs []string, groupTargetIDs []string) error {
 	policy.ModelTargets = append([]ModelTarget(nil), targets...)
 	f.policies = append(f.policies, policy)

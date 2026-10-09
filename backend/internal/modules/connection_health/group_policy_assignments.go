@@ -24,6 +24,8 @@ type AdminGroupPolicyConfigurationInput struct {
 	// QuickPolicy 仅供首次启用向导使用；后端在同一事务中创建策略并完成分组绑定。
 	// 旧客户端不传该字段时完全沿用原有 policyIds 行为。
 	QuickPolicy *PolicyInput `json:"quickPolicy,omitempty"`
+	// EditPolicy updates an existing policy and this group’s channel selection atomically.
+	EditPolicy *PolicyInput `json:"editPolicy,omitempty"`
 }
 
 // adminGroupContext 是保存分组配置时从上游实时解析出的可信上下文。客户端只提交 groupId 和
@@ -93,6 +95,42 @@ func (s *Service) SetAdminGroupPolicyConfiguration(ctx context.Context, userID s
 		return AdminGroupPolicyConfiguration{}, err
 	}
 
+	var editedPolicy *Policy
+	var editedTargets []ModelTarget
+	if input.EditPolicy != nil {
+		if input.QuickPolicy != nil {
+			return AdminGroupPolicyConfiguration{}, requestError(ErrorRequest)
+		}
+		edit := *input.EditPolicy
+		existing, err := s.repo.GetPolicy(ctx, strings.TrimSpace(edit.ID), userID, groupContext.adminAccountID)
+		if err != nil {
+			return AdminGroupPolicyConfiguration{}, err
+		}
+		if existing == nil {
+			return AdminGroupPolicyConfiguration{}, requestError(ErrorPolicyNotFound)
+		}
+		if strings.TrimSpace(edit.StrategyMode) == "" {
+			edit.StrategyMode = existing.StrategyMode
+		}
+		policy, targets, err := buildPolicyAndTargets(userID, groupContext.adminAccountID, existing.ID, edit)
+		if err != nil {
+			return AdminGroupPolicyConfiguration{}, err
+		}
+		editedPolicy, editedTargets = &policy, targets
+		// Editing channel selection must retain every other policy bound to this group.
+		// Also support policies shown in the sidebar through legacy channel bindings.
+		assignments, err := s.repo.ListGroupPolicyAssignmentsByWorkspace(ctx, userID, groupContext.adminAccountID)
+		if err != nil {
+			return AdminGroupPolicyConfiguration{}, err
+		}
+		input.PolicyIDs = []string{existing.ID}
+		for _, assignment := range assignments {
+			if assignment.AdminGroupID == groupContext.group.ID {
+				input.PolicyIDs = append(input.PolicyIDs, assignment.PolicyID)
+			}
+		}
+	}
+
 	policyIDs, err := s.validateWorkspacePolicyIDs(ctx, userID, groupContext.adminAccountID, input.PolicyIDs)
 	if err != nil {
 		return AdminGroupPolicyConfiguration{}, err
@@ -125,6 +163,13 @@ func (s *Service) SetAdminGroupPolicyConfiguration(ctx context.Context, userID s
 	if err != nil {
 		return AdminGroupPolicyConfiguration{}, err
 	}
+	if editedPolicy != nil {
+		for i := range responsePolicies {
+			if responsePolicies[i].ID == editedPolicy.ID {
+				responsePolicies[i] = *editedPolicy
+			}
+		}
+	}
 	if groupContext.group.Multiplier == nil && groupConfigurationUsesMultiplier(policyIDs, input.QuickPolicy, responsePolicies) {
 		// 倍率为空时拒绝启用倍率策略，避免旧客户端绕过前端提示后创建一个看似生效、实际
 		// 无法安全计算的配置。解除倍率策略绑定仍然允许，便于用户从错误配置中退出。
@@ -139,6 +184,16 @@ func (s *Service) SetAdminGroupPolicyConfiguration(ctx context.Context, userID s
 		if _, excluded := excludedSet[targetID]; !excluded {
 			activeTargetIDs[targetID] = struct{}{}
 		}
+	}
+
+	if editedPolicy != nil {
+		if err := s.repo.UpdatePolicyAndReplaceGroupConfiguration(
+			ctx, *editedPolicy, editedTargets, groupContext.group.ID, groupContext.group.Name,
+			policyIDs, excludedTargetIDs, sortedStringSet(activeTargetIDs),
+		); err != nil {
+			return AdminGroupPolicyConfiguration{}, err
+		}
+		return savedAdminGroupPolicyConfiguration(groupContext.group, policyIDs, excludedTargetIDs, responsePolicies), nil
 	}
 
 	if input.QuickPolicy != nil {
