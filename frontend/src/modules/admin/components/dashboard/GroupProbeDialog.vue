@@ -19,7 +19,7 @@ const enabled = ref(true)
 const key = ref('')
 const hasCustomKey = ref(false)
 const useAutoKey = ref(false)
-const selectedKey = () => key.value.trim() || (hasCustomKey.value && !useAutoKey.value ? undefined : '')
+const keySelection = () => ({ key: key.value.trim() || undefined, useAutoKey: useAutoKey.value && !key.value.trim() })
 const intervalSeconds = ref<number | string>(60)
 const models = ref<ManualProbeModelOption[]>([])
 const model = ref('')
@@ -74,7 +74,7 @@ const prepare = async () => {
   preparing.value = true
   error.value = ''
   try {
-    const response = await prepareGroupProbe(props.group.id, selectedKey())
+    const response = await prepareGroupProbe(props.group.id, keySelection())
     if (current !== sequence) return
     models.value = response.models
     unavailableModels.value = response.modelListUnavailable || !response.models.length
@@ -112,7 +112,7 @@ const save = async () => {
   saving.value = true
   error.value = ''
   try {
-    await saveGroupProbeConfig(groupId, { model: model.value.trim(), intervalSeconds: Number(intervalSeconds.value), enabled: enabled.value, key: selectedKey() })
+    await saveGroupProbeConfig(groupId, { model: model.value.trim(), intervalSeconds: Number(intervalSeconds.value), enabled: enabled.value, ...keySelection() })
     emit('saved')
     if (current === sequence) emit('close')
   } catch (err) {

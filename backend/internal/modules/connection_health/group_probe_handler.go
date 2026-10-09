@@ -48,14 +48,12 @@ func (h *Handler) prepareGroupProbe(w http.ResponseWriter, r *http.Request) {
 		httpjson.WriteError(w, http.StatusUnauthorized, "auth.errors.unauthorized")
 		return
 	}
-	var input struct {
-		Key *string `json:"key"`
-	}
+	var input GroupProbeKeyInput
 	if err := httpjson.Decode(r, &input); err != nil && !errors.Is(err, io.EOF) {
 		httpjson.WriteError(w, http.StatusBadRequest, ErrorRequest)
 		return
 	}
-	result, err := h.service.PrepareGroupProbe(r.Context(), userID, r.PathValue("id"), input.Key)
+	result, err := h.service.PrepareGroupProbe(r.Context(), userID, r.PathValue("id"), input)
 	if err != nil {
 		writeError(w, err)
 		return

@@ -25,11 +25,16 @@ type GroupProbePreparation struct {
 	ModelListUnavailable bool              `json:"modelListUnavailable"`
 }
 
+type GroupProbeKeyInput struct {
+	Key        *string `json:"key"`
+	UseAutoKey bool    `json:"useAutoKey"`
+}
+
 func groupProbeTargetID(adminAccountID, groupID string) string {
 	return "group:" + adminAccountID + ":" + groupID
 }
 
-func (s *Service) withGroupProbeCredential(ctx context.Context, userID, groupID string, key *string, action func(string, upstream.AdminGroupInfo, upstream.ProbeCredential) error) error {
+func (s *Service) withGroupProbeCredential(ctx context.Context, userID, groupID string, input GroupProbeKeyInput, action func(string, upstream.AdminGroupInfo, upstream.ProbeCredential) error) error {
 	adminAccountID, err := s.currentAdminAccountID(ctx, userID)
 	if err != nil {
 		return err
@@ -39,7 +44,7 @@ func (s *Service) withGroupProbeCredential(ctx context.Context, userID, groupID 
 		return err
 	}
 	defer release()
-	group, credential, _, err := s.resolveGroupProbeCredential(ctx, userID, adminAccountID, groupID, key)
+	group, credential, _, err := s.resolveGroupProbeCredential(ctx, userID, adminAccountID, groupID, input.Key, input.UseAutoKey)
 	if err != nil {
 		return err
 	}
@@ -48,7 +53,7 @@ func (s *Service) withGroupProbeCredential(ctx context.Context, userID, groupID 
 
 // Caller holds the group target lease. An explicit workspace is required by
 // background tasks; the user's currently selected workspace is irrelevant.
-func (s *Service) resolveGroupProbeCredential(ctx context.Context, userID, adminAccountID, groupID string, key *string) (upstream.AdminGroupInfo, upstream.ProbeCredential, string, error) {
+func (s *Service) resolveGroupProbeCredential(ctx context.Context, userID, adminAccountID, groupID string, key *string, useAutoKey bool) (upstream.AdminGroupInfo, upstream.ProbeCredential, string, error) {
 	fail := func(err error) (upstream.AdminGroupInfo, upstream.ProbeCredential, string, error) {
 		return upstream.AdminGroupInfo{}, upstream.ProbeCredential{}, "", err
 	}
@@ -58,7 +63,10 @@ func (s *Service) resolveGroupProbeCredential(ctx context.Context, userID, admin
 		if len(suppliedKey) > 4096 {
 			return fail(requestError(groupProbePrefix + "customKeyUnavailable"))
 		}
-	} else {
+	}
+	// An empty password input is not a request to discard a saved credential.
+	// Resolve the existing reference unless automatic mode was explicitly chosen.
+	if suppliedKey == "" && !useAutoKey {
 		config, err := s.repo.GetGroupProbeConfig(ctx, userID, adminAccountID, groupID)
 		if err != nil {
 			return fail(err)
@@ -122,13 +130,13 @@ func (s *Service) resolveGroupProbeCredential(ctx context.Context, userID, admin
 }
 
 // Preparing is a POST because the first explicit click may create a remote key.
-func (s *Service) PrepareGroupProbe(ctx context.Context, userID, groupID string, key ...*string) (GroupProbePreparation, error) {
+func (s *Service) PrepareGroupProbe(ctx context.Context, userID, groupID string, selection ...GroupProbeKeyInput) (GroupProbePreparation, error) {
 	result := GroupProbePreparation{Models: []DiscoveredModel{}}
-	var selectedKey *string
-	if len(key) > 0 {
-		selectedKey = key[0]
+	var input GroupProbeKeyInput
+	if len(selection) > 0 {
+		input = selection[0]
 	}
-	err := s.withGroupProbeCredential(ctx, userID, groupID, selectedKey, func(_ string, _ upstream.AdminGroupInfo, cred upstream.ProbeCredential) error {
+	err := s.withGroupProbeCredential(ctx, userID, groupID, input, func(_ string, _ upstream.AdminGroupInfo, cred upstream.ProbeCredential) error {
 		models, err := s.modelDiscovery.ListModels(ctx, cred.BaseURL, cred.Key)
 		if err != nil {
 			result.ModelListUnavailable = true
@@ -146,7 +154,7 @@ func (s *Service) ProbeAdminGroup(ctx context.Context, userID, groupID, model st
 		return GroupProbeSample{}, requestError(groupProbePrefix + "modelRequired")
 	}
 	var sample GroupProbeSample
-	err := s.withGroupProbeCredential(ctx, userID, groupID, nil, func(adminAccountID string, group upstream.AdminGroupInfo, cred upstream.ProbeCredential) error {
+	err := s.withGroupProbeCredential(ctx, userID, groupID, GroupProbeKeyInput{}, func(adminAccountID string, group upstream.AdminGroupInfo, cred upstream.ProbeCredential) error {
 		var probeErr error
 		sample, probeErr = s.probeGroupOnce(ctx, userID, adminAccountID, group, cred, model)
 		return probeErr

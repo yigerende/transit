@@ -39,8 +39,9 @@ type GroupProbeConfig struct {
 }
 
 type GroupProbeConfigInput struct {
-	// Omitted keeps the saved key; empty explicitly switches to automatic creation.
+	// Missing or blank keys keep the saved key. Only UseAutoKey clears it.
 	Key             *string `json:"key"`
+	UseAutoKey      bool    `json:"useAutoKey"`
 	Model           string  `json:"model"`
 	IntervalSeconds int     `json:"intervalSeconds"`
 	Enabled         bool    `json:"enabled"`
@@ -158,11 +159,11 @@ func (s *Service) SaveGroupProbeConfiguration(ctx context.Context, userID, group
 	if input.Enabled || (input.Key != nil && strings.TrimSpace(*input.Key) != "") {
 		// Validate the current workspace/group and prepare the dedicated key before
 		// accepting an automatic task. Pausing works even if upstream is offline.
-		_, _, customKeyID, err = s.resolveGroupProbeCredential(ctx, userID, workspaceID, groupID, input.Key)
+		_, _, customKeyID, err = s.resolveGroupProbeCredential(ctx, userID, workspaceID, groupID, input.Key, input.UseAutoKey)
 		if err != nil {
 			return GroupProbeConfig{}, err
 		}
-	} else if input.Key != nil {
+	} else if input.UseAutoKey {
 		customKeyID = ""
 	}
 	c := GroupProbeConfig{UserID: userID, AdminAccountID: workspaceID, GroupID: groupID, Model: input.Model, IntervalSeconds: input.IntervalSeconds, Enabled: input.Enabled, CustomKeyID: customKeyID, HasCustomKey: customKeyID != ""}

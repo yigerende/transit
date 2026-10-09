@@ -12,7 +12,70 @@ import (
 	"time"
 
 	"transithub/backend/internal/modules/upstream"
+	"transithub/backend/internal/shared/authctx"
 )
+
+func TestGroupProbeHTTPBlankKeyPreservesSavedKey(t *testing.T) {
+	svc, repo, provider := groupConfigTestService(t)
+	modelRequests := 0
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" || r.Header.Get("Authorization") != "Bearer group-secret" {
+			t.Error("model discovery did not use the saved key")
+		}
+		modelRequests++
+		_, _ = w.Write([]byte(`{"data":[{"id":"model"}]}`))
+	}))
+	defer modelServer.Close()
+	session := svc.mySites.(fakeMySitesReader).session
+	session.BaseURL = modelServer.URL
+	svc.mySites = fakeMySitesReader{session: session}
+	svc.modelDiscovery = NewModelDiscoveryRunner()
+	mux := http.NewServeMux()
+	RegisterRoutes(mux, svc)
+	request := func(method, action, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, "/api/connection-health/admin-groups/42/"+action, strings.NewReader(body))
+		req = req.WithContext(authctx.WithUserID(req.Context(), "user1"))
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s %s returned %d: %s", method, action, w.Code, w.Body.String())
+		}
+		return w
+	}
+	request("PUT", "probe-config", `{"model":"model","enabled":true,"key":"group-secret"}`)
+	for _, keyJSON := range []string{"", `,"key":null`, `,"key":""`, `,"key":"  "`} {
+		for _, enabled := range []string{"true", "false"} {
+			// Reopen and save with an empty password field, including older clients
+			// that submit an empty string instead of omitting it.
+			loaded := request("GET", "probe-config", "")
+			var config GroupProbeConfig
+			if err := json.Unmarshal(loaded.Body.Bytes(), &config); err != nil || !config.HasCustomKey {
+				t.Fatal("reopened configuration lost its saved key indicator")
+			}
+			request("PUT", "probe-config", `{"model":"other-model","intervalSeconds":120,"enabled":`+enabled+keyJSON+`}`)
+			request("POST", "prepare-probe", `{"useAutoKey":false`+keyJSON+`}`)
+			stored, _ := repo.GetGroupProbeConfig(context.Background(), "user1", "ws1", "42")
+			if stored.CustomKeyID != "key-7" || stored.IntervalSeconds != 120 || provider.calls != 0 {
+				t.Fatal("resaving or fetching models discarded the saved key or created an automatic key")
+			}
+		}
+	}
+	if modelRequests != 8 {
+		t.Fatalf("got %d model requests, want 8", modelRequests)
+	}
+	// Only the explicit button flag can switch the credential source.
+	request("POST", "prepare-probe", `{"useAutoKey":true}`)
+	stored, _ := repo.GetGroupProbeConfig(context.Background(), "user1", "ws1", "42")
+	if provider.calls != 1 || stored.CustomKeyID != "key-7" {
+		t.Fatal("previewing automatic mode must not alter the saved configuration")
+	}
+	request("PUT", "probe-config", `{"model":"model","enabled":true,"useAutoKey":true}`)
+	stored, _ = repo.GetGroupProbeConfig(context.Background(), "user1", "ws1", "42")
+	if provider.calls != 2 || stored.HasCustomKey || stored.CustomKeyID != "" {
+		t.Fatal("explicit automatic selection did not persist")
+	}
+}
 
 func TestGroupProbeCustomKeyPersistsReferenceAndDoesNotCreateFallback(t *testing.T) {
 	svc, repo, provider := groupConfigTestService(t)
@@ -39,6 +102,14 @@ func TestGroupProbeCustomKeyPersistsReferenceAndDoesNotCreateFallback(t *testing
 	c, err = svc.SaveGroupProbeConfiguration(ctx, "user1", "42", input)
 	if err != nil || c.CustomKeyID != "key-7" {
 		t.Fatal("saving interval discarded the saved key")
+	}
+	for _, blank := range []string{"", " \t "} {
+		input.Key = &blank
+		input.IntervalSeconds = 120
+		c, err = svc.SaveGroupProbeConfiguration(ctx, "user1", "42", input)
+		if err != nil || !c.HasCustomKey || c.CustomKeyID != "key-7" || provider.calls != 0 {
+			t.Fatalf("blank key must retain the saved key without automatic creation: %+v %v", c, err)
+		}
 	}
 	restarted := *svc
 	restarted.runScheduledGroupProbe(ctx, c)
@@ -69,6 +140,7 @@ func TestGroupProbeCustomKeyPersistsReferenceAndDoesNotCreateFallback(t *testing
 	svc.mySites = fakeMySitesReader{session: session}
 	empty := ""
 	input.Key = &empty
+	input.UseAutoKey = true
 	c, err = svc.SaveGroupProbeConfiguration(ctx, "user1", "42", input)
 	if err != nil || c.HasCustomKey || c.CustomKeyID != "" || provider.calls != 1 {
 		t.Fatal("explicit reset did not switch to automatic key")

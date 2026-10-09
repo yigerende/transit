@@ -883,7 +883,7 @@ export default {
       groupProbe: {
         title: 'Automatic group probing',
         close: 'Close',
-        hint: 'Save to probe automatically at the chosen interval, even with the page closed. Leave the key blank to create and reuse a dedicated group key.',
+        hint: 'Save to probe automatically at the chosen interval, even with the page closed. A blank key keeps the saved key; a dedicated key is created and reused only if none is configured.',
         key: 'Group key (optional)',
         keyPlaceholder: 'Enter a group key, or leave blank to create one',
         keySavedPlaceholder: 'Leave blank to keep the saved key, or enter a replacement',

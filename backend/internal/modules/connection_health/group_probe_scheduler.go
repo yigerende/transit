@@ -91,7 +91,7 @@ func (s *Service) runScheduledGroupProbe(ctx context.Context, candidate GroupPro
 			log.Printf("[group-probe] save task result failed: %v", err)
 		}
 	}()
-	group, cred, _, err := s.resolveGroupProbeCredential(ctx, c.UserID, c.AdminAccountID, c.GroupID, nil)
+	group, cred, _, err := s.resolveGroupProbeCredential(ctx, c.UserID, c.AdminAccountID, c.GroupID, nil, false)
 	if err != nil {
 		var requestErr requestError
 		if errors.As(err, &requestErr) {

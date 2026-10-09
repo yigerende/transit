@@ -122,13 +122,15 @@ export const manualProbeOnce = async (targetId: string, models: string[]): Promi
     body: JSON.stringify({ models, recordHistory: true }),
   })
 
-export const prepareGroupProbe = (groupId: string, key?: string): Promise<{ models: ManualProbeModelOption[]; modelListUnavailable: boolean }> =>
-  requestJson(`/connection-health/admin-groups/${encodeURIComponent(groupId)}/prepare-probe`, { method: 'POST', body: JSON.stringify({ key }) })
+export type GroupProbeKeyInput = { key?: string; useAutoKey?: boolean }
+
+export const prepareGroupProbe = (groupId: string, selection: GroupProbeKeyInput): Promise<{ models: ManualProbeModelOption[]; modelListUnavailable: boolean }> =>
+  requestJson(`/connection-health/admin-groups/${encodeURIComponent(groupId)}/prepare-probe`, { method: 'POST', body: JSON.stringify(selection) })
 
 export const getGroupProbeConfig = (groupId: string): Promise<GroupProbeConfig | null> =>
   requestJson(`/connection-health/admin-groups/${encodeURIComponent(groupId)}/probe-config`)
 
-export const saveGroupProbeConfig = (groupId: string, config: Pick<GroupProbeConfig, 'model' | 'intervalSeconds' | 'enabled'> & { key?: string }): Promise<GroupProbeConfig> =>
+export const saveGroupProbeConfig = (groupId: string, config: Pick<GroupProbeConfig, 'model' | 'intervalSeconds' | 'enabled'> & GroupProbeKeyInput): Promise<GroupProbeConfig> =>
   requestJson(`/connection-health/admin-groups/${encodeURIComponent(groupId)}/probe-config`, { method: 'PUT', body: JSON.stringify(config) })
 
 export const probeAdminGroup = (groupId: string, model: string): Promise<GroupProbeSample> =>

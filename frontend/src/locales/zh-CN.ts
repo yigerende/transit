@@ -883,7 +883,7 @@ export default {
       groupProbe: {
         title: '分组自动探活',
         close: '关闭',
-        hint: '保存后按设定间隔自动探测，关闭页面也会继续。Key 留空会自动创建并复用该分组的专用 Key。',
+        hint: '保存后按设定间隔自动探测，关闭页面也会继续。Key 留空会保留已保存的 Key；尚未配置时才自动创建并复用专用 Key。',
         key: '分组 Key（可选）',
         keyPlaceholder: '填写该分组的 Key，留空自动创建',
         keySavedPlaceholder: '已保存，留空保留；填写可替换',
