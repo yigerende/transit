@@ -139,6 +139,11 @@ func (r *fakeQuestionRunner) ProbeQuality(_ context.Context, _ upstream.ProbeCre
 func qualityTestService(t *testing.T) (*Service, *fakeQualityRepo, *fakeRepository, *fakeQuestionRunner) {
 	t.Helper()
 	health := newFakeRepository()
+	health.policies = []Policy{{ID: "selected-policy", UserID: "user", AdminAccountID: "ws1", Enabled: true}}
+	health.groupAssignments = []GroupPolicyAssignment{
+		{UserID: "user", AdminAccountID: "ws1", AdminGroupID: "one", PolicyID: "selected-policy"},
+		{UserID: "user", AdminAccountID: "ws1", AdminGroupID: "two", PolicyID: "selected-policy"},
+	}
 	quality := newFakeQualityRepo()
 	runner := &fakeQuestionRunner{}
 	account := upstream.AdminGroupAccountInfo{ID: "a", Name: "channel", Platform: ProviderOpenAI}
@@ -300,5 +305,130 @@ func TestQualityConcurrencyAndMovedChannel(t *testing.T) {
 	svc.runQualityCandidate(ctx, QualityScope{UserID: "user", WorkspaceID: "ws1"}, upstream.Session{Platform: upstream.PlatformSub2API}, config, qualityCandidate{account: upstream.AdminGroupAccountInfo{ID: "a"}, groups: []string{"one"}, targetID: "sub2api:ws1:a"}, QualityState{})
 	if runner.calls != before {
 		t.Fatal("moved channel was probed")
+	}
+}
+
+func TestQualityUsesSavedAutomationChannelSelection(t *testing.T) {
+	for _, scenario := range []string{"selected", "excluded", "no-assignment", "deleted-policy", "foreign-assignment", "foreign-exclusion", "explicit-assignment", "excluded-explicit", "selected-disabled-policy", "shared-selected", "shared-excluded"} {
+		t.Run(scenario, func(t *testing.T) {
+			svc, quality, health, runner := qualityTestService(t)
+			ctx := context.Background()
+			q := defaultQualitySettings()
+			q.Enabled = true
+			_, _ = svc.SaveQualityConfiguration(ctx, "user", q)
+			_, _ = svc.SetGroupQuality(ctx, "user", "one", true)
+			exclusion := GroupTargetExclusion{UserID: "user", AdminAccountID: "ws1", AdminGroupID: "one", TargetID: "sub2api:ws1:a"}
+			want := 1
+			switch scenario {
+			case "excluded":
+				health.groupExclusions = []GroupTargetExclusion{exclusion}
+				want = 0
+			case "no-assignment":
+				health.groupAssignments = nil
+				want = 0
+			case "deleted-policy":
+				health.policies = nil
+				want = 0
+			case "foreign-assignment":
+				for i := range health.groupAssignments {
+					health.groupAssignments[i].AdminAccountID = "other"
+				}
+				want = 0
+			case "foreign-exclusion":
+				exclusion.UserID = "other"
+				health.groupExclusions = []GroupTargetExclusion{exclusion}
+			case "explicit-assignment", "excluded-explicit":
+				health.groupAssignments = nil
+				health.assignments = []PolicyAssignment{{UserID: "user", AdminAccountID: "ws1", TargetID: "sub2api:ws1:a", PolicyID: "selected-policy"}}
+				if scenario == "excluded-explicit" {
+					health.groupExclusions = []GroupTargetExclusion{exclusion}
+					want = 0
+				}
+			case "selected-disabled-policy":
+				// The quality switch controls execution; automation supplies the selection.
+				health.policies[0].Enabled = false
+			case "shared-selected", "shared-excluded":
+				_, _ = svc.SetGroupQuality(ctx, "user", "two", true)
+				health.groupExclusions = []GroupTargetExclusion{exclusion}
+				if scenario == "shared-excluded" {
+					exclusion.AdminGroupID = "two"
+					health.groupExclusions = append(health.groupExclusions, exclusion)
+					want = 0
+				}
+			}
+			svc.runQualityScope(ctx, QualityScope{UserID: "user", WorkspaceID: "ws1"}, make(chan struct{}, 32))
+			if runner.calls != want || len(quality.history[qualityScopeKey("user", "ws1")]) != want {
+				t.Fatalf("unselected channel executed: calls=%d want=%d", runner.calls, want)
+			}
+			groups, err := svc.AdminGroups(ctx, "user")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, group := range groups {
+				if group.ID == "one" {
+					if len(group.Accounts) != 1 {
+						t.Fatal("channel inventory changed")
+					}
+					selected := want == 1 && scenario != "shared-selected"
+					if group.Accounts[0].QualitySelected != selected {
+						t.Fatal("displayed selection differs from the scheduler")
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestQualityRechecksSelectionForQueuedAndInFlightChannels(t *testing.T) {
+	for _, scenario := range []string{"queued", "in-flight"} {
+		t.Run(scenario, func(t *testing.T) {
+			svc, quality, health, runner := qualityTestService(t)
+			ctx := context.Background()
+			q := defaultQualitySettings()
+			q.Enabled = true
+			q.Concurrency = 1
+			_, _ = svc.SaveQualityConfiguration(ctx, "user", q)
+			_, _ = svc.SetGroupQuality(ctx, "user", "one", true)
+			target := "sub2api:ws1:a"
+			if scenario == "queued" {
+				reader := svc.platformGroups.(fakePlatformGroupReader)
+				reader.accountsByGrp["one"] = append(reader.accountsByGrp["one"], upstream.AdminGroupAccountInfo{ID: "b"})
+				reader.credByAccount["b"] = reader.credByAccount["a"]
+				svc.platformGroups = reader
+				target = "sub2api:ws1:b"
+			}
+			runner.hook = func() {
+				health.groupExclusions = []GroupTargetExclusion{{UserID: "user", AdminAccountID: "ws1", AdminGroupID: "one", TargetID: target}}
+			}
+			svc.runQualityScope(ctx, QualityScope{UserID: "user", WorkspaceID: "ws1"}, make(chan struct{}, 32))
+			if runner.calls != 1 {
+				t.Fatal("deselected queued channel was requested")
+			}
+			for _, sample := range quality.history[qualityScopeKey("user", "ws1")] {
+				if sample.TargetID == target {
+					t.Fatal("deselected channel appended an in-flight result")
+				}
+			}
+		})
+	}
+}
+
+type qualitySelectionErrorRepo struct{ healthRepository }
+
+func (r qualitySelectionErrorRepo) ListGroupTargetExclusionsByWorkspace(context.Context, string, string) ([]GroupTargetExclusion, error) {
+	return nil, errors.New("selection unavailable")
+}
+
+func TestQualityDoesNotProbeWhenChannelSelectionCannotBeRead(t *testing.T) {
+	svc, quality, _, runner := qualityTestService(t)
+	ctx := context.Background()
+	q := defaultQualitySettings()
+	q.Enabled = true
+	_, _ = svc.SaveQualityConfiguration(ctx, "user", q)
+	_, _ = svc.SetGroupQuality(ctx, "user", "one", true)
+	svc.repo = qualitySelectionErrorRepo{svc.repo}
+	svc.runQualityScope(ctx, QualityScope{UserID: "user", WorkspaceID: "ws1"}, make(chan struct{}, 32))
+	if runner.calls != 0 || len(quality.history) != 0 {
+		t.Fatal("unknown channel selection must not allow probing")
 	}
 }

@@ -862,7 +862,7 @@ export default {
     },
     connectionHealth: {
       quality: {
-        settingsTitle: '降智检测配置', settingsHint: '当前站点的所有已开启分组共用此配置。保存后在左侧开启分组，后台会逐个检测渠道。',
+        settingsTitle: '降智检测配置', settingsHint: '当前站点的所有已开启分组共用此配置。保存后在左侧开启分组，仅检测自动化策略中已勾选并保存的渠道。',
         displayOnly: '仅检测展示，不改变渠道状态、优先级或权重。',
         globalEnabled: '启用题目降智检测', questions: '题目检测', schedule: '检测配置', model: '检测模型', reasoningEffort: '推理强度', defaultEffort: '模型默认', mode: '判断方式',
         modes: { content_time: '内容＋耗时', content: '只看内容', time: '只看耗时' },
@@ -874,7 +874,8 @@ export default {
         save: '保存配置', saving: '保存中…', loading: '加载中…', close: '关闭', retry: '重试', moveUp: '上移题目', moveDown: '下移题目', enableQuestion: '启用题目 {name}', removeQuestion: '删除题目 {name}',
         stripTitle: '降智检测', toggleGroup: '切换分组 {name} 的降智检测', globalPaused: '全局暂停', configureFirst: '请先启用并保存全局降智检测配置，再开启左侧分组。',
         invalidModel: '请输入有效的检测模型。', invalidConfig: '请检查检测参数：间隔 10～86400 秒，连续次数 1～20，并发 1～32，超时 5～300 秒，输出 Token 128～32768，历史 1～1000。', invalidQuestion: '请填写题目名称、内容和答案，并检查耗时阈值（1～300000 ms）及匹配方式。', invalidRegex: '答案正则表达式无效。', questionsRequired: '开启检测需至少启用一道题，题库最多 50 题。',
-        statuses: { normal: '无降智', suspect: '疑似降智', degraded: '降智', recovering: '恢复观察', error: '检测失败', off: '未开启', pending: '待检测', unavailable: '记录不可用' },
+        statuses: { normal: '无降智', suspect: '疑似降智', degraded: '降智', recovering: '恢复观察', error: '检测失败', off: '未开启', notSelected: '未选择', pending: '待检测', unavailable: '记录不可用' },
+        selectionHint: '此渠道未在自动化策略中选中，不执行降智检测；已有历史记录保留。',
         passed: '通过', failed: '答题异常', error: '检测失败', recent: '近 {count} 次', failedCount: '答题异常 {count}', errorCount: '检测失败 {count}', passRate: '通过率 {rate}', rateHint: '仅统计有效答题；网络等检测失败不计入通过率。',
         historyLabel: '最近 {count} 次降智检测，答题异常 {failed} 次，检测失败 {errors} 次，通过率 {rate}。绿色通过，红色答题异常，黄色检测失败。从左到右由旧到新。',
         noRecord: '无检测记录', actualAnswer: '实际回答', expectedAnswer: '标准答案 / 规则', contentResult: '内容', timeResult: '耗时', previousDegraded: '保留上次降智判定',

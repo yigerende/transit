@@ -37,7 +37,7 @@ const state = computed(() => {
         <span class="text-muted-foreground">{{ t(`${prefix}.groupDetail.columns.priority`) }} {{ account.priority ?? '—' }}</span>
       </template>
     </ProbeHistoryStrip>
-    <QualityHistoryStrip :samples="account.qualityHistory" :state="account.qualityState" :enabled="qualityEnabled" :unavailable="qualityUnavailable" />
+    <QualityHistoryStrip :samples="account.qualityHistory" :state="account.qualityState" :enabled="qualityEnabled" :selected="account.qualitySelected" :unavailable="qualityUnavailable" />
     <div v-if="account.modelHealth.length || account.unprobedModels?.length" class="flex flex-wrap gap-2">
       <span v-for="model in account.modelHealth" :key="model.modelName" class="rounded-md px-2 py-1 text-xs" :class="connectionHealthStateBadgeClass(model.state)">{{ model.modelName }} · {{ t(`${prefix}.stateLabels.${model.state}`) }}</span>
       <span v-for="model in account.unprobedModels" :key="`pending-${model.modelName}`" class="rounded-md bg-surface px-2 py-1 text-xs text-muted-foreground">{{ model.modelName }} · {{ t(`${prefix}.notProbed`) }}</span>

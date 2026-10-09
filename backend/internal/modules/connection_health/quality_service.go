@@ -235,6 +235,10 @@ func (s *Service) runQualityScope(ctx context.Context, scope QualityScope, token
 	if len(enabled) == 0 {
 		return
 	}
+	selection, err := s.loadQualitySelection(ctx, scope.UserID, scope.WorkspaceID)
+	if err != nil {
+		return
+	}
 	session, err := s.mySites.RequireSession(ctx, scope.UserID, scope.WorkspaceID)
 	if err != nil {
 		return
@@ -264,6 +268,9 @@ func (s *Service) runQualityScope(ctx context.Context, scope QualityScope, token
 		}
 		for _, a := range accounts {
 			target := buildTargetID(string(session.Platform), scope.WorkspaceID, a.ID)
+			if !selection.selected(group.ID, target) {
+				continue
+			}
 			if c := byTarget[target]; c != nil {
 				c.groups = append(c.groups, group.ID)
 			} else {
@@ -343,10 +350,14 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 			allowed[g.GroupID] = true
 		}
 	}
+	selection, err := s.loadQualitySelection(ctx, scope.UserID, scope.WorkspaceID)
+	if err != nil {
+		return
+	}
 	// Refresh the group membership before each real request, including queued jobs.
 	matched := false
 	for _, id := range c.groups {
-		if !allowed[id] {
+		if !allowed[id] || !selection.selected(id, c.targetID) {
 			continue
 		}
 		accounts, err := s.platformGroups.ListAdminGroupAccounts(session, upstream.AdminGroupInfo{ID: id, Name: id})
@@ -366,6 +377,12 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 		}
 	}
 	if !matched || ctx.Err() != nil {
+		return
+	}
+	// The user may have unchecked this channel while it was queued or while the
+	// upstream inventory was loading. Re-read before resolving any credentials.
+	selection, err = s.loadQualitySelection(ctx, scope.UserID, scope.WorkspaceID)
+	if err != nil || !selection.selected(c.groups[0], c.targetID) {
 		return
 	}
 	active := q.activeQuestions()
@@ -388,12 +405,22 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 	if err != nil {
 		sample.ErrorKey = reasonToErrorKey(upstream.ProbeCredentialReason(err))
 	} else {
+		// Credential resolution can involve a slow upstream read. Honor a selection
+		// change made during that read before sending the billable model request.
+		selection, err = s.loadQualitySelection(ctx, scope.UserID, scope.WorkspaceID)
+		if err != nil || !selection.selected(c.groups[0], c.targetID) {
+			return
+		}
 		outcome := s.qualityRunner.ProbeQuality(ctx, cred, c.account.Platform, q, question)
 		sample.Answer = outcome.Answer
 		sample.DurationMS = outcome.DurationMS
 		sample.ErrorKey = outcome.ErrorKey
 	}
 	if ctx.Err() != nil {
+		return
+	}
+	selection, err = s.loadQualitySelection(ctx, scope.UserID, scope.WorkspaceID)
+	if err != nil || !selection.selected(c.groups[0], c.targetID) {
 		return
 	}
 	sample.CreatedAt = time.Now()

@@ -862,7 +862,7 @@ export default {
     },
     connectionHealth: {
       quality: {
-        settingsTitle: 'Quality detection settings', settingsHint: 'All enabled groups in this workspace share these settings. Save, then enable groups on the left to check their channels in the background.',
+        settingsTitle: 'Quality detection settings', settingsHint: 'All enabled groups in this workspace share these settings. Save, then enable groups on the left. Only channels selected and saved in automation policies are tested.',
         displayOnly: 'Results only. Channel status, priority and weight are unaffected.',
         globalEnabled: 'Enable question-based quality detection', questions: 'Question checks', schedule: 'Detection settings', model: 'Detection model', reasoningEffort: 'Reasoning effort', defaultEffort: 'Model default', mode: 'Evaluation',
         modes: { content_time: 'Content and duration', content: 'Content only', time: 'Duration only' },
@@ -874,7 +874,8 @@ export default {
         save: 'Save settings', saving: 'Saving…', loading: 'Loading…', close: 'Close', retry: 'Retry', moveUp: 'Move question up', moveDown: 'Move question down', enableQuestion: 'Enable question {name}', removeQuestion: 'Delete question {name}',
         stripTitle: 'Quality checks', toggleGroup: 'Toggle quality detection for {name}', globalPaused: 'Globally paused', configureFirst: 'Enable and save global quality settings first, then enable groups on the left.',
         invalidModel: 'Enter a valid detection model.', invalidConfig: 'Check parameters: interval 10–86400s, streaks 1–20, concurrency 1–32, timeout 5–300s, output tokens 128–32768, history 1–1000.', invalidQuestion: 'Enter a question name, prompt and answer; check matching mode and duration threshold (1–300000 ms).', invalidRegex: 'The answer regular expression is invalid.', questionsRequired: 'Enable at least one question. The bank supports up to 50 questions.',
-        statuses: { normal: 'Normal', suspect: 'Suspected degradation', degraded: 'Degraded', recovering: 'Recovering', error: 'Check failed', off: 'Disabled', pending: 'Pending', unavailable: 'History unavailable' },
+        statuses: { normal: 'Normal', suspect: 'Suspected degradation', degraded: 'Degraded', recovering: 'Recovering', error: 'Check failed', off: 'Disabled', notSelected: 'Not selected', pending: 'Pending', unavailable: 'History unavailable' },
+        selectionHint: 'This channel is not selected in automation policies and will not be tested. Existing history is retained.',
         passed: 'Passed', failed: 'Abnormal answer', error: 'Check failed', recent: 'Last {count}', failedCount: 'Abnormal {count}', errorCount: 'Failed {count}', passRate: 'Pass rate {rate}', rateHint: 'Only valid answers count; request failures are excluded.',
         historyLabel: 'Last {count} quality checks: {failed} abnormal answers, {errors} failed requests, {rate} pass rate. Green passes, red abnormal answers, amber failed checks. Oldest on the left.',
         noRecord: 'No check recorded', actualAnswer: 'Actual answer', expectedAnswer: 'Expected answer / rule', contentResult: 'Content', timeResult: 'Duration', previousDegraded: 'Previous degradation verdict retained',
