@@ -93,7 +93,7 @@ func (s *Service) SetChannelQuality(ctx context.Context, user, targetID string, 
 	if err := s.qualityRepo.SetQualityChannel(ctx, user, workspace, target.TargetID, enabled); err != nil {
 		return QualityChannel{}, err
 	}
-	return QualityChannel{TargetID: target.TargetID, Enabled: enabled}, nil
+	return QualityChannel{TargetID: target.TargetID, Enabled: enabled, Independent: enabled}, nil
 }
 
 func (s *Service) attachQuality(ctx context.Context, user, workspace string, groups []AdminGroupHealth) {
@@ -116,8 +116,10 @@ func (s *Service) attachQuality(ctx context.Context, user, workspace string, gro
 		return
 	}
 	disabledChannels := map[string]bool{}
+	independentChannels := map[string]bool{}
 	for _, channel := range channels {
 		disabledChannels[channel.TargetID] = !channel.Enabled
+		independentChannels[channel.TargetID] = channel.Enabled && channel.Independent
 	}
 	enabled := map[string]bool{}
 	for _, g := range switches {
@@ -158,7 +160,7 @@ func (s *Service) attachQuality(ctx context.Context, user, workspace string, gro
 		g.Quality = &QualityGroup{GroupID: g.ID, Enabled: enabled[g.ID], GlobalEnabled: q.Enabled}
 		for j := range g.Accounts {
 			a := &g.Accounts[j]
-			a.QualityEnabled = !disabledChannels[a.TargetID]
+			a.QualityEnabled = a.QualitySelected && !disabledChannels[a.TargetID] && (enabled[g.ID] || independentChannels[a.TargetID])
 			a.QualityHistory = append([]QualitySample{}, byHistory[a.TargetID]...)
 			if state, ok := byTarget[a.TargetID]; ok {
 				a.QualityState = &state
@@ -247,21 +249,8 @@ func (s *Service) runQualityScope(ctx context.Context, scope QualityScope, token
 	if err != nil || !q.Enabled || q.validate() != nil {
 		return
 	}
-	switches, err := s.qualityRepo.ListQualityGroups(ctx, scope.UserID, scope.WorkspaceID)
-	if err != nil {
-		return
-	}
-	enabled := map[string]bool{}
-	for _, g := range switches {
-		if g.Enabled {
-			enabled[g.GroupID] = true
-		}
-	}
-	if len(enabled) == 0 {
-		return
-	}
 	selection, err := s.loadQualitySelection(ctx, scope.UserID, scope.WorkspaceID)
-	if err != nil {
+	if err != nil || len(selection.enabledGroups) == 0 && len(selection.independentChannels) == 0 {
 		return
 	}
 	session, err := s.mySites.RequireSession(ctx, scope.UserID, scope.WorkspaceID)
@@ -284,7 +273,7 @@ func (s *Service) runQualityScope(ctx context.Context, scope QualityScope, token
 	}
 	byTarget := map[string]*qualityCandidate{}
 	for _, group := range groups {
-		if !enabled[group.ID] || ctx.Err() != nil {
+		if (!selection.enabledGroups[group.ID] && len(selection.independentChannels) == 0) || ctx.Err() != nil {
 			continue
 		}
 		accounts, err := s.platformGroups.ListAdminGroupAccounts(session, group)
@@ -390,16 +379,6 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 	if err != nil || (!manual && !current.Enabled) || current.Revision != q.Revision {
 		return QualitySample{}, unavailable
 	}
-	switches, err := s.qualityRepo.ListQualityGroups(ctx, scope.UserID, scope.WorkspaceID)
-	if err != nil {
-		return QualitySample{}, err
-	}
-	allowed := map[string]bool{}
-	for _, g := range switches {
-		if g.Enabled {
-			allowed[g.GroupID] = true
-		}
-	}
 	selection, err := s.loadQualitySelection(ctx, scope.UserID, scope.WorkspaceID)
 	if err != nil {
 		return QualitySample{}, err
@@ -408,12 +387,12 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 		return QualitySample{}, requestError(qualityPrefix + "healthPausedHint")
 	}
 	canProbe := func(selection qualitySelection, group string) bool {
-		return !selection.pausedChannels[c.targetID] && (manual || selection.selected(group, c.targetID))
+		return !selection.pausedChannels[c.targetID] && (manual || selection.canProbe(group, c.targetID))
 	}
 	// Refresh the group membership before each real request, including queued jobs.
 	matched := false
 	for _, id := range c.groups {
-		if (!manual && !allowed[id]) || !canProbe(selection, id) {
+		if !canProbe(selection, id) {
 			continue
 		}
 		accounts, err := s.platformGroups.ListAdminGroupAccounts(session, upstream.AdminGroupInfo{ID: id, Name: id})
@@ -476,17 +455,6 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 		}
 		current, err = s.qualityRepo.GetQualitySettings(ctx, scope.UserID, scope.WorkspaceID)
 		if err != nil || (!manual && !current.Enabled) || current.Revision != q.Revision {
-			return QualitySample{}, unavailable
-		}
-		// A group may have been switched off while credentials were loading.
-		switches, err = s.qualityRepo.ListQualityGroups(ctx, scope.UserID, scope.WorkspaceID)
-		groupEnabled := false
-		for _, group := range switches {
-			if group.GroupID == c.groups[0] && group.Enabled {
-				groupEnabled = true
-			}
-		}
-		if err != nil || (!manual && !groupEnabled) {
 			return QualitySample{}, unavailable
 		}
 		outcome := s.qualityRunner.ProbeQuality(ctx, cred, c.account.Platform, q, question)

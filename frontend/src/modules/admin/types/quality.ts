@@ -32,6 +32,7 @@ export interface QualitySettings {
 export interface QualityChannel {
   targetId: string
   enabled: boolean
+  independent: boolean
 }
 export interface QualityGroup {
   groupId: string

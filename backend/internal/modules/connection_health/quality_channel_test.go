@@ -3,6 +3,7 @@ package connection_health
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,24 +66,26 @@ func TestChannelQualitySwitchPreservesHistoryAndHealthSelection(t *testing.T) {
 	}
 }
 
-func TestChannelQualityStillRequiresGroupAndPolicySelection(t *testing.T) {
-	for _, scenario := range []string{"group-off", "global-off", "not-selected"} {
+func TestIndependentChannelQualityStillRequiresGlobalAndPolicySelection(t *testing.T) {
+	for _, scenario := range []string{"global-off", "not-selected", "policy-disabled"} {
 		t.Run(scenario, func(t *testing.T) {
 			svc, _, health, runner := qualityTestService(t)
 			ctx := context.Background()
 			q := defaultQualitySettings()
 			q.Enabled = true
 			_, _ = svc.SaveQualityConfiguration(ctx, "user", q)
-			_, _ = svc.SetGroupQuality(ctx, "user", "one", true)
-			if scenario == "group-off" {
-				_, _ = svc.SetGroupQuality(ctx, "user", "one", false)
-			}
 			if scenario == "global-off" {
 				q.Enabled = false
 				_, _ = svc.SaveQualityConfiguration(ctx, "user", q)
 			}
 			if scenario == "not-selected" {
-				health.groupExclusions = []GroupTargetExclusion{{UserID: "user", AdminAccountID: "ws1", AdminGroupID: "one", TargetID: "sub2api:ws1:a"}}
+				health.groupExclusions = []GroupTargetExclusion{
+					{UserID: "user", AdminAccountID: "ws1", AdminGroupID: "one", TargetID: "sub2api:ws1:a"},
+					{UserID: "user", AdminAccountID: "ws1", AdminGroupID: "two", TargetID: "sub2api:ws1:a"},
+				}
+			}
+			if scenario == "policy-disabled" {
+				health.policies[0].Enabled = false
 			}
 			if _, err := svc.SetChannelQuality(ctx, "user", "sub2api:ws1:a", true); err != nil {
 				t.Fatal(err)
@@ -110,21 +113,28 @@ func TestChannelQualityRejectsForeignOrMissingTargets(t *testing.T) {
 }
 
 func TestChannelQualityRechecksQueuedAndInFlightSwitches(t *testing.T) {
-	for _, scenario := range []string{"queued", "in-flight"} {
+	for _, scenario := range []string{"queued", "in-flight", "independent-queued", "independent-in-flight"} {
 		t.Run(scenario, func(t *testing.T) {
 			svc, quality, _, runner := qualityTestService(t)
 			ctx := context.Background()
 			q := defaultQualitySettings()
 			q.Enabled, q.Concurrency = true, 1
 			_, _ = svc.SaveQualityConfiguration(ctx, "user", q)
-			_, _ = svc.SetGroupQuality(ctx, "user", "one", true)
+			if !strings.HasPrefix(scenario, "independent-") {
+				_, _ = svc.SetGroupQuality(ctx, "user", "one", true)
+			} else {
+				_, _ = svc.SetChannelQuality(ctx, "user", "sub2api:ws1:a", true)
+			}
 			target := "sub2api:ws1:a"
-			if scenario == "queued" {
+			if strings.HasSuffix(scenario, "queued") {
 				reader := svc.platformGroups.(fakePlatformGroupReader)
 				reader.accountsByGrp["one"] = append(reader.accountsByGrp["one"], upstream.AdminGroupAccountInfo{ID: "b"})
 				reader.credByAccount["b"] = reader.credByAccount["a"]
 				svc.platformGroups = reader
 				target = "sub2api:ws1:b"
+				if strings.HasPrefix(scenario, "independent-") {
+					_, _ = svc.SetChannelQuality(ctx, "user", target, true)
+				}
 			}
 			runner.hook = func() { _ = quality.SetQualityChannel(ctx, "user", "ws1", target, false) }
 			svc.runQualityScope(ctx, QualityScope{UserID: "user", WorkspaceID: "ws1"}, make(chan struct{}, 32))

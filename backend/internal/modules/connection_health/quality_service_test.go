@@ -11,13 +11,14 @@ import (
 )
 
 type fakeQualityRepo struct {
-	mu       sync.Mutex
-	leases   map[string]bool
-	configs  map[string]QualitySettings
-	groups   map[string]map[string]bool
-	channels map[string]map[string]bool
-	states   map[string]map[string]QualityState
-	history  map[string][]QualitySample
+	mu          sync.Mutex
+	leases      map[string]bool
+	configs     map[string]QualitySettings
+	groups      map[string]map[string]bool
+	channels    map[string]map[string]bool
+	independent map[string]map[string]bool
+	states      map[string]map[string]QualityState
+	history     map[string][]QualitySample
 }
 
 func (r *fakeQualityRepo) TryAcquireQualityLease(_ context.Context, user, workspace, target string) (func(), bool, error) {
@@ -35,7 +36,7 @@ func (r *fakeQualityRepo) TryAcquireQualityLease(_ context.Context, user, worksp
 }
 
 func newFakeQualityRepo() *fakeQualityRepo {
-	return &fakeQualityRepo{configs: map[string]QualitySettings{}, channels: map[string]map[string]bool{}, groups: map[string]map[string]bool{}, states: map[string]map[string]QualityState{}, history: map[string][]QualitySample{}}
+	return &fakeQualityRepo{configs: map[string]QualitySettings{}, channels: map[string]map[string]bool{}, independent: map[string]map[string]bool{}, groups: map[string]map[string]bool{}, states: map[string]map[string]QualityState{}, history: map[string][]QualitySample{}}
 }
 func qualityScopeKey(u, w string) string { return u + "|" + w }
 func (r *fakeQualityRepo) GetQualitySettings(_ context.Context, u, w string) (QualitySettings, error) {
@@ -82,7 +83,7 @@ func (r *fakeQualityRepo) ListQualityChannels(_ context.Context, u, w string) ([
 	defer r.mu.Unlock()
 	out := []QualityChannel{}
 	for id, enabled := range r.channels[qualityScopeKey(u, w)] {
-		out = append(out, QualityChannel{TargetID: id, Enabled: enabled})
+		out = append(out, QualityChannel{TargetID: id, Enabled: enabled, Independent: r.independent[qualityScopeKey(u, w)][id]})
 	}
 	return out, nil
 }
@@ -94,6 +95,10 @@ func (r *fakeQualityRepo) SetQualityChannel(_ context.Context, u, w, target stri
 		r.channels[key] = map[string]bool{}
 	}
 	r.channels[key][target] = enabled
+	if r.independent[key] == nil {
+		r.independent[key] = map[string]bool{}
+	}
+	r.independent[key][target] = enabled
 	return nil
 }
 
@@ -123,7 +128,7 @@ func (r *fakeQualityRepo) saveQualityResult(_ context.Context, u, w string, grou
 	if (!manual && !current.Enabled) || current.Revision != q.Revision {
 		return false, nil
 	}
-	allowed := false
+	allowed := r.independent[key][st.TargetID]
 	for _, g := range groups {
 		if r.groups[key][g] {
 			allowed = true

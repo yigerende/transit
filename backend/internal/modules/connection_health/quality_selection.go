@@ -5,11 +5,13 @@ import "context"
 // Automatic quality detection requires an enabled automation policy selecting
 // the channel, as well as its own global/group/channel switches.
 type qualitySelection struct {
-	disabledChannels map[string]bool
-	pausedChannels   map[string]bool
-	groups           map[string]bool
-	targets          map[string]bool
-	excluded         map[string]map[string]bool
+	disabledChannels    map[string]bool
+	independentChannels map[string]bool
+	enabledGroups       map[string]bool
+	pausedChannels      map[string]bool
+	groups              map[string]bool
+	targets             map[string]bool
+	excluded            map[string]map[string]bool
 }
 
 func newQualitySelection(policies []Policy, assignments []PolicyAssignment, groups []GroupPolicyAssignment, exclusions []GroupTargetExclusion) qualitySelection {
@@ -46,7 +48,7 @@ func (s qualitySelection) selected(group, target string) bool {
 }
 
 func (s qualitySelection) canProbe(group, target string) bool {
-	return s.selected(group, target) && !s.pausedChannels[target]
+	return s.selected(group, target) && !s.pausedChannels[target] && (s.enabledGroups[group] || s.independentChannels[target])
 }
 
 // Health state is shared by a channel's groups. Only a still-assigned, enabled
@@ -107,13 +109,27 @@ func (s *Service) loadQualitySelection(ctx context.Context, user, workspace stri
 	}
 	selection.pausedChannels = qualityHealthPausedTargets(states, policies, assignments, groups, exclusions, suspension)
 	if s.qualityRepo != nil {
+		groupSwitches, err := s.qualityRepo.ListQualityGroups(ctx, user, workspace)
+		if err != nil {
+			return qualitySelection{}, err
+		}
+		selection.enabledGroups = map[string]bool{}
+		for _, group := range groupSwitches {
+			if group.Enabled {
+				selection.enabledGroups[group.GroupID] = true
+			}
+		}
 		channels, err := s.qualityRepo.ListQualityChannels(ctx, user, workspace)
 		if err != nil {
 			return qualitySelection{}, err
 		}
 		selection.disabledChannels = map[string]bool{}
+		selection.independentChannels = map[string]bool{}
 		for _, channel := range channels {
 			selection.disabledChannels[channel.TargetID] = !channel.Enabled
+			if channel.Enabled && channel.Independent {
+				selection.independentChannels[channel.TargetID] = true
+			}
 		}
 	}
 	return selection, nil

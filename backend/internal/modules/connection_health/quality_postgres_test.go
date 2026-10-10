@@ -51,6 +51,16 @@ func qualityTestPool(t *testing.T) (context.Context, *pgxpool.Pool) {
 	if _, err := pool.Exec(ctx, strings.ReplaceAll(qualityChannelSchema, "CREATE TABLE IF NOT EXISTS", "CREATE TEMP TABLE IF NOT EXISTS")); err != nil {
 		t.Fatal(err)
 	}
+	independentMigration, err := os.ReadFile("../../database/migrations/000026_channel_quality_independent.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.ReplaceAll(strings.TrimSpace(string(independentMigration)), "\r\n", "\n") != strings.TrimSpace(qualityChannelIndependentSchema) {
+		t.Fatal("independent channel migration and runtime schema differ")
+	}
+	if _, err := pool.Exec(ctx, qualityChannelIndependentSchema); err != nil {
+		t.Fatal(err)
+	}
 	return ctx, pool
 }
 func TestQualityPostgresPersistenceIsolationAndStaleWrites(t *testing.T) {
@@ -126,6 +136,16 @@ func TestQualityPostgresPersistenceIsolationAndStaleWrites(t *testing.T) {
 }
 
 func TestQualityPostgresSchedulerRunsWithoutBrowser(t *testing.T) {
+	for _, independent := range []bool{false, true} {
+		name := "group"
+		if independent {
+			name = "independent-channel"
+		}
+		t.Run(name, func(t *testing.T) { testQualityPostgresSchedulerRunsWithoutBrowser(t, independent) })
+	}
+}
+
+func testQualityPostgresSchedulerRunsWithoutBrowser(t *testing.T, independent bool) {
 	ctx, pool := qualityTestPool(t)
 	svc, _, health, runner := qualityTestService(t)
 	svc.qualityRepo = NewRepository(pool)
@@ -135,8 +155,14 @@ func TestQualityPostgresSchedulerRunsWithoutBrowser(t *testing.T) {
 	if _, err := svc.SaveQualityConfiguration(ctx, "user", q); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.SetGroupQuality(ctx, "user", "one", true); err != nil {
-		t.Fatal(err)
+	if independent {
+		if _, err := svc.SetChannelQuality(ctx, "user", "sub2api:ws1:a", true); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		if _, err := svc.SetGroupQuality(ctx, "user", "one", true); err != nil {
+			t.Fatal(err)
+		}
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -155,7 +181,12 @@ func TestQualityPostgresSchedulerRunsWithoutBrowser(t *testing.T) {
 				t.Fatal(err)
 			}
 			if count >= 2 {
-				_, err := svc.SetGroupQuality(ctx, "user", "one", false)
+				var err error
+				if independent {
+					_, err = svc.SetChannelQuality(ctx, "user", "sub2api:ws1:a", false)
+				} else {
+					_, err = svc.SetGroupQuality(ctx, "user", "one", false)
+				}
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -144,8 +144,9 @@ type QualityGroup struct {
 
 // Channel preference is shared across all groups in the connected workspace.
 type QualityChannel struct {
-	TargetID string `json:"targetId"`
-	Enabled  bool   `json:"enabled"`
+	TargetID    string `json:"targetId"`
+	Enabled     bool   `json:"enabled"`
+	Independent bool   `json:"independent"`
 }
 
 type QualitySample struct {

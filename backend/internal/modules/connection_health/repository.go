@@ -30,6 +30,7 @@ func (r *Repository) EnsureSchema(ctx context.Context) error {
 		channelPrioritySchema,
 		qualitySchema,
 		qualityChannelSchema,
+		qualityChannelIndependentSchema,
 		groupProbeConfigSchema,
 		`CREATE INDEX IF NOT EXISTS idx_connection_health_group_probe_due ON connection_health_group_probe_configs (next_probe_at) WHERE enabled`,
 		`CREATE TABLE IF NOT EXISTS connection_health_policies (

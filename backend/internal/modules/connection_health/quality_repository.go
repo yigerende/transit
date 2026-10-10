@@ -50,6 +50,12 @@ const qualityChannelSchema = `CREATE TABLE IF NOT EXISTS connection_health_quali
 );
 `
 
+// Existing enabled rows include defaults materialized while saving results.
+// They inherit the group; only a subsequent explicit enable opts out of it.
+const qualityChannelIndependentSchema = `ALTER TABLE IF EXISTS connection_health_quality_channels
+    ADD COLUMN IF NOT EXISTS independent boolean NOT NULL DEFAULT false;
+`
+
 type qualityRepository interface {
 	TryAcquireQualityLease(context.Context, string, string, string) (func(), bool, error)
 	GetQualitySettings(context.Context, string, string) (QualitySettings, error)
@@ -97,7 +103,9 @@ func (r *Repository) SaveQualitySettings(ctx context.Context, user, workspace st
 }
 func (r *Repository) ListQualityScopes(ctx context.Context) ([]QualityScope, error) {
 	rows, err := r.db.Query(ctx, `SELECT s.user_id,s.admin_account_id,s.config FROM connection_health_quality_settings s
-	 WHERE s.config->>'enabled'='true' AND EXISTS(SELECT 1 FROM connection_health_quality_groups g WHERE g.user_id=s.user_id AND g.admin_account_id=s.admin_account_id AND g.enabled)
+	 WHERE s.config->>'enabled'='true' AND (
+	 EXISTS(SELECT 1 FROM connection_health_quality_groups g WHERE g.user_id=s.user_id AND g.admin_account_id=s.admin_account_id AND g.enabled)
+	 OR EXISTS(SELECT 1 FROM connection_health_quality_channels c WHERE c.user_id=s.user_id AND c.admin_account_id=s.admin_account_id AND c.enabled AND c.independent))
 	 ORDER BY s.user_id,s.admin_account_id`)
 	if err != nil {
 		return nil, err
@@ -139,7 +147,7 @@ func (r *Repository) SetQualityGroup(ctx context.Context, user, workspace, group
 	return err
 }
 func (r *Repository) ListQualityChannels(ctx context.Context, user, workspace string) ([]QualityChannel, error) {
-	rows, err := r.db.Query(ctx, `SELECT target_id,enabled FROM connection_health_quality_channels WHERE user_id=$1 AND admin_account_id=$2`, user, workspace)
+	rows, err := r.db.Query(ctx, `SELECT target_id,enabled,independent FROM connection_health_quality_channels WHERE user_id=$1 AND admin_account_id=$2`, user, workspace)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +155,7 @@ func (r *Repository) ListQualityChannels(ctx context.Context, user, workspace st
 	out := []QualityChannel{}
 	for rows.Next() {
 		var channel QualityChannel
-		if err := rows.Scan(&channel.TargetID, &channel.Enabled); err != nil {
+		if err := rows.Scan(&channel.TargetID, &channel.Enabled, &channel.Independent); err != nil {
 			return nil, err
 		}
 		out = append(out, channel)
@@ -156,8 +164,8 @@ func (r *Repository) ListQualityChannels(ctx context.Context, user, workspace st
 }
 
 func (r *Repository) SetQualityChannel(ctx context.Context, user, workspace, target string, enabled bool) error {
-	_, err := r.db.Exec(ctx, `INSERT INTO connection_health_quality_channels(user_id,admin_account_id,target_id,enabled) VALUES($1,$2,$3,$4)
-	 ON CONFLICT(user_id,admin_account_id,target_id) DO UPDATE SET enabled=EXCLUDED.enabled`, user, workspace, target, enabled)
+	_, err := r.db.Exec(ctx, `INSERT INTO connection_health_quality_channels(user_id,admin_account_id,target_id,enabled,independent) VALUES($1,$2,$3,$4,$4)
+	 ON CONFLICT(user_id,admin_account_id,target_id) DO UPDATE SET enabled=EXCLUDED.enabled,independent=EXCLUDED.independent`, user, workspace, target, enabled)
 	return err
 }
 
@@ -209,27 +217,29 @@ func (r *Repository) saveQualityResult(ctx context.Context, user, workspace stri
 		return false, err
 	}
 	if !manual {
-		var group string
-		err = tx.QueryRow(ctx, `SELECT group_id FROM connection_health_quality_groups WHERE user_id=$1 AND admin_account_id=$2 AND group_id=ANY($3::text[]) AND enabled ORDER BY group_id LIMIT 1 FOR SHARE`, user, workspace, groups).Scan(&group)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil
-		}
-		if err != nil {
-			return false, err
-		}
-		// Materialize the default-on row and lock it, so a concurrent disable cannot
-		// race the result commit even when this channel has never been configured.
+		// Materialize an inherited row and lock it, so concurrent channel changes
+		// cannot race the commit. Saving evidence never creates an independent opt-in.
 		if _, err := tx.Exec(ctx, `INSERT INTO connection_health_quality_channels(user_id,admin_account_id,target_id,enabled)
 		VALUES($1,$2,$3,true) ON CONFLICT(user_id,admin_account_id,target_id) DO NOTHING`, user, workspace, state.TargetID); err != nil {
 			return false, err
 		}
-		var channelEnabled bool
-		if err := tx.QueryRow(ctx, `SELECT enabled FROM connection_health_quality_channels
-		WHERE user_id=$1 AND admin_account_id=$2 AND target_id=$3 FOR SHARE`, user, workspace, state.TargetID).Scan(&channelEnabled); err != nil {
+		var channelEnabled, independent bool
+		if err := tx.QueryRow(ctx, `SELECT enabled,independent FROM connection_health_quality_channels
+		WHERE user_id=$1 AND admin_account_id=$2 AND target_id=$3 FOR SHARE`, user, workspace, state.TargetID).Scan(&channelEnabled, &independent); err != nil {
 			return false, err
 		}
 		if !channelEnabled {
 			return false, nil
+		}
+		if !independent {
+			var group string
+			err = tx.QueryRow(ctx, `SELECT group_id FROM connection_health_quality_groups WHERE user_id=$1 AND admin_account_id=$2 AND group_id=ANY($3::text[]) AND enabled ORDER BY group_id LIMIT 1 FOR SHARE`, user, workspace, groups).Scan(&group)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return false, nil
+			}
+			if err != nil {
+				return false, err
+			}
 		}
 	}
 	sample := state.Latest

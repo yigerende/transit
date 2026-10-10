@@ -127,13 +127,13 @@ async function toggleChannelQuality(account: AdminGroupAccount) {
   delete qualityChannelErrors.value[target]
   try {
     const saved = await setChannelQuality(target, account.qualityEnabled === false)
-    await refreshProbeResults()
     // One upstream channel may appear in multiple groups; reflect its preference everywhere.
     for (const group of adminGroups.value) {
       for (const channel of group.accounts) {
-        if (channel.targetId === saved.targetId) channel.qualityEnabled = saved.enabled
+        if (channel.targetId === saved.targetId) channel.qualityEnabled = channelAutomationEnabled(channel) && saved.enabled && Boolean(group.quality?.enabled || saved.independent)
       }
     }
+    await refreshProbeResults()
   } catch (err) {
     const key = err instanceof Error ? err.message : 'admin.connectionHealth.errors.request'
     qualityChannelErrors.value[target] = t(connectionHealthMessageKey(key, te))
@@ -492,7 +492,7 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
           <p v-if="selectedGroup.accountsError" role="alert" class="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{{ readableMessage(selectedGroup.accountsError) }}</p>
           <p v-else-if="!selectedGroup.accounts.length" class="py-16 text-center text-sm text-muted-foreground">{{ t('admin.connectionHealth.groupDetail.empty') }}</p>
           <p v-if="(selectedGroup.priorityConflictCount ?? 0) > 0" class="text-xs text-amber-600">{{ t('admin.connectionHealth.cards.priorityConflict', { count: selectedGroup.priorityConflictCount }) }}</p>
-          <ChannelHealthCard v-for="account in automatedChannels" :key="account.targetId" :account="account" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" :show-quality="Boolean(selectedGroup.quality?.enabled)" :quality-enabled="Boolean(selectedGroup.quality?.enabled && selectedGroup.quality?.globalEnabled)" :quality-unavailable="Boolean(selectedGroup.quality?.errorKey)" :quality-busy="qualityBusyTargets.has(account.targetId)" :quality-probe-method="qualityProbeMethods.get(account.targetId)" @probe-quality="runChannelQuality" @view-quality="openQualityHistory" :quality-error="qualityChannelErrors[account.targetId]" :priority-busy="priorityBusyTargets.has(account.targetId)" :priority-error="priorityErrors[account.targetId]" @toggle-priority="toggleChannelPriority" :suspension-busy="suspensionBusyTargets.has(account.targetId)" :suspension-error="suspensionErrors[account.targetId]" @toggle-suspension="toggleChannelSuspension" @toggle-quality="toggleChannelQuality" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
+          <ChannelHealthCard v-for="account in automatedChannels" :key="account.targetId" :account="account" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" :show-quality="Boolean(selectedGroup.quality?.enabled || account.qualityEnabled)" :quality-enabled="Boolean(selectedGroup.quality?.globalEnabled)" :quality-unavailable="Boolean(selectedGroup.quality?.errorKey)" :quality-busy="qualityBusyTargets.has(account.targetId)" :quality-probe-method="qualityProbeMethods.get(account.targetId)" @probe-quality="runChannelQuality" @view-quality="openQualityHistory" :quality-error="qualityChannelErrors[account.targetId]" :priority-busy="priorityBusyTargets.has(account.targetId)" :priority-error="priorityErrors[account.targetId]" @toggle-priority="toggleChannelPriority" :suspension-busy="suspensionBusyTargets.has(account.targetId)" :suspension-error="suspensionErrors[account.targetId]" @toggle-suspension="toggleChannelSuspension" @toggle-quality="toggleChannelQuality" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
           <details v-if="inactiveChannels.length" :key="selectedGroup.id" class="group rounded-lg border border-border/60">
             <summary class="flex cursor-pointer list-none items-center gap-2 rounded-lg px-4 py-3 text-sm text-muted-foreground hover:bg-surface/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary [&::-webkit-details-marker]:hidden">
               <ChevronDown class="h-4 w-4 shrink-0 -rotate-90 transition-transform group-open:rotate-0" aria-hidden="true" />
