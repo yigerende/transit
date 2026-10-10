@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useDocumentVisibility, useIntervalFn, useLocalStorage } from '@vueuse/core'
+import { useDocumentVisibility, useElementBounding, useIntervalFn, useLocalStorage } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import {
   Activity,
@@ -57,6 +57,8 @@ const {
 
 const searchText = ref('')
 const selectedType = ref('')
+const groupSidebar = ref<HTMLElement | null>(null)
+const { top: groupSidebarTop } = useElementBounding(groupSidebar)
 const selectedGroupId = ref('')
 const { adminGroups, isLoading, errorKey: groupLoadError, detailErrors, detailLoading, detailsLoaded, loadAll, loadGroupDetail } = useGroupHealthPage(() => selectedGroupId.value)
 const groupProbeOpen = ref(false)
@@ -463,53 +465,59 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
     <p v-if="qualityError" role="alert" class="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{{ readableMessage(qualityError) }}</p>
 
     <section class="grid min-h-[34rem] min-w-0 rounded-xl border border-border/70 bg-card lg:grid-cols-[18rem_minmax(0,1fr)]">
-      <aside class="min-w-0 border-b border-border/60 lg:border-b-0 lg:border-r">
-        <div class="space-y-2 border-b border-border/60 p-4">
-          <div class="relative">
-            <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input v-model="searchText" type="search" :aria-label="t('admin.connectionHealth.filters.searchGroup')" :placeholder="t('admin.connectionHealth.filters.searchGroup')" class="h-9 w-full rounded-lg border border-border/70 bg-background pl-9 pr-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30">
+      <aside ref="groupSidebar" class="min-w-0 border-b border-border/60 lg:border-b-0 lg:border-r">
+        <!-- Minimum top offset: layout header (4rem), main padding (1.5rem), sticky gap (0.75rem). Measure the column, not the sticky panel, to keep its height stable at the page bottom. -->
+        <div
+          class="lg:sticky lg:top-3 lg:flex lg:max-h-[calc(100dvh-max(var(--group-sidebar-top),6.25rem)-0.75rem)] lg:flex-col"
+          :style="{ '--group-sidebar-top': `${Math.max(0, groupSidebarTop)}px` }"
+        >
+          <div class="shrink-0 space-y-2 border-b border-border/60 p-4">
+            <div class="relative">
+              <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input v-model="searchText" type="search" :aria-label="t('admin.connectionHealth.filters.searchGroup')" :placeholder="t('admin.connectionHealth.filters.searchGroup')" class="h-9 w-full rounded-lg border border-border/70 bg-background pl-9 pr-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30">
+            </div>
+            <select v-model="selectedType" :aria-label="t('admin.connectionHealth.filters.allTypes')" class="h-9 w-full rounded-lg border border-border/70 bg-background px-3 text-sm text-foreground">
+              <option value="">{{ t('admin.connectionHealth.filters.allTypes') }}</option>
+              <option v-for="type in groupTypes" :key="type" :value="type">{{ groupTypeLabel(type) }}</option>
+            </select>
           </div>
-          <select v-model="selectedType" :aria-label="t('admin.connectionHealth.filters.allTypes')" class="h-9 w-full rounded-lg border border-border/70 bg-background px-3 text-sm text-foreground">
-            <option value="">{{ t('admin.connectionHealth.filters.allTypes') }}</option>
-            <option v-for="type in groupTypes" :key="type" :value="type">{{ groupTypeLabel(type) }}</option>
-          </select>
-        </div>
-        <nav class="max-h-80 space-y-1.5 overflow-y-auto p-2 lg:max-h-[calc(100dvh-17rem)]" :aria-label="t('admin.connectionHealth.groupListLabel')">
-          <div v-if="isLoading && !adminGroups.length" class="space-y-2 p-2" aria-busy="true"><div v-for="i in 5" :key="i" class="h-24 animate-pulse rounded-lg bg-surface" /></div>
-          <div v-for="group in filteredGroups" :key="group.id" class="rounded-lg border p-3 transition-colors" :class="selectedGroup?.id === group.id ? 'border-primary/20 bg-primary/[0.06]' : 'border-transparent hover:bg-surface/60'">
-            <div class="flex items-start gap-2">
-              <button type="button" class="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" :aria-current="selectedGroup?.id === group.id ? 'true' : undefined" @click="selectedGroupId = group.id">
-                <span class="block truncate text-sm font-medium text-foreground" :title="group.name">{{ group.name }}</span>
-                <span class="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                  <span class="flex items-center gap-2" :title="group.probeConfig?.lastErrorKey ? readableMessage(group.probeConfig.lastErrorKey) : undefined">
-                    <span :class="groupProbeState(group) === 'healthy' ? 'text-emerald-600 dark:text-emerald-400' : groupProbeState(group) === 'unhealthy' ? 'text-red-600 dark:text-red-400' : ''">{{ t('admin.connectionHealth.cards.status.' + groupProbeState(group)) }}</span>
-                    <span v-if="group.probeConfig">{{ group.probeConfig.enabled ? t('admin.connectionHealth.groupProbe.autoEvery', { seconds: group.probeConfig.intervalSeconds }) : t('admin.connectionHealth.groupProbe.paused') }}</span>
+          <nav class="max-h-80 space-y-1.5 overflow-y-auto p-2 lg:min-h-0 lg:max-h-none lg:flex-1" :aria-label="t('admin.connectionHealth.groupListLabel')">
+            <div v-if="isLoading && !adminGroups.length" class="space-y-2 p-2" aria-busy="true"><div v-for="i in 5" :key="i" class="h-24 animate-pulse rounded-lg bg-surface" /></div>
+            <div v-for="group in filteredGroups" :key="group.id" class="rounded-lg border p-3 transition-colors" :class="selectedGroup?.id === group.id ? 'border-primary/20 bg-primary/[0.06]' : 'border-transparent hover:bg-surface/60'">
+              <div class="flex items-start gap-2">
+                <button type="button" class="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" :aria-current="selectedGroup?.id === group.id ? 'true' : undefined" @click="selectedGroupId = group.id">
+                  <span class="block truncate text-sm font-medium text-foreground" :title="group.name">{{ group.name }}</span>
+                  <span class="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                    <span class="flex items-center gap-2" :title="group.probeConfig?.lastErrorKey ? readableMessage(group.probeConfig.lastErrorKey) : undefined">
+                      <span :class="groupProbeState(group) === 'healthy' ? 'text-emerald-600 dark:text-emerald-400' : groupProbeState(group) === 'unhealthy' ? 'text-red-600 dark:text-red-400' : ''">{{ t('admin.connectionHealth.cards.status.' + groupProbeState(group)) }}</span>
+                      <span v-if="group.probeConfig">{{ group.probeConfig.enabled ? t('admin.connectionHealth.groupProbe.autoEvery', { seconds: group.probeConfig.intervalSeconds }) : t('admin.connectionHealth.groupProbe.paused') }}</span>
+                    </span>
+                    <span>{{ group.multiplierDisplay || '—' }}</span>
                   </span>
-                  <span>{{ group.multiplierDisplay || '—' }}</span>
-                </span>
-              </button>
-              <button type="button" :disabled="group.groupProbeSupported === false" class="rounded-md p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary disabled:opacity-30" :aria-label="t('admin.connectionHealth.groupProbe.action', { name: group.name })" :title="t(group.groupProbeSupported === false ? 'admin.connectionHealth.groupProbe.unsupported' : 'admin.connectionHealth.groupProbe.buttonHint')" @click="openGroupProbe(group)"><Zap class="h-4 w-4" /></button>
+                </button>
+                <button type="button" :disabled="group.groupProbeSupported === false" class="rounded-md p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary disabled:opacity-30" :aria-label="t('admin.connectionHealth.groupProbe.action', { name: group.name })" :title="t(group.groupProbeSupported === false ? 'admin.connectionHealth.groupProbe.unsupported' : 'admin.connectionHealth.groupProbe.buttonHint')" @click="openGroupProbe(group)"><Zap class="h-4 w-4" /></button>
+              </div>
+              <ProbeHistoryStrip class="mt-2.5" :samples="group.recentProbes" :limit="20" compact :unavailable="Boolean(group.probeHistoryError)" />
+              <GroupAutomationControl
+                :group-name="group.name"
+                :policies="groupPolicies.get(group.id) ?? []"
+                :usage-counts="policyUsageCounts"
+                :busy-policy-id="busyPolicyId"
+                :unavailable="group.accountsLoaded === false || (groupPolicyIds.get(group.id)?.length ?? 0) !== (groupPolicies.get(group.id)?.length ?? 0)"
+                @edit="openEditPolicy($event, group)"
+                @toggle="togglePolicyEnabled"
+                @setup="openSetup(group)"
+              />
+              <div class="mt-1.5 flex min-h-6 items-center justify-between gap-2 text-[11px]" :class="group.quality?.enabled && group.quality?.globalEnabled ? 'text-primary' : 'text-muted-foreground'">
+                <span class="inline-flex items-center gap-1.5"><Loader2 v-if="qualityBusyGroup === group.id" class="h-3.5 w-3.5 animate-spin" /><BrainCircuit v-else class="h-3.5 w-3.5" />{{ t('admin.connectionHealth.quality.stripTitle') }}<span v-if="group.quality?.enabled && !group.quality?.globalEnabled">· {{ t('admin.connectionHealth.quality.globalPaused') }}</span></span>
+                <button type="button" role="switch" :disabled="Boolean(qualityBusyGroup) || Boolean(group.quality?.errorKey)" :aria-checked="Boolean(group.quality?.enabled)" :aria-label="t('admin.connectionHealth.quality.toggleGroup', { name:group.name })" :title="t('admin.connectionHealth.quality.toggleGroup', { name:group.name })" class="flex h-6 w-7 shrink-0 items-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50" @click.stop="toggleGroupQuality(group)">
+                  <span class="relative h-4 w-7 rounded-full transition-colors" :class="group.quality?.enabled ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="group.quality?.enabled ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
+                </button>
+              </div>
             </div>
-            <ProbeHistoryStrip class="mt-2.5" :samples="group.recentProbes" :limit="20" compact :unavailable="Boolean(group.probeHistoryError)" />
-            <GroupAutomationControl
-              :group-name="group.name"
-              :policies="groupPolicies.get(group.id) ?? []"
-              :usage-counts="policyUsageCounts"
-              :busy-policy-id="busyPolicyId"
-              :unavailable="group.accountsLoaded === false || (groupPolicyIds.get(group.id)?.length ?? 0) !== (groupPolicies.get(group.id)?.length ?? 0)"
-              @edit="openEditPolicy($event, group)"
-              @toggle="togglePolicyEnabled"
-              @setup="openSetup(group)"
-            />
-            <div class="mt-1.5 flex min-h-6 items-center justify-between gap-2 text-[11px]" :class="group.quality?.enabled && group.quality?.globalEnabled ? 'text-primary' : 'text-muted-foreground'">
-              <span class="inline-flex items-center gap-1.5"><Loader2 v-if="qualityBusyGroup === group.id" class="h-3.5 w-3.5 animate-spin" /><BrainCircuit v-else class="h-3.5 w-3.5" />{{ t('admin.connectionHealth.quality.stripTitle') }}<span v-if="group.quality?.enabled && !group.quality?.globalEnabled">· {{ t('admin.connectionHealth.quality.globalPaused') }}</span></span>
-              <button type="button" role="switch" :disabled="Boolean(qualityBusyGroup) || Boolean(group.quality?.errorKey)" :aria-checked="Boolean(group.quality?.enabled)" :aria-label="t('admin.connectionHealth.quality.toggleGroup', { name:group.name })" :title="t('admin.connectionHealth.quality.toggleGroup', { name:group.name })" class="flex h-6 w-7 shrink-0 items-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50" @click.stop="toggleGroupQuality(group)">
-                <span class="relative h-4 w-7 rounded-full transition-colors" :class="group.quality?.enabled ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="group.quality?.enabled ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
-              </button>
-            </div>
-          </div>
-          <p v-if="!isLoading && !filteredGroups.length" class="px-3 py-8 text-center text-sm text-muted-foreground">{{ t(adminGroups.length ? 'admin.connectionHealth.cards.noMatches' : 'admin.connectionHealth.adminEmpty') }}</p>
-        </nav>
+            <p v-if="!isLoading && !filteredGroups.length" class="px-3 py-8 text-center text-sm text-muted-foreground">{{ t(adminGroups.length ? 'admin.connectionHealth.cards.noMatches' : 'admin.connectionHealth.adminEmpty') }}</p>
+          </nav>
+        </div>
       </aside>
 
       <div v-if="selectedGroup" class="min-w-0">
