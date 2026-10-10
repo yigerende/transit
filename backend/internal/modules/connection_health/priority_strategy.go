@@ -52,11 +52,9 @@ func (s *Service) syncMultiplierPrioritiesWithCache(
 	assignedTargets := assignedEnabledPoliciesByTarget(policies, targetAssignments)
 	assignedGroups := assignedEnabledPoliciesByGroup(policies, groupAssignments)
 	excluded := groupTargetExclusionIndex(exclusions)
-	statesByWorkspace := make(map[string][]PrioritySyncState)
 	workspaceIdentity := make(map[string][2]string)
 	for _, state := range allSyncStates {
 		key := state.UserID + "|" + state.AdminAccountID
-		statesByWorkspace[key] = append(statesByWorkspace[key], state)
 		workspaceIdentity[key] = [2]string{state.UserID, state.AdminAccountID}
 	}
 	for _, policy := range policies {
@@ -73,27 +71,37 @@ func (s *Service) syncMultiplierPrioritiesWithCache(
 	}
 
 	for workspaceKey, identity := range workspaceIdentity {
-		userID, adminAccountID := identity[0], identity[1]
-		inventorySnapshot, err := s.loadAdminInventory(ctx, userID, adminAccountID, inventoryCache)
-		if err != nil {
-			log.Printf("[connection-health] priority sync load admin inventory failed user_id=%s admin_account_id=%s err=%v", userID, adminAccountID, err)
-			continue
-		}
-		session := inventorySnapshot.session
-		inventory, inventoryComplete, err := s.priorityInventoryForSnapshot(
-			inventorySnapshot, adminAccountID, assignedTargets[workspaceKey], assignedGroups[workspaceKey], excluded[workspaceKey],
-		)
-		if err != nil {
-			log.Printf("[connection-health] priority sync inventory failed user_id=%s admin_account_id=%s err=%v", userID, adminAccountID, err)
-			continue
-		}
-		states, err := s.repo.ListStatesByWorkspace(ctx, userID, adminAccountID)
-		if err != nil {
-			log.Printf("[connection-health] priority sync list health states failed user_id=%s admin_account_id=%s err=%v", userID, adminAccountID, err)
-			continue
-		}
-		s.syncWorkspacePriorities(ctx, session, userID, adminAccountID, inventory, inventoryComplete, states, statesByWorkspace[workspaceKey])
+		s.syncPriorityWorkspace(ctx, identity[0], identity[1], assignedTargets[workspaceKey], assignedGroups[workspaceKey], excluded[workspaceKey], inventoryCache)
 	}
+}
+
+func (s *Service) syncPriorityWorkspace(ctx context.Context, userID, adminAccountID string, targetPolicies, groupPolicies map[string][]Policy, excluded map[string]map[string]bool, cache adminInventoryCache) {
+	release, err := s.priorityWorkspaceLease(ctx, userID, adminAccountID)
+	if err != nil {
+		return
+	}
+	defer release()
+	// A switch may have restored priority since maintenance collected its inputs.
+	// Refresh ownership and upstream values together under the same lease as saves.
+	delete(cache, userID+"|"+adminAccountID)
+	snapshot, err := s.loadAdminInventory(ctx, userID, adminAccountID, cache)
+	if err != nil {
+		log.Printf("[connection-health] priority inventory failed user_id=%s err=%v", userID, err)
+		return
+	}
+	inventory, complete, err := s.priorityInventoryForSnapshot(snapshot, adminAccountID, targetPolicies, groupPolicies, excluded)
+	if err != nil {
+		return
+	}
+	states, err := s.repo.ListStatesByWorkspace(ctx, userID, adminAccountID)
+	if err != nil {
+		return
+	}
+	syncStates, err := s.repo.ListPrioritySyncStates(ctx, userID, adminAccountID)
+	if err != nil {
+		return
+	}
+	s.syncWorkspacePriorities(ctx, snapshot.session, userID, adminAccountID, inventory, complete, states, syncStates)
 }
 
 func (s *Service) priorityInventoryForSnapshot(
@@ -164,6 +172,10 @@ func (s *Service) syncWorkspacePriorities(
 	if err != nil {
 		return
 	}
+	prioritySettings, err := s.repo.ListChannelPriorities(ctx, userID, adminAccountID)
+	if err != nil {
+		return
+	}
 	for targetID, item := range inventory {
 		item.policies = channelSuspensionPolicies(item.policies, channelSuspensionEnabled(suspensionSettings, targetID))
 	}
@@ -179,6 +191,9 @@ func (s *Service) syncWorkspacePriorities(
 	latencyPolicies := []Policy{}
 	latencyTargets := []string{}
 	for targetID, item := range inventory {
+		if !channelPriorityEnabled(prioritySettings, targetID) {
+			continue
+		}
 		if hasLatencyPriorityPolicy(item.policies) {
 			latencyTargets = append(latencyTargets, targetID)
 			latencyPolicies = mergePoliciesByID(latencyPolicies, item.policies)
@@ -189,6 +204,9 @@ func (s *Service) syncWorkspacePriorities(
 	distinctMultipliers := make([]float64, 0)
 	seenMultipliers := make(map[float64]struct{})
 	for targetID, item := range inventory {
+		if !channelPriorityEnabled(prioritySettings, targetID) {
+			continue
+		}
 		if hasLatencyPriorityPolicy(item.policies) {
 			managed[targetID] = item
 			continue
@@ -357,24 +375,8 @@ func (s *Service) syncWorkspacePriorities(
 			}
 			continue
 		}
-		if stored.PendingPriority != nil && item.currentPriority == *stored.PendingPriority {
-			stored.LastAppliedPriority = *stored.PendingPriority
-			stored.PendingPriority = nil
-		}
-		if !stored.Conflict && item.currentPriority == stored.LastAppliedPriority && item.currentPriority != stored.OriginalPriority {
-			pending := stored.OriginalPriority
-			stored.PendingPriority = &pending
-			if err := s.repo.UpsertPrioritySyncState(ctx, stored); err != nil {
-				log.Printf("[connection-health] priority restore intent save failed target_id=%s err=%v", targetID, err)
-				continue
-			}
-			if err := s.priorityActions.UpdateAdminTargetPriority(session, item.target.AccountID, stored.OriginalPriority); err != nil {
-				log.Printf("[connection-health] priority restore failed target_id=%s err=%v", targetID, err)
-				continue
-			}
-		}
-		if err := s.repo.DeletePrioritySyncState(ctx, userID, adminAccountID, targetID); err != nil {
-			log.Printf("[connection-health] priority sync state delete failed target_id=%s err=%v", targetID, err)
+		if _, err := s.restoreChannelPriority(ctx, session, stored, item.target.AccountID, item.account.Priority); err != nil {
+			log.Printf("[connection-health] priority restore failed target_id=%s err=%v", targetID, err)
 		}
 	}
 }

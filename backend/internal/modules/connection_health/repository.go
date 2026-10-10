@@ -27,6 +27,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 func (r *Repository) EnsureSchema(ctx context.Context) error {
 	statements := []string{
 		channelSuspensionSchema,
+		channelPrioritySchema,
 		qualitySchema,
 		qualityChannelSchema,
 		groupProbeConfigSchema,

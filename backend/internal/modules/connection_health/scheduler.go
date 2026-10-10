@@ -231,7 +231,13 @@ func (s *Service) refreshSchedulerInventory(ctx context.Context) (cache adminInv
 	for _, a := range groups {
 		assigned[a.UserID+"|"+a.AdminAccountID] = true
 	}
-	// Load probe inventory before priority work, sharing it with those operations.
+	release, acquired, err := s.repo.TryAcquireSchedulerLease(ctx)
+	maintenance := err == nil && acquired
+	if maintenance {
+		defer release()
+		s.syncMultiplierPrioritiesWithCache(ctx, policies, assignments, groups, exclusions, priorityStates, cache)
+	}
+	// Fill any remaining probe inventory after priority work, reusing its fresh snapshot.
 	for _, policy := range policies {
 		if ctx.Err() != nil {
 			return nil
@@ -241,13 +247,9 @@ func (s *Service) refreshSchedulerInventory(ctx context.Context) (cache adminInv
 		}
 		_, _ = s.loadAdminInventory(ctx, policy.UserID, policy.AdminAccountID, cache)
 	}
-	release, acquired, err := s.repo.TryAcquireSchedulerLease(ctx)
-	if err != nil || !acquired {
-		return cache
+	if maintenance {
+		s.restoreUnmanagedTargetActions(ctx, policies, assignments, groups, exclusions, actionStates, cache)
 	}
-	defer release()
-	s.syncMultiplierPrioritiesWithCache(ctx, policies, assignments, groups, exclusions, priorityStates, cache)
-	s.restoreUnmanagedTargetActions(ctx, policies, assignments, groups, exclusions, actionStates, cache)
 	return cache
 }
 

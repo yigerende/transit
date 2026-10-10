@@ -8,8 +8,8 @@ import { connectionHealthStateBadgeClass } from '../../composables/useConnection
 import type { AdminGroupAccount } from '../../types/connectionHealth'
 import { channelAutomationEnabled, latestChannelProbe } from '../../utils/connectionHealthChannels'
 
-const props = defineProps<{ account: AdminGroupAccount; historyUnavailable?: boolean; showQuality?: boolean; qualityEnabled?: boolean; qualityUnavailable?: boolean; qualityBusy?: boolean; qualityError?: string; suspensionBusy?: boolean; suspensionError?: string }>()
-const emit = defineEmits<{ probe: [account: AdminGroupAccount]; 'view-events': [account: AdminGroupAccount]; 'toggle-quality': [account: AdminGroupAccount]; 'toggle-suspension': [account: AdminGroupAccount] }>()
+const props = defineProps<{ account: AdminGroupAccount; historyUnavailable?: boolean; showQuality?: boolean; qualityEnabled?: boolean; qualityUnavailable?: boolean; qualityBusy?: boolean; qualityError?: string; suspensionBusy?: boolean; suspensionError?: string; priorityBusy?: boolean; priorityError?: string }>()
+const emit = defineEmits<{ probe: [account: AdminGroupAccount]; 'view-events': [account: AdminGroupAccount]; 'toggle-quality': [account: AdminGroupAccount]; 'toggle-suspension': [account: AdminGroupAccount]; 'toggle-priority': [account: AdminGroupAccount] }>()
 const { t } = useI18n()
 const prefix = 'admin.connectionHealth'
 const selectedForAutomation = computed(() => channelAutomationEnabled(props.account))
@@ -36,7 +36,12 @@ const state = computed(() => {
       <div class="min-w-0" :class="selectedForAutomation ? '' : 'flex-1'">
         <h3 class="text-sm font-medium text-foreground" :class="selectedForAutomation ? 'break-words' : 'truncate'" :title="account.name || account.id">{{ account.name || account.id }}</h3>
       </div>
-      <div class="flex shrink-0 items-center gap-2">
+      <div class="flex shrink-0 flex-wrap items-center gap-2">
+        <button v-if="selectedForAutomation" type="button" role="switch" :aria-checked="account.priorityEnabled !== false" :aria-label="t(`${prefix}.channelPriority.toggle`, { name: account.name || account.id })" :title="t(`${prefix}.channelPriority.hint`)" :disabled="priorityBusy" class="flex items-center gap-1.5 rounded px-1 py-2 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50" @click.stop="emit('toggle-priority', account)">
+          <span>{{ t(`${prefix}.channelPriority.label`) }}</span>
+          <Loader2 v-if="priorityBusy" class="h-4 w-7 animate-spin" />
+          <span v-else class="relative h-4 w-7 rounded-full transition-colors" :class="account.priorityEnabled !== false ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="account.priorityEnabled !== false ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
+        </button>
         <button v-if="selectedForAutomation && account.suspensionSupported" type="button" role="switch" :aria-checked="account.suspensionEnabled !== false" :aria-label="t(`${prefix}.channelSuspension.toggle`, { name: account.name || account.id })" :title="t(`${prefix}.channelSuspension.hint`)" :disabled="suspensionBusy" class="flex items-center gap-1.5 rounded px-1 py-2 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50" @click.stop="emit('toggle-suspension', account)">
           <span>{{ t(`${prefix}.channelSuspension.label`) }}</span>
           <Loader2 v-if="suspensionBusy" class="h-4 w-7 animate-spin" />
@@ -47,6 +52,8 @@ const state = computed(() => {
         <button type="button" class="rounded-lg border border-border/70 p-2 text-muted-foreground hover:text-primary" :aria-label="t(`${prefix}.actions.viewEvents`)" :title="t(`${prefix}.actions.viewEvents`)" @click="emit('view-events', account)"><Eye class="h-3.5 w-3.5" /></button>
       </div>
     </div>
+    <p v-if="priorityError" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ priorityError }}</p>
+    <p v-if="account.priorityRestorePending" role="status" class="text-xs text-amber-600 dark:text-amber-400">{{ t(`${prefix}.channelPriority.restoring`) }}</p>
     <p v-if="suspensionError" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ suspensionError }}</p>
     <ProbeHistoryStrip v-if="selectedForAutomation" :samples="account.recentProbes" :unavailable="historyUnavailable">
       <template #before-stats>
@@ -57,7 +64,8 @@ const state = computed(() => {
       <summary class="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
         <span>{{ t(`${latencyPrefix}.average`) }} <strong class="font-semibold text-foreground">{{ priorityDecision.averageMs != null ? `${(priorityDecision.averageMs / 1000).toFixed(2)}s` : '—' }}</strong></span>
         <span>{{ t(`${latencyPrefix}.samples`, { used: priorityDecision.sampleCount, total: priorityDecision.requiredSamples }) }}</span>
-        <span>{{ t(`${latencyPrefix}.decision`, { priority: priorityDecision.priority }) }}</span>
+        <span v-if="account.priorityEnabled !== false">{{ t(`${latencyPrefix}.decision`, { priority: priorityDecision.priority }) }}</span>
+        <span v-else>{{ t(`${prefix}.channelPriority.off`) }}</span>
         <span class="ml-auto text-primary">{{ t(`${latencyPrefix}.details`) }}</span>
       </summary>
       <div class="mt-2 space-y-1.5 break-words border-t border-border/40 pt-2 text-muted-foreground">

@@ -861,10 +861,17 @@ export default {
       saveError: 'Save failed. Please try again.'
     },
     connectionHealth: {
+      channelPriority: {
+        label: 'Allow priority changes',
+        toggle: 'Allow automatic priority changes for {name}',
+        hint: 'Enabled by default, following group policies. Turning off restores the original priority and stops automatic adjustments. Manual upstream edits are preserved. Shared across groups; probing and suspension are controlled independently.',
+        off: 'Automatic priority off',
+        restoring: 'Automatic priority is off. Restoring the original priority; retries are automatic.'
+      },
       channelSuspension: {
         label: 'Allow suspension',
         toggle: 'Allow automatic suspension of {name}',
-        hint: 'Off: continue probing and priority updates without automatic suspension. Applies across all groups sharing this channel. System-suspended channels are restored; manual disables are preserved. On still requires policy permission.'
+        hint: 'Off: no automatic suspension; probing and the priority switch are unaffected. Applies across all groups sharing this channel. System-suspended channels are restored; manual disables are preserved. On still requires policy permission.'
       },
       latencyPriority: {
   "help": "Only updates upstream priority. Average recent successful automatic probes of one selected model.",

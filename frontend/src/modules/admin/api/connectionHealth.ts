@@ -196,3 +196,5 @@ export const deleteConnectionHealthPolicy = async (id: string): Promise<void> =>
     method: 'DELETE',
   })
 }
+
+export const setChannelPriority = (targetId: string, enabled: boolean): Promise<{ targetId: string; enabled: boolean; restorePending: boolean; priority: number | null }> => requestJson(`/connection-health/targets/${encodeURIComponent(targetId)}/priority`, { method: 'PUT', body: JSON.stringify({ enabled }) })
