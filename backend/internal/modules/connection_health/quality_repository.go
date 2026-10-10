@@ -74,6 +74,7 @@ func (r *Repository) GetQualitySettings(ctx context.Context, user, workspace str
 	}
 	var q QualitySettings
 	err = json.Unmarshal(raw, &q)
+	q.normalizeMethod()
 	return q, err
 }
 func (r *Repository) SaveQualitySettings(ctx context.Context, user, workspace string, q QualitySettings) error {

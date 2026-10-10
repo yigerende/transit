@@ -7,6 +7,8 @@ import (
 )
 
 const qualityPrefix = "admin.connectionHealth.quality."
+const qualityMethodQuestions = "questions"
+const qualityMethodManxue = "manxue"
 
 type QualityQuestion struct {
 	ID            string `json:"id"`
@@ -21,30 +23,50 @@ type QualityQuestion struct {
 // Global within one connected workspace, never shared between users or sites.
 // Deliberately contains no remote-action, weight or account-disable settings.
 type QualitySettings struct {
-	Enabled         bool              `json:"enabled"`
-	Revision        string            `json:"revision"`
-	Model           string            `json:"model"`
-	ReasoningEffort string            `json:"reasoningEffort"`
-	Mode            string            `json:"mode"`
-	IntervalSeconds int               `json:"intervalSeconds"`
-	RetrySeconds    int               `json:"retrySeconds"`
-	FailureLimit    int               `json:"failureLimit"`
-	RecoveryLimit   int               `json:"recoveryLimit"`
-	Concurrency     int               `json:"concurrency"`
-	TimeoutSeconds  int               `json:"timeoutSeconds"`
-	MaxTokens       int               `json:"maxTokens"`
-	HistoryLimit    int               `json:"historyLimit"`
-	Questions       []QualityQuestion `json:"questions"`
+	DetectionMethod   string            `json:"detectionMethod"`
+	ManxueBenchmark   string            `json:"manxueBenchmark"`
+	ManxueProtocol    string            `json:"manxueProtocol"`
+	ManxueServiceTier string            `json:"manxueServiceTier"`
+	Enabled           bool              `json:"enabled"`
+	Revision          string            `json:"revision"`
+	Model             string            `json:"model"`
+	ReasoningEffort   string            `json:"reasoningEffort"`
+	Mode              string            `json:"mode"`
+	IntervalSeconds   int               `json:"intervalSeconds"`
+	RetrySeconds      int               `json:"retrySeconds"`
+	FailureLimit      int               `json:"failureLimit"`
+	RecoveryLimit     int               `json:"recoveryLimit"`
+	Concurrency       int               `json:"concurrency"`
+	TimeoutSeconds    int               `json:"timeoutSeconds"`
+	MaxTokens         int               `json:"maxTokens"`
+	HistoryLimit      int               `json:"historyLimit"`
+	Questions         []QualityQuestion `json:"questions"`
 }
 
 func defaultQualitySettings() QualitySettings {
-	return QualitySettings{Model: "gpt-6-astra", ReasoningEffort: "xhigh", Mode: "content_time", IntervalSeconds: 300, RetrySeconds: 60, FailureLimit: 2, RecoveryLimit: 2, Concurrency: 4, TimeoutSeconds: 180, MaxTokens: 8192, HistoryLimit: 100, Questions: []QualityQuestion{
+	return QualitySettings{DetectionMethod: qualityMethodQuestions, ManxueBenchmark: "candy", ManxueProtocol: "responses", Model: "gpt-6-astra", ReasoningEffort: "xhigh", Mode: "content_time", IntervalSeconds: 300, RetrySeconds: 60, FailureLimit: 2, RecoveryLimit: 2, Concurrency: 4, TimeoutSeconds: 180, MaxTokens: 8192, HistoryLimit: 100, Questions: []QualityQuestion{
 		{ID: "clock", Name: "时钟夹角", Enabled: true, Prompt: "连续走动的指针式时钟在3点15分时，时针与分针较小夹角是多少度？只回复数字，不带单位。", Answer: "7.5", MatchMode: "answer", MaxDurationMS: 20000},
 		{ID: "percent", Name: "百分比变化", Enabled: true, Prompt: "一个数先增加20%，再在增加后的数值基础上减少20%，最终是原数的百分之多少？只回复数字，不带百分号。", Answer: "96", MatchMode: "answer", MaxDurationMS: 20000},
 	}}
 }
 
+// Defaults for configurations saved before API detection was available.
+func (q *QualitySettings) normalizeMethod() {
+	if q.DetectionMethod == "" {
+		q.DetectionMethod = qualityMethodQuestions
+	}
+	if q.ManxueBenchmark == "" {
+		q.ManxueBenchmark = "candy"
+	}
+	if q.ManxueProtocol == "" {
+		q.ManxueProtocol = "responses"
+	}
+}
+
 func (q QualitySettings) activeQuestions() []QualityQuestion {
+	if q.DetectionMethod == qualityMethodManxue {
+		return []QualityQuestion{{ID: "manxue-" + q.ManxueBenchmark, Name: "Manxue AI · " + q.ManxueBenchmark, Enabled: true, MatchMode: "external"}}
+	}
 	out := []QualityQuestion{}
 	for _, question := range q.Questions {
 		if question.Enabled {
@@ -55,6 +77,13 @@ func (q QualitySettings) activeQuestions() []QualityQuestion {
 }
 
 func (q *QualitySettings) validate() error {
+	q.normalizeMethod()
+	if q.DetectionMethod != qualityMethodQuestions && q.DetectionMethod != qualityMethodManxue {
+		return requestError(qualityPrefix + "invalidConfig")
+	}
+	if q.ManxueBenchmark != "candy" && q.ManxueBenchmark != "pelican" || q.ManxueProtocol != "responses" && q.ManxueProtocol != "chat_completions" || q.ManxueServiceTier != "" && q.ManxueServiceTier != "priority" && q.ManxueServiceTier != "ultrafast" {
+		return requestError(qualityPrefix + "manxueInvalidConfig")
+	}
 	q.Model = strings.TrimSpace(q.Model)
 	if q.Model == "" || len(q.Model) > 200 {
 		return requestError(qualityPrefix + "invalidModel")
@@ -62,14 +91,24 @@ func (q *QualitySettings) validate() error {
 	if q.Mode != "content" && q.Mode != "time" && q.Mode != "content_time" {
 		return requestError(qualityPrefix + "invalidConfig")
 	}
-	if q.ReasoningEffort != "" && q.ReasoningEffort != "low" && q.ReasoningEffort != "medium" && q.ReasoningEffort != "high" && q.ReasoningEffort != "xhigh" {
+	if q.ReasoningEffort != "" && q.ReasoningEffort != "low" && q.ReasoningEffort != "medium" && q.ReasoningEffort != "high" && q.ReasoningEffort != "xhigh" && !(q.DetectionMethod == qualityMethodManxue && q.ManxueBenchmark == "candy" && (q.ReasoningEffort == "max" || q.ReasoningEffort == "ultra")) {
 		return requestError(qualityPrefix + "invalidConfig")
 	}
-	if q.IntervalSeconds < 10 || q.IntervalSeconds > 86400 || q.RetrySeconds < 10 || q.RetrySeconds > 86400 || q.FailureLimit < 1 || q.FailureLimit > 20 || q.RecoveryLimit < 1 || q.RecoveryLimit > 20 || q.Concurrency < 1 || q.Concurrency > 32 || q.TimeoutSeconds < 5 || q.TimeoutSeconds > 300 || q.HistoryLimit < 1 || q.HistoryLimit > 1000 || q.MaxTokens < 128 || q.MaxTokens > 32768 {
+	maxTimeout := 300
+	if q.DetectionMethod == qualityMethodManxue {
+		maxTimeout = 600
+		if q.ManxueBenchmark == "candy" && q.ManxueProtocol != "responses" || q.ManxueBenchmark == "pelican" && (q.ReasoningEffort == "xhigh" || q.ReasoningEffort == "max" || q.ReasoningEffort == "ultra") {
+			return requestError(qualityPrefix + "manxueInvalidConfig")
+		}
+	}
+	if q.IntervalSeconds < 10 || q.IntervalSeconds > 86400 || q.RetrySeconds < 10 || q.RetrySeconds > 86400 || q.FailureLimit < 1 || q.FailureLimit > 20 || q.RecoveryLimit < 1 || q.RecoveryLimit > 20 || q.Concurrency < 1 || q.Concurrency > 32 || q.TimeoutSeconds < 5 || q.TimeoutSeconds > maxTimeout || q.HistoryLimit < 1 || q.HistoryLimit > 1000 || q.MaxTokens < 128 || q.MaxTokens > 32768 {
 		return requestError(qualityPrefix + "invalidConfig")
 	}
 	if len(q.Questions) > 50 || (q.Enabled && len(q.activeQuestions()) == 0) {
 		return requestError(qualityPrefix + "questionsRequired")
+	}
+	if q.DetectionMethod == qualityMethodManxue {
+		return nil
 	}
 	seen := map[string]bool{}
 	for i := range q.Questions {
@@ -110,21 +149,24 @@ type QualityChannel struct {
 }
 
 type QualitySample struct {
-	ID             string    `json:"id"`
-	TargetID       string    `json:"targetId"`
-	Model          string    `json:"model"`
-	QuestionID     string    `json:"questionId"`
-	QuestionName   string    `json:"questionName"`
-	Answer         string    `json:"answer"`
-	ExpectedAnswer string    `json:"expectedAnswer"`
-	MatchMode      string    `json:"matchMode"`
-	Result         string    `json:"result"` // passed, failed (valid answer), error (no verdict)
-	ErrorKey       string    `json:"errorKey,omitempty"`
-	ContentPassed  bool      `json:"contentPassed"`
-	TimePassed     bool      `json:"timePassed"`
-	DurationMS     int       `json:"durationMs"`
-	MaxDurationMS  int       `json:"maxDurationMs"`
-	CreatedAt      time.Time `json:"createdAt"`
+	DetectionMethod string    `json:"detectionMethod,omitempty"`
+	Benchmark       string    `json:"benchmark,omitempty"`
+	Report          string    `json:"report,omitempty"`
+	ID              string    `json:"id"`
+	TargetID        string    `json:"targetId"`
+	Model           string    `json:"model"`
+	QuestionID      string    `json:"questionId"`
+	QuestionName    string    `json:"questionName"`
+	Answer          string    `json:"answer"`
+	ExpectedAnswer  string    `json:"expectedAnswer"`
+	MatchMode       string    `json:"matchMode"`
+	Result          string    `json:"result"` // passed, failed (valid answer), error (no verdict)
+	ErrorKey        string    `json:"errorKey,omitempty"`
+	ContentPassed   bool      `json:"contentPassed"`
+	TimePassed      bool      `json:"timePassed"`
+	DurationMS      int       `json:"durationMs"`
+	MaxDurationMS   int       `json:"maxDurationMs"`
+	CreatedAt       time.Time `json:"createdAt"`
 }
 type QualityState struct {
 	TargetID       string        `json:"targetId"`
@@ -158,6 +200,9 @@ func applyQualitySample(state QualityState, config QualitySettings, question Qua
 	state.TargetID = sample.TargetID
 	state.Revision = config.Revision
 	interval := config.IntervalSeconds
+	if config.DetectionMethod == qualityMethodManxue && sample.ErrorKey == "" && sample.Result != "passed" && sample.Result != "failed" {
+		sample.ErrorKey = qualityPrefix + "manxueUnknown"
+	}
 	if sample.ErrorKey != "" {
 		sample.Result = "error"
 		state.Status = "error"
@@ -171,6 +216,13 @@ func applyQualitySample(state QualityState, config QualitySettings, question Qua
 			passed = sample.TimePassed
 		} else if config.Mode == "content_time" {
 			passed = passed && sample.TimePassed
+		}
+		if config.DetectionMethod == qualityMethodManxue {
+			// The remote benchmark supplies the verdict. Local question thresholds
+			// cannot turn an API failure into a pass, or a slow valid result into a failure.
+			passed = sample.Result == "passed"
+			sample.ContentPassed = passed
+			sample.TimePassed = false
 		}
 		if passed {
 			sample.Result = "passed"

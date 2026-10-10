@@ -16,6 +16,10 @@ const status = computed(() => props.unavailable ? 'unavailable' : !props.selecte
 const color = (sample: QualitySample | null) => !sample ? 'bg-slate-200/70 dark:bg-slate-700/60' : sample.result === 'passed' ? 'bg-emerald-500 dark:bg-emerald-400' : sample.result === 'failed' ? 'bg-red-500 dark:bg-red-400' : 'bg-amber-400'
 function title(sample: QualitySample | null) {
   if (!sample) return t(`${p}.noRecord`)
+  if (sample.detectionMethod === 'manxue') {
+    const result = sample.errorKey ? t(connectionHealthMessageKey(sample.errorKey, te)) : t(`${p}.${sample.result}`)
+    return `${t(`${p}.methodManxue`)} · ${t(`${p}.benchmarks.${sample.benchmark || 'candy'}`)} · ${sample.model}\n${result} · ${(sample.durationMs/1000).toFixed(2)}s\n${sample.report || sample.answer || ''}\n${formatConnectionHealthTime(sample.createdAt)}`
+  }
   const detail = sample.errorKey ? t(connectionHealthMessageKey(sample.errorKey,te)) : `${t(`${p}.actualAnswer`)}: ${sample.answer}\n${t(`${p}.expectedAnswer`)}: ${sample.expectedAnswer}\n${t(`${p}.contentResult`)}: ${t(`${p}.${sample.contentPassed?'passed':'failed'}`)} · ${t(`${p}.timeResult`)}: ${t(`${p}.${sample.timePassed?'passed':'failed'}`)} (${sample.durationMs} / <${sample.maxDurationMs} ms)`
   return `${sample.questionName} · ${sample.model}\n${t(`${p}.${sample.result}`)} · ${(sample.durationMs/1000).toFixed(2)}s\n${detail}\n${formatConnectionHealthTime(sample.createdAt)}`
 }

@@ -16,7 +16,9 @@ func (s *Service) QualityConfiguration(ctx context.Context, user string) (Qualit
 	if err != nil {
 		return QualitySettings{}, err
 	}
-	return s.qualityRepo.GetQualitySettings(ctx, user, workspace)
+	q, err := s.qualityRepo.GetQualitySettings(ctx, user, workspace)
+	q.normalizeMethod()
+	return q, err
 }
 func (s *Service) SaveQualityConfiguration(ctx context.Context, user string, q QualitySettings) (QualitySettings, error) {
 	if err := q.validate(); err != nil {
@@ -34,6 +36,7 @@ func (s *Service) SaveQualityConfiguration(ctx context.Context, user string, q Q
 		return QualitySettings{}, err
 	}
 	revision := previous.Revision
+	previous.normalizeMethod()
 	previous.Revision = ""
 	old, _ := json.Marshal(previous)
 	if revision != "" && bytes.Equal(raw, old) {
@@ -423,6 +426,10 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 		return
 	}
 	sample := QualitySample{ID: id, TargetID: c.targetID, Model: q.Model, QuestionID: question.ID, QuestionName: question.Name, ExpectedAnswer: question.Answer, MatchMode: question.MatchMode, MaxDurationMS: question.MaxDurationMS}
+	sample.DetectionMethod = q.DetectionMethod
+	if q.DetectionMethod == qualityMethodManxue {
+		sample.Benchmark = q.ManxueBenchmark
+	}
 	cred, err := s.platformGroups.ResolveProbeCredential(session, c.account)
 	if err != nil {
 		sample.ErrorKey = reasonToErrorKey(upstream.ProbeCredentialReason(err))
@@ -433,7 +440,13 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 		if err != nil || !selection.selected(c.groups[0], c.targetID) {
 			return
 		}
+		current, err = s.qualityRepo.GetQualitySettings(ctx, scope.UserID, scope.WorkspaceID)
+		if err != nil || !current.Enabled || current.Revision != q.Revision {
+			return
+		}
 		outcome := s.qualityRunner.ProbeQuality(ctx, cred, c.account.Platform, q, question)
+		sample.Result = outcome.Verdict
+		sample.Report = outcome.Report
 		sample.Answer = outcome.Answer
 		sample.DurationMS = outcome.DurationMS
 		sample.ErrorKey = outcome.ErrorKey

@@ -8,10 +8,14 @@ export interface QualityQuestion {
   maxDurationMs: number
 }
 export interface QualitySettings {
+  detectionMethod: 'questions' | 'manxue'
+  manxueBenchmark: 'candy' | 'pelican'
+  manxueProtocol: 'responses' | 'chat_completions'
+  manxueServiceTier: '' | 'priority' | 'ultrafast'
   enabled: boolean
   revision: string
   model: string
-  reasoningEffort: '' | 'low' | 'medium' | 'high' | 'xhigh'
+  reasoningEffort: '' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
   mode: 'content' | 'time' | 'content_time'
   intervalSeconds: number
   retrySeconds: number
@@ -34,6 +38,9 @@ export interface QualityGroup {
   errorKey?: string
 }
 export interface QualitySample {
+  detectionMethod?: 'questions' | 'manxue'
+  benchmark?: 'candy' | 'pelican'
+  report?: string
   id: string
   targetId: string
   model: string

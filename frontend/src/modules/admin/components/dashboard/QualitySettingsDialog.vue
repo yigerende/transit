@@ -12,6 +12,14 @@ const emit = defineEmits<{ close: []; saved: [] }>()
 const { t, te } = useI18n()
 const p = 'admin.connectionHealth.quality'
 const form = ref<QualitySettings | null>(null)
+const manxue = computed(() => form.value?.detectionMethod === 'manxue')
+const efforts = computed(() => manxue.value ? form.value?.manxueBenchmark === 'pelican' ? ['low', 'medium', 'high'] : ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] : ['low', 'medium', 'high', 'xhigh'])
+function normalizeMethodOptions() {
+  if (!form.value) return
+  if (!efforts.value.includes(form.value.reasoningEffort)) form.value.reasoningEffort = ''
+  if (form.value.manxueBenchmark === 'candy') form.value.manxueProtocol = 'responses'
+  if (!manxue.value && form.value.timeoutSeconds > 300) form.value.timeoutSeconds = 300
+}
 const busy = ref(false)
 const error = ref('')
 const tab = ref<'questions' | 'schedule'>('questions')
@@ -25,7 +33,7 @@ const close = () => { if (!busy.value) emit('close') }
 async function load() {
   const current = ++sequence
   busy.value = true; error.value = ''
-  try { const result = await getQualitySettings(); if (current !== sequence) return; form.value = result; selected.value = result.questions[0]?.id || '' }
+  try { const result = await getQualitySettings(); if (current !== sequence) return; form.value = { ...result, detectionMethod: result.detectionMethod || 'questions', manxueBenchmark: result.manxueBenchmark || 'candy', manxueProtocol: result.manxueProtocol || 'responses', manxueServiceTier: result.manxueServiceTier || '' }; selected.value = result.questions[0]?.id || '' }
   catch (err) { if (current === sequence) error.value = readError(err) }
   finally { if (current === sequence) busy.value = false }
 }
@@ -64,7 +72,7 @@ function move(index: number, offset: number) {
 async function save() {
   if (!form.value || busy.value) return
   // Validate every question, including those outside the current editor.
-  const invalid = form.value.questions.find(q => !q.name.trim() || !q.prompt.trim() || (form.value?.mode !== 'time' && !q.answer.trim()))
+  const invalid = !manxue.value && form.value.questions.find(q => !q.name.trim() || !q.prompt.trim() || (form.value?.mode !== 'time' && !q.answer.trim()))
   if (invalid) { tab.value = 'questions'; selected.value = invalid.id; error.value = `${p}.invalidQuestion`; return }
   const current = sequence; busy.value = true; error.value = ''
   try { await saveQualitySettings(form.value); emit('saved'); if (current === sequence) emit('close') }
@@ -85,16 +93,17 @@ async function importConfig(event: Event) {
     if (['low', 'medium', 'high', 'xhigh'].includes(data.reasoning_effort)) form.value.reasoningEffort = data.reasoning_effort
     if (['content', 'time', 'content_time'].includes(data.mode)) form.value.mode = data.mode
     form.value.questions = data.questions.slice(0, 50).map((q: Record<string, unknown>, i: number) => ({ id: typeof q.id === 'string' ? q.id : `import-${i}`, name: String(q.name || ''), enabled: q.enabled === true, prompt: String(q.prompt || ''), answer: String(q.answer || ''), matchMode: String(q.match_mode || q.matchMode || 'answer') as QualityQuestion['matchMode'], maxDurationMs: Number(q.max_duration_ms ?? q.maxDurationMs ?? 20000) }))
-    form.value.enabled = false; selected.value = form.value.questions[0]?.id || ''; error.value = ''; tab.value = 'questions'
+    form.value.detectionMethod = 'questions'; normalizeMethodOptions(); form.value.enabled = false; selected.value = form.value.questions[0]?.id || ''; error.value = ''; tab.value = 'questions'
   } catch (err) { error.value = err instanceof Error && err.message.startsWith(p) ? err.message : `${p}.importFailed` }
   input.value = ''
 }
-const numbers: { key: 'intervalSeconds' | 'retrySeconds' | 'failureLimit' | 'recoveryLimit' | 'concurrency' | 'timeoutSeconds' | 'maxTokens' | 'historyLimit'; min: number; max: number }[] = [
+const numberFields: { key: 'intervalSeconds' | 'retrySeconds' | 'failureLimit' | 'recoveryLimit' | 'concurrency' | 'timeoutSeconds' | 'maxTokens' | 'historyLimit'; min: number; max: number }[] = [
   { key: 'intervalSeconds', min: 10, max: 86400 }, { key: 'retrySeconds', min: 10, max: 86400 },
   { key: 'failureLimit', min: 1, max: 20 }, { key: 'recoveryLimit', min: 1, max: 20 },
   { key: 'concurrency', min: 1, max: 32 }, { key: 'timeoutSeconds', min: 5, max: 300 },
   { key: 'maxTokens', min: 128, max: 32768 }, { key: 'historyLimit', min: 1, max: 1000 },
 ]
+const numbers = computed(() => numberFields.filter(item => !manxue.value || item.key !== 'maxTokens').map(item => item.key === 'timeoutSeconds' && manxue.value ? { ...item, max: 600 } : item))
 </script>
 
 <template>
@@ -109,37 +118,47 @@ const numbers: { key: 'intervalSeconds' | 'retrySeconds' | 'failureLimit' | 'rec
         <form v-if="form" id="quality-settings-form" novalidate class="min-h-0 flex-1 overflow-y-auto p-5" @submit.prevent="save">
           <fieldset :disabled="busy" class="space-y-5 disabled:opacity-60">
             <label class="flex items-center gap-2 text-sm font-medium"><input v-model="form.enabled" type="checkbox" class="h-4 w-4 accent-primary">{{ t(`${p}.globalEnabled`) }}</label>
-            <nav class="flex gap-5 border-b border-border" :aria-label="t(`${p}.settingsTitle`)"><button v-for="item in ['questions', 'schedule'] as const" :key="item" type="button" class="border-b-2 pb-3 text-sm" :class="tab === item ? 'border-primary text-primary' : 'border-transparent text-muted-foreground'" @click="tab = item">{{ t(`${p}.${item}`) }}</button></nav>
+            <label class="quality-label">{{ t(`${p}.detectionMethod`) }}<select v-model="form.detectionMethod" class="quality-input" @change="normalizeMethodOptions"><option value="questions">{{ t(`${p}.methodQuestions`) }}</option><option value="manxue">{{ t(`${p}.methodManxue`) }}</option></select></label>
+            <p v-if="manxue" class="rounded-lg bg-primary/5 px-3 py-2 text-xs leading-5 text-muted-foreground">{{ t(`${p}.manxueDisclosure`) }} <a href="https://manxue.ai/api" target="_blank" rel="noopener noreferrer" class="text-primary underline">{{ t(`${p}.manxueDocs`) }}</a></p>
+            <nav class="flex gap-5 border-b border-border" :aria-label="t(`${p}.settingsTitle`)"><button v-for="item in ['questions', 'schedule'] as const" :key="item" type="button" class="border-b-2 pb-3 text-sm" :class="tab === item ? 'border-primary text-primary' : 'border-transparent text-muted-foreground'" @click="tab = item">{{ t(`${p}.${item === 'questions' && manxue ? 'manxueOptions' : item}`) }}</button></nav>
             <div v-show="tab === 'questions'" class="space-y-5">
-              <div class="grid gap-4 sm:grid-cols-3">
-                <label class="quality-label">{{ t(`${p}.model`) }}<input v-model="form.model" class="quality-input" maxlength="200" required></label>
-                <label class="quality-label">{{ t(`${p}.reasoningEffort`) }}<select v-model="form.reasoningEffort" class="quality-input"><option value="">{{ t(`${p}.defaultEffort`) }}</option><option v-for="effort in ['low','medium','high','xhigh']" :key="effort" :value="effort">{{ effort }}</option></select></label>
-                <label class="quality-label">{{ t(`${p}.mode`) }}<select v-model="form.mode" class="quality-input"><option v-for="mode in ['content_time','content','time']" :key="mode" :value="mode">{{ t(`${p}.modes.${mode}`) }}</option></select></label>
+              <div v-if="manxue" class="grid gap-4 sm:grid-cols-3">
+                <label class="quality-label">{{ t(`${p}.manxueBenchmark`) }}<select v-model="form.manxueBenchmark" class="quality-input" @change="normalizeMethodOptions"><option value="candy">{{ t(`${p}.benchmarks.candy`) }}</option><option value="pelican">{{ t(`${p}.benchmarks.pelican`) }}</option></select></label>
+                <label class="quality-label">{{ t(`${p}.manxueProtocol`) }}<select v-model="form.manxueProtocol" class="quality-input" :disabled="form.manxueBenchmark === 'candy'"><option value="responses">Responses</option><option v-if="form.manxueBenchmark === 'pelican'" value="chat_completions">Chat Completions</option></select></label>
+                <label class="quality-label">{{ t(`${p}.manxueServiceTier`) }}<select v-model="form.manxueServiceTier" class="quality-input"><option value="">{{ t(`${p}.defaultEffort`) }}</option><option value="priority">Fast (priority)</option><option value="ultrafast">UltraFast (ultrafast)</option></select></label>
               </div>
-              <div class="flex items-center justify-between gap-2"><h3 class="text-sm font-medium">{{ t(`${p}.questionBank`) }} <span class="text-muted-foreground">{{ form.questions.length }}/50</span></h3><button type="button" :disabled="form.questions.length >= 50" class="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs disabled:opacity-40" @click="addQuestion"><Plus class="h-3.5 w-3.5" />{{ t(`${p}.add`) }}</button></div>
-              <div class="grid gap-4 md:grid-cols-[14rem_minmax(0,1fr)]">
-                <div class="space-y-1">
-                  <div v-for="(q, index) in form.questions" :key="q.id" class="flex items-center gap-2 rounded-lg border px-2 py-2" :class="selected === q.id ? 'border-primary/30 bg-primary/5' : 'border-border/60'">
-                    <input v-model="q.enabled" type="checkbox" :aria-label="t(`${p}.enableQuestion`, { name: q.name })" class="accent-primary">
-                    <button type="button" class="min-w-0 flex-1 truncate text-left text-xs" @click="selected = q.id">{{ q.name }}</button>
-                    <button type="button" :disabled="index === 0" :aria-label="t(`${p}.moveUp`)" class="text-muted-foreground disabled:opacity-20" @click="move(index,-1)"><ArrowUp class="h-3 w-3" /></button>
-                    <button type="button" :disabled="index === form.questions.length-1" :aria-label="t(`${p}.moveDown`)" class="text-muted-foreground disabled:opacity-20" @click="move(index,1)"><ArrowDown class="h-3 w-3" /></button>
-                    <button type="button" :aria-label="t(`${p}.removeQuestion`, { name: q.name })" class="text-muted-foreground hover:text-destructive" @click="removeQuestion(index)"><Trash2 class="h-3.5 w-3.5" /></button>
+              <div class="grid gap-4" :class="manxue ? 'sm:grid-cols-2' : 'sm:grid-cols-3'">
+                <label class="quality-label">{{ t(`${p}.model`) }}<input v-model="form.model" class="quality-input" maxlength="200" required></label>
+                <label class="quality-label">{{ t(`${p}.reasoningEffort`) }}<select v-model="form.reasoningEffort" class="quality-input"><option value="">{{ t(`${p}.defaultEffort`) }}</option><option v-for="effort in efforts" :key="effort" :value="effort">{{ effort }}</option></select></label>
+                <label v-if="!manxue" class="quality-label">{{ t(`${p}.mode`) }}<select v-model="form.mode" class="quality-input"><option v-for="mode in ['content_time','content','time']" :key="mode" :value="mode">{{ t(`${p}.modes.${mode}`) }}</option></select></label>
+              </div>
+              <p v-if="manxue" class="text-xs leading-5 text-muted-foreground">{{ t(`${p}.manxueVerdictHint`) }}</p>
+              <template v-else>
+                <div class="flex items-center justify-between gap-2"><h3 class="text-sm font-medium">{{ t(`${p}.questionBank`) }} <span class="text-muted-foreground">{{ form.questions.length }}/50</span></h3><button type="button" :disabled="form.questions.length >= 50" class="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs disabled:opacity-40" @click="addQuestion"><Plus class="h-3.5 w-3.5" />{{ t(`${p}.add`) }}</button></div>
+                <div class="grid gap-4 md:grid-cols-[14rem_minmax(0,1fr)]">
+                  <div class="space-y-1">
+                    <div v-for="(q, index) in form.questions" :key="q.id" class="flex items-center gap-2 rounded-lg border px-2 py-2" :class="selected === q.id ? 'border-primary/30 bg-primary/5' : 'border-border/60'">
+                      <input v-model="q.enabled" type="checkbox" :aria-label="t(`${p}.enableQuestion`, { name: q.name })" class="accent-primary">
+                      <button type="button" class="min-w-0 flex-1 truncate text-left text-xs" @click="selected = q.id">{{ q.name }}</button>
+                      <button type="button" :disabled="index === 0" :aria-label="t(`${p}.moveUp`)" class="text-muted-foreground disabled:opacity-20" @click="move(index,-1)"><ArrowUp class="h-3 w-3" /></button>
+                      <button type="button" :disabled="index === form.questions.length-1" :aria-label="t(`${p}.moveDown`)" class="text-muted-foreground disabled:opacity-20" @click="move(index,1)"><ArrowDown class="h-3 w-3" /></button>
+                      <button type="button" :aria-label="t(`${p}.removeQuestion`, { name: q.name })" class="text-muted-foreground hover:text-destructive" @click="removeQuestion(index)"><Trash2 class="h-3.5 w-3.5" /></button>
+                    </div>
+                  </div>
+                  <div v-if="question" class="space-y-4 rounded-lg border border-border p-4">
+                    <div class="grid gap-4 sm:grid-cols-2"><label class="quality-label">{{ t(`${p}.questionName`) }}<input v-model="question.name" class="quality-input" maxlength="60"></label><label class="quality-label">{{ t(`${p}.maxDurationMs`) }}<input v-model.number="question.maxDurationMs" class="quality-input" type="number" min="1" max="300000" required></label></div>
+                    <label class="quality-label">{{ t(`${p}.prompt`) }}<textarea v-model="question.prompt" class="quality-input min-h-32 resize-y" rows="5" maxlength="15000" /></label>
+                    <label class="quality-label">{{ t(`${p}.matchMode`) }}<select v-model="question.matchMode" class="quality-input"><option v-for="mode in ['answer','keyword','regex']" :key="mode" :value="mode">{{ t(`${p}.matchModes.${mode}`) }}</option></select></label>
+                    <label class="quality-label">{{ t(`${p}.answer`) }}<textarea v-model="question.answer" class="quality-input resize-y" rows="2" maxlength="2000" /></label>
+                    <p class="text-xs leading-5 text-muted-foreground">{{ t(`${p}.answerHint`) }}</p>
                   </div>
                 </div>
-                <div v-if="question" class="space-y-4 rounded-lg border border-border p-4">
-                  <div class="grid gap-4 sm:grid-cols-2"><label class="quality-label">{{ t(`${p}.questionName`) }}<input v-model="question.name" class="quality-input" maxlength="60"></label><label class="quality-label">{{ t(`${p}.maxDurationMs`) }}<input v-model.number="question.maxDurationMs" class="quality-input" type="number" min="1" max="300000" required></label></div>
-                  <label class="quality-label">{{ t(`${p}.prompt`) }}<textarea v-model="question.prompt" class="quality-input min-h-32 resize-y" rows="5" maxlength="15000" /></label>
-                  <label class="quality-label">{{ t(`${p}.matchMode`) }}<select v-model="question.matchMode" class="quality-input"><option v-for="mode in ['answer','keyword','regex']" :key="mode" :value="mode">{{ t(`${p}.matchModes.${mode}`) }}</option></select></label>
-                  <label class="quality-label">{{ t(`${p}.answer`) }}<textarea v-model="question.answer" class="quality-input resize-y" rows="2" maxlength="2000" /></label>
-                  <p class="text-xs leading-5 text-muted-foreground">{{ t(`${p}.answerHint`) }}</p>
-                </div>
-              </div>
+              </template>
             </div>
             <div v-show="tab === 'schedule'" class="space-y-5">
               <div class="grid gap-4 sm:grid-cols-2"><label v-for="item in numbers" :key="item.key" class="quality-label">{{ t(`${p}.${item.key}`) }}<input v-model.number="form[item.key]" type="number" :min="item.min" :max="item.max" step="1" class="quality-input" required></label></div>
               <p class="text-xs leading-5 text-muted-foreground">{{ t(`${p}.scheduleHint`) }}</p>
-              <label class="quality-label">{{ t(`${p}.importConfig`) }}<input type="file" accept="application/json,.json" class="text-xs" @change="importConfig"><span class="text-xs font-normal text-muted-foreground">{{ t(`${p}.importHint`) }}</span></label>
+              <label v-if="!manxue" class="quality-label">{{ t(`${p}.importConfig`) }}<input type="file" accept="application/json,.json" class="text-xs" @change="importConfig"><span class="text-xs font-normal text-muted-foreground">{{ t(`${p}.importHint`) }}</span></label>
             </div>
           </fieldset>
         </form>

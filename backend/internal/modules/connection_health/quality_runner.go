@@ -14,6 +14,8 @@ import (
 )
 
 type qualityProbeResult struct {
+	Verdict    string
+	Report     string
 	Answer     string
 	DurationMS int
 	ErrorKey   string
@@ -25,6 +27,9 @@ type questionProbeRunner struct{ client *http.Client }
 
 // This runner reads actual answer content; a 200 status alone is never a pass.
 func (r *questionProbeRunner) ProbeQuality(ctx context.Context, cred upstream.ProbeCredential, provider string, q QualitySettings, question QualityQuestion) qualityProbeResult {
+	if q.DetectionMethod == qualityMethodManxue {
+		return (&manxueProbeRunner{client: r.client}).ProbeQuality(ctx, cred, provider, q, question)
+	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(q.TimeoutSeconds)*time.Second)
 	defer cancel()
 	base := strings.TrimSuffix(strings.TrimRight(cred.BaseURL, "/"), "/v1")
