@@ -952,6 +952,7 @@ export default {
           question: '检测题目', noPrompt: '这条旧记录未保存题目正文。', matchMode: '匹配方式：', judgement: '判定规则与结果', noAnswer: '没有返回答案。', candyHint: '糖果测试的判定由 API 返回，不使用本地自定义题目的答案和耗时阈值。',
         },
         automaticLabel: '自动降智测试', configureManualFirst: '请先保存全局降智检测配置，无需开启自动检测。',
+        inactiveAutomationHint: '未开启自动策略，自动探活和自动降智测试均关闭；可点击按钮手动测试。',
         detectionMethod: '检测方式', methodQuestions: '自定义题目', methodManxue: '满血 AI API',
         manxueOptions: 'API 检测', manxueBenchmark: '测试类型', benchmarks: { candy: '糖果测试', pelican: '鹈鹕测试' },
         manxueProtocol: '上游接口协议', manxueServiceTier: '服务档位', manxueDocs: '查看 API 文档',

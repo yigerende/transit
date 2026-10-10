@@ -122,7 +122,7 @@ async function toggleChannelSuspension(account: AdminGroupAccount) {
 }
 async function toggleChannelQuality(account: AdminGroupAccount) {
   const target = account.targetId
-  if (qualityBusyTargets.value.has(target)) return
+  if (!channelAutomationEnabled(account) || qualityBusyTargets.value.has(target)) return
   qualityBusyTargets.value.add(target)
   delete qualityChannelErrors.value[target]
   try {

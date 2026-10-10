@@ -402,8 +402,9 @@ func TestQualityUsesSavedAutomationChannelSelection(t *testing.T) {
 					want = 0
 				}
 			case "selected-disabled-policy":
-				// The quality switch controls execution; automation supplies the selection.
+				// Disabling automation also stops automatic quality requests.
 				health.policies[0].Enabled = false
+				want = 0
 			case "shared-selected", "shared-excluded":
 				_, _ = svc.SetGroupQuality(ctx, "user", "two", true)
 				health.groupExclusions = []GroupTargetExclusion{exclusion}

@@ -82,7 +82,7 @@ func TestManualQualityRejectsUnconfiguredOrForeignTargets(t *testing.T) {
 }
 
 func TestManualQualityWorksWithoutAutomaticOptIns(t *testing.T) {
-	for _, scenario := range []string{"global-off", "group-off", "channel-off", "excluded", "unassigned", "all-off"} {
+	for _, scenario := range []string{"global-off", "group-off", "channel-off", "excluded", "unassigned", "disabled-policy", "all-off"} {
 		for _, method := range []string{"questions", "manxue_candy", "manxue_pelican"} {
 			t.Run(scenario+"/"+method, func(t *testing.T) {
 				svc, repo, health, runner := qualityTestService(t)
@@ -106,6 +106,9 @@ func TestManualQualityWorksWithoutAutomaticOptIns(t *testing.T) {
 				}
 				if scenario == "unassigned" || scenario == "all-off" {
 					health.groupAssignments = nil
+				}
+				if scenario == "disabled-policy" {
+					health.policies[0].Enabled = false
 				}
 				before, _ := json.Marshal([]any{repo.configs, repo.groups, repo.channels, health.groupAssignments, health.groupExclusions})
 				apiRunner := &manxueServiceRunner{}

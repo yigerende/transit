@@ -952,6 +952,7 @@ export default {
           question: 'Question', noPrompt: 'The question text was not saved for this older record.', matchMode: 'Match mode:', judgement: 'Rules and results', noAnswer: 'No answer was returned.', candyHint: 'Candy verdicts come from the API and do not use local question answers or latency thresholds.',
         },
         automaticLabel: 'Auto quality', configureManualFirst: 'Save the global quality settings first. Automatic detection can remain off.',
+        inactiveAutomationHint: 'Automatic health and quality checks are off without an enabled automation policy. Manual tests remain available.',
         detectionMethod: 'Detection method', methodQuestions: 'Custom questions', methodManxue: 'Manxue AI API',
         manxueOptions: 'API detection', manxueBenchmark: 'Benchmark', benchmarks: { candy: 'Candy test', pelican: 'Pelican test' },
         manxueProtocol: 'Upstream protocol', manxueServiceTier: 'Service tier', manxueDocs: 'API documentation',

@@ -2,8 +2,8 @@ package connection_health
 
 import "context"
 
-// Quality detection uses automation's saved channel selection, while its own
-// global/group switches control execution independently of health probe settings.
+// Automatic quality detection requires an enabled automation policy selecting
+// the channel, as well as its own global/group/channel switches.
 type qualitySelection struct {
 	disabledChannels map[string]bool
 	pausedChannels   map[string]bool
@@ -16,7 +16,9 @@ func newQualitySelection(policies []Policy, assignments []PolicyAssignment, grou
 	selection := qualitySelection{groups: map[string]bool{}, targets: map[string]bool{}, excluded: map[string]map[string]bool{}}
 	known := map[string]bool{}
 	for _, p := range policies {
-		known[p.ID] = true
+		if p.Enabled {
+			known[p.ID] = true
+		}
 	}
 	for _, a := range assignments {
 		if known[a.PolicyID] {
