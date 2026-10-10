@@ -143,6 +143,7 @@ type PrioritySyncState struct {
 // TargetActionState 记录分组健康首次接管账号/渠道启停或权重前的上游状态。
 // 健康恢复后只能恢复到这里保存的原值，不能假设账号原本一定启用或权重一定为 100。
 type TargetActionState struct {
+	QualitySuspended  bool `json:"qualitySuspended"`
 	UserID            string
 	AdminAccountID    string
 	TargetID          string

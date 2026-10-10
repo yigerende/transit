@@ -130,6 +130,15 @@ func (s *Service) attachQuality(ctx context.Context, user, workspace string, gro
 		s.qualityUnavailable(groups)
 		return
 	}
+	actionStates, err := s.repo.ListTargetActionStates(ctx, user, workspace)
+	if err != nil {
+		s.qualityUnavailable(groups)
+		return
+	}
+	suspended := map[string]bool{}
+	for _, action := range actionStates {
+		suspended[action.TargetID] = action.QualitySuspended
+	}
 	byTarget := map[string]QualityState{}
 	for _, state := range states {
 		if state.Revision == q.Revision {
@@ -160,6 +169,7 @@ func (s *Service) attachQuality(ctx context.Context, user, workspace string, gro
 		g.Quality = &QualityGroup{GroupID: g.ID, Enabled: enabled[g.ID], GlobalEnabled: q.Enabled}
 		for j := range g.Accounts {
 			a := &g.Accounts[j]
+			a.QualitySuspended = suspended[a.TargetID]
 			a.QualityEnabled = a.QualitySelected && !disabledChannels[a.TargetID] && (enabled[g.ID] || independentChannels[a.TargetID])
 			a.QualityHistory = append([]QualitySample{}, byHistory[a.TargetID]...)
 			if state, ok := byTarget[a.TargetID]; ok {
@@ -371,6 +381,17 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 			break
 		}
 	}
+	// A settings edit resets streaks, but cannot declare an already suspended
+	// channel recovered. New samples must still satisfy the recovery threshold.
+	if state.Revision == "" && q.AutoSuspendEnabled {
+		held, readErr := s.repo.GetTargetActionState(ctx, scope.UserID, scope.WorkspaceID, c.targetID)
+		if readErr != nil {
+			return QualitySample{}, readErr
+		}
+		if held != nil && held.QualitySuspended {
+			state.Degraded = true
+		}
+	}
 	if !manual && state.NextProbeAt.After(time.Now()) {
 		return QualitySample{}, nil
 	}
@@ -493,6 +514,11 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 	}
 	if !saved {
 		return QualitySample{}, unavailable
+	}
+	if q.AutoSuspendEnabled {
+		if err := s.reconcileQualityTarget(ctx, scope.UserID, scope.WorkspaceID, c.targetID); err != nil {
+			log.Printf("[quality] reconcile channel suspension failed target_id=%s err=%v", c.targetID, err)
+		}
 	}
 	return qualitySampleSummary(state.Latest), nil
 }

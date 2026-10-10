@@ -21,26 +21,27 @@ type QualityQuestion struct {
 }
 
 // Global within one connected workspace, never shared between users or sites.
-// Deliberately contains no remote-action, weight or account-disable settings.
+// Suspension is opt-in and additionally requires health-policy action permissions.
 type QualitySettings struct {
-	DetectionMethod   string            `json:"detectionMethod"`
-	ManxueBenchmark   string            `json:"manxueBenchmark"`
-	ManxueProtocol    string            `json:"manxueProtocol"`
-	ManxueServiceTier string            `json:"manxueServiceTier"`
-	Enabled           bool              `json:"enabled"`
-	Revision          string            `json:"revision"`
-	Model             string            `json:"model"`
-	ReasoningEffort   string            `json:"reasoningEffort"`
-	Mode              string            `json:"mode"`
-	IntervalSeconds   int               `json:"intervalSeconds"`
-	RetrySeconds      int               `json:"retrySeconds"`
-	FailureLimit      int               `json:"failureLimit"`
-	RecoveryLimit     int               `json:"recoveryLimit"`
-	Concurrency       int               `json:"concurrency"`
-	TimeoutSeconds    int               `json:"timeoutSeconds"`
-	MaxTokens         int               `json:"maxTokens"`
-	HistoryLimit      int               `json:"historyLimit"`
-	Questions         []QualityQuestion `json:"questions"`
+	AutoSuspendEnabled bool              `json:"autoSuspendEnabled"`
+	DetectionMethod    string            `json:"detectionMethod"`
+	ManxueBenchmark    string            `json:"manxueBenchmark"`
+	ManxueProtocol     string            `json:"manxueProtocol"`
+	ManxueServiceTier  string            `json:"manxueServiceTier"`
+	Enabled            bool              `json:"enabled"`
+	Revision           string            `json:"revision"`
+	Model              string            `json:"model"`
+	ReasoningEffort    string            `json:"reasoningEffort"`
+	Mode               string            `json:"mode"`
+	IntervalSeconds    int               `json:"intervalSeconds"`
+	RetrySeconds       int               `json:"retrySeconds"`
+	FailureLimit       int               `json:"failureLimit"`
+	RecoveryLimit      int               `json:"recoveryLimit"`
+	Concurrency        int               `json:"concurrency"`
+	TimeoutSeconds     int               `json:"timeoutSeconds"`
+	MaxTokens          int               `json:"maxTokens"`
+	HistoryLimit       int               `json:"historyLimit"`
+	Questions          []QualityQuestion `json:"questions"`
 }
 
 func defaultQualitySettings() QualitySettings {

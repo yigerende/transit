@@ -99,6 +99,7 @@ export interface AdminGroupAccount {
   latencyPriority?: LatencyPriorityDecision
   latencyPriorityError?: boolean
   qualityEnabled?: boolean
+  qualitySuspended?: boolean
   qualityPausedByHealth?: boolean
   priorityEnabled?: boolean
   priorityRestorePending?: boolean

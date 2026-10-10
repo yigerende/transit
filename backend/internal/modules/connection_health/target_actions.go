@@ -28,6 +28,16 @@ func (s *Service) reconcileTargetRemoteAction(
 		return "", err
 	}
 	defer release()
+	return s.reconcileTargetRemoteActionLocked(ctx, userID, adminAccountID, session, target, specs)
+}
+
+// Both probe kinds use one status owner and the same action lease. A health
+// success cannot release a quality hold, and vice versa.
+func (s *Service) reconcileTargetRemoteActionLocked(ctx context.Context, userID, adminAccountID string, session upstream.Session, target AdminProbeTarget, specs []probeModelSpec) (string, error) {
+	specs = append([]probeModelSpec(nil), specs...)
+	for i := range specs {
+		specs[i].policy = s.currentTargetActionPermissions(ctx, userID, adminAccountID, target.TargetID, specs[i].policy)
+	}
 	enabled, err := s.repo.GetChannelSuspension(ctx, userID, adminAccountID, target.TargetID)
 	if err != nil || !enabled {
 		return "", err
@@ -55,25 +65,33 @@ func (s *Service) reconcileTargetRemoteAction(
 			states = append(states, state)
 		}
 	}
-	if len(states) == 0 {
-		return "", nil
-	}
 	statesComplete := len(states) == len(controlledModels)
 
 	stored, err := s.repo.GetTargetActionState(ctx, userID, adminAccountID, target.TargetID)
 	if err != nil {
 		return "", err
 	}
+	qualityBlocked, err := s.qualitySuspensionBlocked(ctx, userID, adminAccountID, target.TargetID, stored)
+	if err != nil {
+		return "", err
+	}
 	allHealthy, blocked := aggregateTargetStates(states)
-	allHealthy = allHealthy && statesComplete
+	allHealthy = allHealthy && statesComplete && !qualityBlocked
+	blocked = blocked || qualityBlocked
 	// Only a threshold-triggered suspension can take over an unmanaged target.
 	// Preserve ownership evidence for channels disabled by older versions.
-	if stored == nil && (!statesComplete || (!blocked && !legacyTargetWasManaged(states))) {
+	if stored == nil && !qualityBlocked && (!statesComplete || (!blocked && !legacyTargetWasManaged(states))) {
 		return "", nil
 	}
 	// 已接管目标只有在全部受控模型都有状态后才能开始恢复。缺失状态不能被当作健康，
 	// 但如果已有模型明确进入暂停，仍需允许下面的 blocked 分支继续执行降级动作。
 	if !allHealthy && !blocked {
+		// The quality evidence may have recovered while health is still below its
+		// recovery threshold. Clear only that reason; keep the upstream paused.
+		if stored != nil && stored.QualitySuspended != qualityBlocked {
+			stored.QualitySuspended = qualityBlocked
+			return "", s.repo.UpsertTargetActionState(ctx, *stored)
+		}
 		return "", nil
 	}
 
@@ -112,6 +130,9 @@ func (s *Service) reconcileTargetRemoteAction(
 		return RemoteActionSkippedTargetConflict, nil
 	}
 
+	// Retain the quality owner until a pending restore succeeds, so maintenance
+	// can retry a failed restore even when automatic quality checks are disabled.
+	stored.QualitySuspended = qualityBlocked || (stored.QualitySuspended && allHealthy)
 	desiredStatus, desiredWeight := desiredTargetState(target.Platform, allHealthy, *stored)
 	if targetStateEqual(target, currentStatus, currentWeight, desiredStatus, desiredWeight) {
 		stored.LastAppliedStatus = desiredStatus
@@ -224,7 +245,16 @@ func (s *Service) restoreUnmanagedTargetAction(ctx context.Context, policies []P
 			}
 		}
 	}
-	if enabled && hasRemoteActionModel(candidateModelSpecs(target.Models, effectivePolicies)) {
+	specs := candidateModelSpecs(target.Models, effectivePolicies)
+	if enabled && hasRemoteActionModel(specs) {
+		// Reconcile former quality holds after a settings edit or a failed status write,
+		// even when no health probe is due. Keep any independent health suspension.
+		if stored.QualitySuspended {
+			action, actionErr := s.reconcileTargetRemoteActionLocked(ctx, stored.UserID, stored.AdminAccountID, inventory.session, target, specs)
+			if action != "" || actionErr != nil {
+				s.recordQualityAction(ctx, stored.UserID, stored.AdminAccountID, target, specs, action, actionErr)
+			}
+		}
 		return
 	}
 	targetVisible := found

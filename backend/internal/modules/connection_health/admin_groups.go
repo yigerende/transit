@@ -73,6 +73,7 @@ type AdminGroupAccount struct {
 	SuspensionEnabled      bool                     `json:"suspensionEnabled"`
 	SuspensionSupported    bool                     `json:"suspensionSupported"`
 	QualityEnabled         bool                     `json:"qualityEnabled"`
+	QualitySuspended       bool                     `json:"qualitySuspended"`
 	QualityPausedByHealth  bool                     `json:"qualityPausedByHealth"`
 	QualitySelected        bool                     `json:"qualitySelected"`
 	QualityState           *QualityState            `json:"qualityState,omitempty"`

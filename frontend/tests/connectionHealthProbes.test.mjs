@@ -16,6 +16,19 @@ const sample = (result, latencyMs, minute = 2, id = 'probe') => ({
 })
 const channel = (name, recentProbes, extra = {}) => ({ name, recentProbes, hasEnabledPolicy: true, ...extra })
 
+test('quality and health suspended channels stay last even with a fast successful probe', () => {
+  const accounts = [
+    channel('quality suspended', [sample('ok', 10)], { qualitySuspended: true }),
+    channel('health suspended', [sample('ok', 20)], { modelHealth: [{ state: 'suspended' }] }),
+    channel('failed', [sample('server_error', 100)]),
+    channel('healthy', [sample('ok', 9000)]),
+  ]
+  assert.deepEqual(channelsByLatestLatency(accounts).map(a => a.name),
+    ['healthy', 'failed', 'quality suspended', 'health suspended'])
+  accounts[0].qualitySuspended = false
+  assert.equal(channelsByLatestLatency(accounts)[0].name, 'quality suspended')
+})
+
 test('quick failures cannot outrank successful conversations, even with an earlier fast success', () => {
   const accounts = [
     channel('fast error', [sample('server_error', 1043), sample('ok', 100, 1)]),

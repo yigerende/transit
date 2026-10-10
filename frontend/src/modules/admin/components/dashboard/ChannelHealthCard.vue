@@ -29,6 +29,7 @@ const sampleWeight = (index: number): string => {
   return sum > 0 ? ((d.weights[index] ?? 0) / sum * 100).toFixed(1) : '0'
 }
 const state = computed(() => {
+  if (props.account.qualitySuspended) return 'qualitySuspended'
   if (props.historyUnavailable) return 'loadError'
   if (!props.account.probeAvailable) return 'unavailable'
   if (!latest.value) return 'pending'
@@ -64,7 +65,7 @@ const state = computed(() => {
           {{ t(`${prefix}.quality.manualLabels.${method}`) }}
         </button>
         <button type="button" class="inline-flex h-6 shrink-0 items-center gap-1 rounded px-1.5 text-xs text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" :aria-label="t(`${prefix}.quality.detail.open`, { name: account.name || account.id })" @click.stop="emit('view-quality', account)"><Eye class="h-3.5 w-3.5" />{{ t(`${prefix}.quality.detail.channelButton`) }}</button>
-        <span class="rounded-full px-2.5 py-1 text-xs" :class="state === 'healthy' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : state === 'unhealthy' ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-surface text-muted-foreground'">{{ t(`${prefix}.cards.status.${state}`) }}</span>
+        <span class="rounded-full px-2.5 py-1 text-xs" :class="state === 'healthy' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : state === 'unhealthy' || state === 'qualitySuspended' ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-surface text-muted-foreground'">{{ t(`${prefix}.cards.status.${state}`) }}</span>
         <button type="button" class="inline-flex h-6 items-center gap-1 rounded border border-border/60 px-1.5 text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-40" :disabled="!account.probeAvailable" :aria-label="t(`${prefix}.actions.probe`)" :title="t(`${prefix}.actions.probe`)" @click.stop="emit('probe', account)"><Zap class="h-3 w-3" />{{ t(`${prefix}.actions.probeShort`) }}</button>
         <button type="button" class="rounded-lg border border-border/70 p-2 text-muted-foreground hover:text-primary" :aria-label="t(`${prefix}.actions.viewEvents`)" :title="t(`${prefix}.actions.viewEvents`)" @click="emit('view-events', account)"><Eye class="h-3.5 w-3.5" /></button>
       </div>
@@ -100,8 +101,8 @@ const state = computed(() => {
       </div>
     </details>
     <p v-if="selectedForAutomation && account.latencyPriorityError" class="text-xs text-amber-600 dark:text-amber-400">{{ t(`${latencyPrefix}.unavailable`) }}</p>
-    <template v-if="(selectedForAutomation && showQuality) || hasManualQuality">
-      <QualityHistoryStrip :samples="account.qualityHistory" :state="account.qualityState" :paused-by-health="account.qualityPausedByHealth" :enabled="qualityEnabled && account.qualityEnabled !== false" :selected="account.qualitySelected" :unavailable="qualityUnavailable" />
+    <template v-if="(selectedForAutomation && showQuality) || hasManualQuality || account.qualitySuspended">
+      <QualityHistoryStrip :samples="account.qualityHistory" :state="account.qualityState" :paused-by-health="account.qualityPausedByHealth" :suspended-by-quality="account.qualitySuspended" :enabled="qualityEnabled && account.qualityEnabled !== false" :selected="account.qualitySelected" :unavailable="qualityUnavailable" />
     </template>
   </section>
 </template>

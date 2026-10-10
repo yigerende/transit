@@ -21,6 +21,7 @@ func TestReconcileTargetRemoteAction_SuspendedSiblingBlocksRestore(t *testing.T)
 		OriginalStatus: "active", LastAppliedStatus: "inactive",
 	}
 	policy := Policy{ID: "p1", Enabled: true, AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
+	repo.policies = []Policy{policy}
 	specs := []probeModelSpec{{modelName: "model-a", policy: policy}, {modelName: "model-b", policy: policy}}
 	target := AdminProbeTarget{TargetID: targetID, Platform: string(upstream.PlatformSub2API), AccountID: "acc-1", AccountStatus: "inactive"}
 
@@ -56,6 +57,7 @@ func TestReconcileTargetRemoteAction_RestoresOriginalNewAPIWeight(t *testing.T) 
 		OriginalStatus: "1", OriginalWeight: &originalWeight, LastAppliedStatus: "1", LastAppliedWeight: &appliedWeight,
 	}
 	policy := Policy{ID: "p1", Enabled: true, AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
+	repo.policies = []Policy{policy}
 	target := AdminProbeTarget{
 		TargetID: targetID, Platform: string(upstream.PlatformNewAPI), AccountID: "100",
 		AccountStatus: "1", AccountWeight: &currentWeight,
@@ -83,6 +85,7 @@ func TestReconcileTargetRemoteAction_WaitsForFullRecovery(t *testing.T) {
 		"model-a": {ConnectionID: targetID, ModelName: "model-a", State: StateDegraded, CurrentWeight: 75},
 	}
 	policy := Policy{ID: "p1", Enabled: true, AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
+	repo.policies = []Policy{policy}
 	target := AdminProbeTarget{
 		TargetID: targetID, Platform: string(upstream.PlatformNewAPI), AccountID: "100",
 		AccountStatus: "1", AccountWeight: &currentWeight,
@@ -125,6 +128,7 @@ func TestReconcileTargetRemoteAction_DoesNotRestoreWithUnprobedControlledModel(t
 		OriginalStatus: "active", LastAppliedStatus: "inactive",
 	}
 	policy := Policy{ID: "p1", Enabled: true, AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
+	repo.policies = []Policy{policy}
 	specs := []probeModelSpec{{modelName: "model-a", policy: policy}, {modelName: "model-b", policy: policy}}
 	target := AdminProbeTarget{TargetID: targetID, Platform: string(upstream.PlatformSub2API), AccountID: "acc-1", AccountStatus: "inactive"}
 
@@ -146,6 +150,7 @@ func TestReconcileTargetRemoteAction_DoesNotEnableInitiallyDisabledTarget(t *tes
 		"model-a": {ConnectionID: targetID, ModelName: "model-a", State: StateSuspended, CurrentWeight: 0},
 	}
 	policy := Policy{ID: "p1", Enabled: true, AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
+	repo.policies = []Policy{policy}
 	target := AdminProbeTarget{TargetID: targetID, Platform: string(upstream.PlatformSub2API), AccountID: "acc-1", AccountStatus: "inactive"}
 
 	action, err := service.reconcileTargetRemoteAction(context.Background(), "user1", "ws1", upstream.Session{Platform: upstream.PlatformSub2API}, target, []probeModelSpec{{modelName: "model-a", policy: policy}})
@@ -170,6 +175,7 @@ func TestReconcileTargetRemoteAction_ConfirmsPendingSystemWrite(t *testing.T) {
 		OriginalStatus: "active", LastAppliedStatus: "active", PendingStatus: "inactive",
 	}
 	policy := Policy{ID: "p1", Enabled: true, AutoSuspendEnabled: true, AutoDegradeEnabled: true, AutoRemoteActionEnabled: true}
+	repo.policies = []Policy{policy}
 	target := AdminProbeTarget{TargetID: targetID, Platform: string(upstream.PlatformSub2API), AccountID: "acc-1", AccountStatus: "inactive"}
 
 	action, err := service.reconcileTargetRemoteAction(context.Background(), "user1", "ws1", upstream.Session{Platform: upstream.PlatformSub2API}, target, []probeModelSpec{{modelName: "model-a", policy: policy}})

@@ -33,7 +33,7 @@ const close = () => { if (!busy.value) emit('close') }
 async function load() {
   const current = ++sequence
   busy.value = true; error.value = ''
-  try { const result = await getQualitySettings(); if (current !== sequence) return; form.value = { ...result, detectionMethod: result.detectionMethod || 'questions', manxueBenchmark: result.manxueBenchmark || 'candy', manxueProtocol: result.manxueProtocol || 'responses', manxueServiceTier: result.manxueServiceTier || '' }; selected.value = result.questions[0]?.id || '' }
+  try { const result = await getQualitySettings(); if (current !== sequence) return; form.value = { ...result, autoSuspendEnabled: result.autoSuspendEnabled ?? false, detectionMethod: result.detectionMethod || 'questions', manxueBenchmark: result.manxueBenchmark || 'candy', manxueProtocol: result.manxueProtocol || 'responses', manxueServiceTier: result.manxueServiceTier || '' }; selected.value = result.questions[0]?.id || '' }
   catch (err) { if (current === sequence) error.value = readError(err) }
   finally { if (current === sequence) busy.value = false }
 }
@@ -93,7 +93,7 @@ async function importConfig(event: Event) {
     if (['low', 'medium', 'high', 'xhigh'].includes(data.reasoning_effort)) form.value.reasoningEffort = data.reasoning_effort
     if (['content', 'time', 'content_time'].includes(data.mode)) form.value.mode = data.mode
     form.value.questions = data.questions.slice(0, 50).map((q: Record<string, unknown>, i: number) => ({ id: typeof q.id === 'string' ? q.id : `import-${i}`, name: String(q.name || ''), enabled: q.enabled === true, prompt: String(q.prompt || ''), answer: String(q.answer || ''), matchMode: String(q.match_mode || q.matchMode || 'answer') as QualityQuestion['matchMode'], maxDurationMs: Number(q.max_duration_ms ?? q.maxDurationMs ?? 20000) }))
-    form.value.detectionMethod = 'questions'; normalizeMethodOptions(); form.value.enabled = false; selected.value = form.value.questions[0]?.id || ''; error.value = ''; tab.value = 'questions'
+    form.value.detectionMethod = 'questions'; normalizeMethodOptions(); form.value.enabled = false; form.value.autoSuspendEnabled = false; selected.value = form.value.questions[0]?.id || ''; error.value = ''; tab.value = 'questions'
   } catch (err) { error.value = err instanceof Error && err.message.startsWith(p) ? err.message : `${p}.importFailed` }
   input.value = ''
 }
@@ -103,7 +103,7 @@ const numberFields: { key: 'intervalSeconds' | 'retrySeconds' | 'failureLimit' |
   { key: 'concurrency', min: 1, max: 32 }, { key: 'timeoutSeconds', min: 5, max: 300 },
   { key: 'maxTokens', min: 128, max: 32768 }, { key: 'historyLimit', min: 1, max: 1000 },
 ]
-const numbers = computed(() => numberFields.filter(item => !manxue.value || item.key !== 'maxTokens').map(item => item.key === 'timeoutSeconds' && manxue.value ? { ...item, max: 600 } : item))
+const numbers = computed(() => numberFields.filter(item => item.key !== 'failureLimit' && item.key !== 'recoveryLimit' && (!manxue.value || item.key !== 'maxTokens')).map(item => item.key === 'timeoutSeconds' && manxue.value ? { ...item, max: 600 } : item))
 </script>
 
 <template>
@@ -156,6 +156,14 @@ const numbers = computed(() => numberFields.filter(item => !manxue.value || item
               </template>
             </div>
             <div v-show="tab === 'schedule'" class="space-y-5">
+              <div class="space-y-3 rounded-lg border border-border p-4">
+                <label class="flex items-center gap-2 text-sm font-medium"><input v-model="form.autoSuspendEnabled" type="checkbox" class="accent-primary">{{ t(`${p}.autoSuspendEnabled`) }}</label>
+                <div class="grid gap-4 sm:grid-cols-2">
+                  <label class="quality-label">{{ t(`${p}.failureLimit`) }}<input v-model.number="form.failureLimit" type="number" min="1" max="20" step="1" class="quality-input" required></label>
+                  <label class="quality-label">{{ t(`${p}.recoveryLimit`) }}<input v-model.number="form.recoveryLimit" type="number" min="1" max="20" step="1" class="quality-input" required></label>
+                </div>
+                <p class="text-xs leading-5 text-muted-foreground">{{ t(`${p}.suspensionRules`) }}</p>
+              </div>
               <div class="grid gap-4 sm:grid-cols-2"><label v-for="item in numbers" :key="item.key" class="quality-label">{{ t(`${p}.${item.key}`) }}<input v-model.number="form[item.key]" type="number" :min="item.min" :max="item.max" step="1" class="quality-input" required></label></div>
               <p class="text-xs leading-5 text-muted-foreground">{{ t(`${p}.scheduleHint`) }}</p>
               <label v-if="!manxue" class="quality-label">{{ t(`${p}.importConfig`) }}<input type="file" accept="application/json,.json" class="text-xs" @change="importConfig"><span class="text-xs font-normal text-muted-foreground">{{ t(`${p}.importHint`) }}</span></label>
@@ -163,7 +171,7 @@ const numbers = computed(() => numberFields.filter(item => !manxue.value || item
           </fieldset>
         </form>
         <footer class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border p-4">
-          <p v-if="error" role="alert" class="max-w-xl text-sm text-destructive">{{ t(connectionHealthMessageKey(error,te)) }}</p><span v-else class="text-xs text-muted-foreground">{{ t(`${p}.displayOnly`) }}</span>
+          <p v-if="error" role="alert" class="max-w-xl text-sm text-destructive">{{ t(connectionHealthMessageKey(error,te)) }}</p><span v-else class="text-xs text-muted-foreground">{{ t(`${p}.${form?.autoSuspendEnabled ? 'actionSummary' : 'displayOnly'}`) }}</span>
           <button v-if="!form && !busy" type="button" class="text-sm text-primary" @click="load">{{ t(`${p}.retry`) }}</button>
           <button v-if="form" type="submit" form="quality-settings-form" :disabled="busy" class="ml-auto inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"><Loader2 v-if="busy" class="h-4 w-4 animate-spin" /><Save v-else class="h-4 w-4" />{{ t(`${p}.${busy ? 'saving' : 'save'}`) }}</button>
         </footer>

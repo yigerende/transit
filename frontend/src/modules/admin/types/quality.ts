@@ -10,6 +10,7 @@ export interface QualityQuestion {
   maxDurationMs: number
 }
 export interface QualitySettings {
+  autoSuspendEnabled: boolean
   detectionMethod: 'questions' | 'manxue'
   manxueBenchmark: 'candy' | 'pelican'
   manxueProtocol: 'responses' | 'chat_completions'

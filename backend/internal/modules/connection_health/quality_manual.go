@@ -8,7 +8,8 @@ import (
 
 // ProbeChannelQuality bypasses the interval with the selected one-off detector,
 // retaining health suspension and result history. Automatic opt-ins do not
-// restrict an explicit manual check. It has no remote actions.
+// restrict an explicit manual check. Results follow the same opt-in suspension
+// and recovery rules as automatic checks.
 func (s *Service) ProbeChannelQuality(ctx context.Context, user, targetID, groupID, method string) (QualitySample, error) {
 	if strings.TrimSpace(groupID) == "" {
 		return QualitySample{}, requestError(ErrorRequest)

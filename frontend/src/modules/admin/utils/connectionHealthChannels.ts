@@ -23,7 +23,7 @@ export const channelsByLatestLatency = (accounts: AdminGroupAccount[]): AdminGro
     const latency = latest?.result === 'ok' ? latest.latencyMs : null
     return {
       account,
-      suspended: account.modelHealth?.some(model => model.state === 'suspended') ?? false,
+      suspended: account.qualitySuspended || (account.modelHealth?.some(model => model.state === 'suspended') ?? false),
       succeeded: latest?.result === 'ok',
       latency: latency != null && Number.isFinite(latency) && latency >= 0 ? latency : Infinity,
     }
