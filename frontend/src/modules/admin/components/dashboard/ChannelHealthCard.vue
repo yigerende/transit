@@ -15,7 +15,7 @@ const { t } = useI18n()
 const prefix = 'admin.connectionHealth'
 const qualityMethods: QualityManualMethod[] = ['questions', 'manxue_candy', 'manxue_pelican']
 const selectedForAutomation = computed(() => channelAutomationEnabled(props.account))
-const canProbeQuality = computed(() => props.qualityEnabled && props.account.qualityEnabled !== false && props.account.qualitySelected && !props.qualityUnavailable)
+const canProbeQuality = computed(() => props.qualityEnabled && props.account.qualityEnabled !== false && props.account.qualitySelected && !props.account.qualityPausedByHealth && !props.qualityUnavailable)
 const latest = computed(() => latestChannelProbe(props.account))
 const latencyPrefix = `${prefix}.latencyPriority`
 const priorityDecision = computed(() => props.account.latencyPriority)
@@ -86,13 +86,13 @@ const state = computed(() => {
     </details>
     <p v-if="selectedForAutomation && account.latencyPriorityError" class="text-xs text-amber-600 dark:text-amber-400">{{ t(`${latencyPrefix}.unavailable`) }}</p>
     <template v-if="selectedForAutomation && showQuality">
-      <QualityHistoryStrip :samples="account.qualityHistory" :state="account.qualityState" :enabled="qualityEnabled && account.qualityEnabled !== false" :selected="account.qualitySelected" :unavailable="qualityUnavailable">
+      <QualityHistoryStrip :samples="account.qualityHistory" :state="account.qualityState" :paused-by-health="account.qualityPausedByHealth" :enabled="qualityEnabled && account.qualityEnabled !== false" :selected="account.qualitySelected" :unavailable="qualityUnavailable">
         <template #controls>
           <button type="button" role="switch" :aria-checked="account.qualityEnabled !== false" :aria-label="t(`${prefix}.quality.toggleChannel`, { name: account.name || account.id })" :title="t(`${prefix}.quality.channelSwitchHint`)" :disabled="qualityBusy || qualityUnavailable" class="flex h-6 w-7 shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50" @click.stop="emit('toggle-quality', account)">
             <Loader2 v-if="qualityBusy" class="h-4 w-4 animate-spin text-muted-foreground" />
             <span v-else class="relative h-4 w-7 rounded-full transition-colors" :class="account.qualityEnabled !== false ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="account.qualityEnabled !== false ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
           </button>
-          <button v-for="method in qualityMethods" :key="method" type="button" class="inline-flex h-6 shrink-0 items-center justify-center gap-1 rounded border border-border/60 px-1.5 text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-40" :disabled="qualityBusy || Boolean(qualityProbeMethod) || !canProbeQuality" :aria-busy="qualityProbeMethod === method" :aria-label="t(`${prefix}.quality.manualLabels.${method}`)" :title="t(`${prefix}.quality.${qualityProbeMethod === method ? 'probingNow' : canProbeQuality ? `manualHints.${method}` : 'probeUnavailable'}`)" @click.stop="emit('probe-quality', account, method)">
+          <button v-for="method in qualityMethods" :key="method" type="button" class="inline-flex h-6 shrink-0 items-center justify-center gap-1 rounded border border-border/60 px-1.5 text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-40" :disabled="qualityBusy || Boolean(qualityProbeMethod) || !canProbeQuality" :aria-busy="qualityProbeMethod === method" :aria-label="t(`${prefix}.quality.manualLabels.${method}`)" :title="t(`${prefix}.quality.${qualityProbeMethod === method ? 'probingNow' : account.qualityPausedByHealth ? 'healthPausedHint' : canProbeQuality ? `manualHints.${method}` : 'probeUnavailable'}`)" @click.stop="emit('probe-quality', account, method)">
             <Loader2 v-if="qualityProbeMethod === method" class="h-3 w-3 animate-spin" aria-hidden="true" />
             <Play v-else class="h-3 w-3" aria-hidden="true" />
             {{ t(`${prefix}.quality.manualLabels.${method}`) }}

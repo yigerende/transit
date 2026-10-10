@@ -73,6 +73,7 @@ type AdminGroupAccount struct {
 	SuspensionEnabled      bool                     `json:"suspensionEnabled"`
 	SuspensionSupported    bool                     `json:"suspensionSupported"`
 	QualityEnabled         bool                     `json:"qualityEnabled"`
+	QualityPausedByHealth  bool                     `json:"qualityPausedByHealth"`
 	QualitySelected        bool                     `json:"qualitySelected"`
 	QualityState           *QualityState            `json:"qualityState,omitempty"`
 	QualityHistory         []QualitySample          `json:"qualityHistory,omitempty"`
@@ -180,6 +181,7 @@ func (s *Service) AdminGroups(ctx context.Context, userID string) ([]AdminGroupH
 		return nil, err
 	}
 	qualitySelection := newQualitySelection(policies, assignments, groupAssignments, groupExclusions)
+	qualityPaused := qualityHealthPausedTargets(states, policies, assignments, groupAssignments, groupExclusions, suspensionSettings)
 	priorityStates, err := s.repo.ListPrioritySyncStates(ctx, userID, adminAccountID)
 	if err != nil {
 		return nil, err
@@ -310,6 +312,7 @@ func (s *Service) AdminGroups(ctx context.Context, userID string) ([]AdminGroupH
 				SuspensionEnabled:          suspensionEnabled,
 				SuspensionSupported:        suspensionSupported,
 				QualitySelected:            qualitySelection.selected(group.ID, targetID),
+				QualityPausedByHealth:      qualityPaused[targetID],
 				ID:                         acc.ID,
 				Name:                       acc.Name,
 				Platform:                   acc.Platform,

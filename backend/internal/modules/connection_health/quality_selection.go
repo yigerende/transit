@@ -6,6 +6,7 @@ import "context"
 // global/group switches control execution independently of health probe settings.
 type qualitySelection struct {
 	disabledChannels map[string]bool
+	pausedChannels   map[string]bool
 	groups           map[string]bool
 	targets          map[string]bool
 	excluded         map[string]map[string]bool
@@ -42,6 +43,40 @@ func (s qualitySelection) selected(group, target string) bool {
 	return !s.disabledChannels[target] && !s.excluded[group][target] && (s.groups[group] || s.targets[target])
 }
 
+func (s qualitySelection) canProbe(group, target string) bool {
+	return s.selected(group, target) && !s.pausedChannels[target]
+}
+
+// Health state is shared by a channel's groups. Only a still-assigned, enabled
+// model with suspension permission can hold quality checks; stale model/policy
+// snapshots and a single failed probe must not prevent them from resuming.
+func qualityHealthPausedTargets(states []ConnectionHealthState, policies []Policy, assignments []PolicyAssignment, groups []GroupPolicyAssignment, exclusions []GroupTargetExclusion, suspension map[string]bool) map[string]bool {
+	targetPolicies := assignedEnabledPoliciesByTarget(policies, assignments)
+	groupPolicies := assignedEnabledPoliciesByGroup(policies, groups)
+	excluded := groupTargetExclusionIndex(exclusions)
+	paused := map[string]bool{}
+	for _, state := range states {
+		if state.State != StateSuspended && state.State != StateObserving || !channelSuspensionEnabled(suspension, state.ConnectionID) {
+			continue
+		}
+		workspace := state.UserID + "|" + state.AdminAccountID
+		group := state.OwnGroupID
+		if group == "" {
+			group = state.UpstreamGroupID
+		}
+		effective := targetPolicies[workspace][state.ConnectionID]
+		if !excluded[workspace][group][state.ConnectionID] {
+			effective = mergePoliciesByID(effective, groupPolicies[workspace][group])
+		}
+		for _, spec := range candidateModelSpecs([]string{state.ModelName}, effective) {
+			if stateWithoutSuspension(state, spec.policy).State == StateSuspended {
+				paused[state.ConnectionID] = true
+			}
+		}
+	}
+	return paused
+}
+
 func (s *Service) loadQualitySelection(ctx context.Context, user, workspace string) (qualitySelection, error) {
 	policies, err := s.repo.ListPolicies(ctx, user, workspace)
 	if err != nil {
@@ -60,6 +95,15 @@ func (s *Service) loadQualitySelection(ctx context.Context, user, workspace stri
 		return qualitySelection{}, err
 	}
 	selection := newQualitySelection(policies, assignments, groups, exclusions)
+	states, err := s.repo.ListStatesByWorkspace(ctx, user, workspace)
+	if err != nil {
+		return qualitySelection{}, err
+	}
+	suspension, err := s.repo.ListChannelSuspensions(ctx, user, workspace)
+	if err != nil {
+		return qualitySelection{}, err
+	}
+	selection.pausedChannels = qualityHealthPausedTargets(states, policies, assignments, groups, exclusions, suspension)
 	if s.qualityRepo != nil {
 		channels, err := s.qualityRepo.ListQualityChannels(ctx, user, workspace)
 		if err != nil {

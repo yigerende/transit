@@ -139,7 +139,7 @@ async function runChannelQuality(account: AdminGroupAccount, method: QualityManu
   const group = selectedGroup.value
   const target = account.targetId
   if (!group?.quality?.enabled || !group.quality.globalEnabled || group.quality.errorKey
-    || account.qualityEnabled === false || !account.qualitySelected
+    || account.qualityEnabled === false || !account.qualitySelected || account.qualityPausedByHealth
     || qualityBusyTargets.value.has(target) || qualityProbeMethods.value.has(target)) return
   qualityProbeMethods.value.set(target, method)
   delete qualityChannelErrors.value[target]
