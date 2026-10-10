@@ -7,10 +7,10 @@ export const defaultLatencyPriority = (): LatencyPriorityConfig => ({
   modelName: '', sampleCount: 5, minSamples: 1, maxAgeSeconds: 300,
   weights: defaultLatencyWeights(5), hysteresisSeconds: 0.5,
   bands: [
-    { minSeconds: 0, maxSeconds: 5, priority: 1 },
-    { minSeconds: 5, maxSeconds: 10, priority: 2 },
-    { minSeconds: 10, maxSeconds: 15, priority: 3 },
-    { minSeconds: 15, maxSeconds: null, priority: 4 },
+    { minSeconds: 0, maxSeconds: 5, priority: 10 },
+    { minSeconds: 5, maxSeconds: 10, priority: 200 },
+    { minSeconds: 10, maxSeconds: 15, priority: 400 },
+    { minSeconds: 15, maxSeconds: null, priority: 600 },
   ],
   insufficientPriority: 50, degradedPriority: 100, suspendedPriority: 10000,
 })

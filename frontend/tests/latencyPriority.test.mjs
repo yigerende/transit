@@ -37,7 +37,7 @@ test('sample and band validation rejects ambiguous priority mappings', () => {
     c => { c.minSamples = c.sampleCount + 1 }, c => { c.maxAgeSeconds = 0 }, c => { c.weights = [1] },
     c => { c.weights[0] = 0 }, c => { c.weights[0] = NaN }, c => { c.hysteresisSeconds = -1 },
     c => { c.bands[1].minSeconds = 4 }, c => { c.bands[1].minSeconds = 6 },
-    c => { c.bands[3].maxSeconds = 20 }, c => { c.bands[1].priority = 1 },
+    c => { c.bands[3].maxSeconds = 20 }, c => { c.bands[1].priority = c.bands[0].priority },
     c => { c.bands[1].maxSeconds = null }, c => { c.suspendedPriority = -1 },
   ]) {
     const config = defaultLatencyPriority(); mutate(config)
