@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
+	"transithub/backend/internal/modules/upstream"
 
 	"transithub/backend/internal/modules/my_sites"
 )
@@ -71,6 +73,11 @@ type healthRepository interface {
 // Service 组装 connection_health 模块的全部业务逻辑：聚合查询、策略管理、手动动作、
 // 真实探活执行。所有对外可见字段都不含 upstream_key，符合任务书的敏感信息约束。
 type Service struct {
+	monitorGroupCache   monitorDirectoryCache[[]upstream.AdminGroupInfo]
+	monitorAccountCache monitorDirectoryCache[[]upstream.AdminGroupAccountInfo]
+	monitorFetchOnce    sync.Once
+	monitorFetchSlots   chan struct{}
+
 	repo            healthRepository
 	mySites         MySitesReader
 	sites           SiteLookup

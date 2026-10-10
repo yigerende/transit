@@ -1035,6 +1035,7 @@ export default {
         modelRequired: '请输入有效的探活模型名称。'
       },
       cards: {
+        loadingChannels: '正在加载渠道…',
         accounts: '监控 {count}/{total}',
         recent: '近 {count} 次探活',
         slow: '高延迟 {count}',

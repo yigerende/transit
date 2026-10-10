@@ -37,18 +37,17 @@ import type {
   PolicyInput,
 } from '../types/connectionHealth'
 import type { QualityManualMethod } from '../types/quality'
+import { useGroupHealthPage } from '../composables/useGroupHealthPage'
 import { groupAutomationPolicyIds, policyInputWithEnabled } from '../utils/connectionHealthPolicy'
 import { channelAutomationEnabled, channelsByLatestLatency } from '../utils/connectionHealthChannels'
 
 const { t, te } = useI18n()
 const {
   groups,
-  adminGroups,
   events,
   policies,
-  isLoading,
   errorKey,
-  loadAll,
+  loadGroups,
   loadEvents,
   loadPolicies,
   removePolicy,
@@ -59,6 +58,7 @@ const {
 const searchText = ref('')
 const selectedType = ref('')
 const selectedGroupId = ref('')
+const { adminGroups, isLoading, errorKey: groupLoadError, detailErrors, detailLoading, detailsLoaded, loadAll, loadGroupDetail } = useGroupHealthPage(() => selectedGroupId.value)
 const groupProbeOpen = ref(false)
 const probeGroup = ref<AdminGroupHealth | null>(null)
 const qualitySettingsOpen = ref(false)
@@ -192,9 +192,10 @@ const filteredGroups = computed(() => {
 const readableMessage = (rawKey: string): string => t(connectionHealthMessageKey(rawKey, te))
 
 const selectedGroup = computed(() => filteredGroups.value.find(group => group.id === selectedGroupId.value) ?? filteredGroups.value[0] ?? null)
+watch(selectedGroupId, (id) => { if (id) void loadGroupDetail(id) })
 const sortedChannels = computed(() => channelsByLatestLatency(selectedGroup.value?.accounts ?? []))
-const automatedChannels = computed(() => sortedChannels.value.filter(channelAutomationEnabled))
-const inactiveChannels = computed(() => sortedChannels.value.filter(account => !channelAutomationEnabled(account)))
+const automatedChannels = computed(() => selectedGroup.value && detailsLoaded.value.has(selectedGroup.value.id) ? sortedChannels.value.filter(channelAutomationEnabled) : [])
+const inactiveChannels = computed(() => selectedGroup.value && detailsLoaded.value.has(selectedGroup.value.id) ? sortedChannels.value.filter(account => !channelAutomationEnabled(account)) : [])
 watch(filteredGroups, (next) => {
   if (!next.some(group => group.id === selectedGroupId.value)) selectedGroupId.value = next[0]?.id ?? ''
 }, { immediate: true })
@@ -208,7 +209,7 @@ const groupProbeState = (group: AdminGroupHealth): string => {
   const latest = group.recentProbes?.[0]
   return latest ? (latest.result === 'ok' ? 'healthy' : 'unhealthy') : 'pending'
 }
-const refreshProbeResults = async () => { await loadAll({ silent: true }) }
+const refreshProbeResults = async () => { await loadAll({ silent: true, force: true }) }
 
 const loadSiteNames = async () => {
   try {
@@ -224,6 +225,7 @@ onMounted(() => {
   void loadEvents()
   void loadPolicies()
   void loadSiteNames()
+  void loadGroups({ silent: true })
 })
 
 const documentVisibility = useDocumentVisibility()
@@ -248,7 +250,7 @@ watch(documentVisibility, (visibility) => {
 })
 
 const refresh = async () => {
-  await Promise.all([loadAll(), loadPolicies(), loadEvents(selectedConnectionId.value || undefined)])
+  await Promise.all([loadAll({ force: true }), loadPolicies(), ...(eventsDialogOpen.value ? [loadEvents(selectedConnectionId.value || undefined)] : [])])
 }
 
 const siteName = (siteId: string): string => siteNameMap.value.get(siteId) ?? siteId
@@ -256,15 +258,19 @@ const siteName = (siteId: string): string => siteNameMap.value.get(siteId) ?? si
 // 分组启用/管理抽屉。
 const setupDrawerOpen = ref(false)
 const setupGroup = ref<AdminGroupHealth | null>(null)
+let editorOpenSequence = 0
 
-const openSetup = (group: AdminGroupHealth) => {
-  setupGroup.value = group
+const openSetup = async (group: AdminGroupHealth) => {
+  const sequence = ++editorOpenSequence
+  const loaded = await loadGroupDetail(group.id)
+  if (!loaded || sequence !== editorOpenSequence) return
+  setupGroup.value = loaded
   setupDrawerOpen.value = true
 }
 
 const onSetupSaved = async () => {
   setupDrawerOpen.value = false
-  await Promise.all([loadAll({ silent: true }), loadPolicies()])
+  await Promise.all([loadAll({ silent: true, force: true }), loadPolicies()])
 }
 
 // 手动探活记录历史，不改变策略状态或触发远端动作。
@@ -338,9 +344,12 @@ const openCreatePolicy = () => {
   policyDrawerOpen.value = true
 }
 
-const openEditPolicy = (policy: ConnectionHealthPolicy, group: AdminGroupHealth | null = null) => {
+const openEditPolicy = async (policy: ConnectionHealthPolicy, group: AdminGroupHealth | null = null) => {
+  const sequence = ++editorOpenSequence
+  const loaded = group ? await loadGroupDetail(group.id) : null
+  if ((group && !loaded) || sequence !== editorOpenSequence) return
   editingPolicy.value = policy
-  editingPolicyGroup.value = group
+  editingPolicyGroup.value = loaded
   policySaveError.value = ''
   policyDrawerOpen.value = true
 }
@@ -364,7 +373,7 @@ const handleSavePolicy = async (input: PolicyInput, excludedTargetIds?: string[]
       return
     }
     policyDrawerOpen.value = false
-    await Promise.all([loadAll({ silent: true }), loadPolicies()])
+    await Promise.all([loadAll({ silent: true, force: true }), loadPolicies()])
   } finally {
     policySaving.value = false
   }
@@ -379,7 +388,7 @@ const togglePolicyEnabled = async (policy: ConnectionHealthPolicy) => {
     const latest = (await listConnectionHealthPolicies()).find(item => item.id === policy.id)
     if (!latest) throw new Error('admin.connectionHealth.errors.notFound')
     if (await savePolicy(policyInputWithEnabled(latest, !policy.enabled))) {
-      await loadAll({ silent: true })
+      await loadAll({ silent: true, force: true })
     }
   } catch (err) {
     errorKey.value = err instanceof Error ? err.message : 'admin.connectionHealth.errors.request'
@@ -394,7 +403,7 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
   deletePolicyError.value = ''
   try {
     if (await removePolicy(policy.id)) {
-      await loadAll({ silent: true })
+      await loadAll({ silent: true, force: true })
     } else {
       deletePolicyError.value = readableMessage(errorKey.value)
     }
@@ -423,6 +432,7 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
       </div>
     </header>
 
+    <p v-if="groupLoadError" role="alert" class="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{{ readableMessage(groupLoadError) }}</p>
     <p v-if="errorKey" role="alert" class="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{{ readableMessage(errorKey) }}</p>
     <p v-if="qualityError" role="alert" class="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{{ readableMessage(qualityError) }}</p>
 
@@ -460,7 +470,7 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
               :policies="groupPolicies.get(group.id) ?? []"
               :usage-counts="policyUsageCounts"
               :busy-policy-id="busyPolicyId"
-              :unavailable="(groupPolicyIds.get(group.id)?.length ?? 0) !== (groupPolicies.get(group.id)?.length ?? 0)"
+              :unavailable="group.accountsLoaded === false || (groupPolicyIds.get(group.id)?.length ?? 0) !== (groupPolicies.get(group.id)?.length ?? 0)"
               @edit="openEditPolicy($event, group)"
               @toggle="togglePolicyEnabled"
               @setup="openSetup(group)"
@@ -479,8 +489,8 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
       <div v-if="selectedGroup" class="min-w-0">
         <header class="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 p-5">
           <div class="min-w-0">
-            <div class="flex flex-wrap items-center gap-2"><h2 class="break-words text-lg font-semibold text-foreground">{{ selectedGroup.name }}</h2><span class="rounded bg-surface px-2 py-0.5 text-xs text-muted-foreground">{{ selectedGroup.platform }}</span></div>
-            <p class="mt-1 text-xs text-muted-foreground">{{ t('admin.connectionHealth.groupProbe.channelCount', { count: selectedGroup.monitoredAccountCount ?? 0, total: selectedGroup.accountCount }) }}</p>
+            <div class="flex flex-wrap items-center gap-2"><h2 class="break-words text-lg font-semibold text-foreground">{{ selectedGroup.name }}</h2><Loader2 v-if="detailLoading.has(selectedGroup.id) && detailsLoaded.has(selectedGroup.id)" class="h-3.5 w-3.5 animate-spin text-muted-foreground" /><span class="rounded bg-surface px-2 py-0.5 text-xs text-muted-foreground">{{ selectedGroup.platform }}</span></div>
+            <p v-if="selectedGroup.accountsLoaded !== false" class="mt-1 text-xs text-muted-foreground">{{ t('admin.connectionHealth.groupProbe.channelCount', { count: selectedGroup.monitoredAccountCount ?? 0, total: selectedGroup.accountCount }) }}</p>
           </div>
           <Button variant="secondary" size="sm" @click="openSetup(selectedGroup)"><Settings2 class="h-4 w-4" />{{ t('admin.connectionHealth.groupDetail.manageMonitoring') }}</Button>
         </header>
@@ -489,8 +499,10 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
             <span>{{ t('admin.connectionHealth.groupProbe.channels') }}</span>
             <div class="flex flex-wrap gap-3"><span class="inline-flex items-center gap-1"><i class="h-2 w-2 rounded-sm bg-emerald-500" />{{ t('admin.connectionHealth.cards.success') }}</span><span class="inline-flex items-center gap-1"><i class="h-2 w-2 rounded-sm bg-amber-400" />{{ t('admin.connectionHealth.cards.slowLegend') }}</span><span class="inline-flex items-center gap-1"><i class="h-2 w-2 rounded-sm bg-red-500" />{{ t('admin.connectionHealth.cards.failure') }}</span></div>
           </div>
+          <p v-if="detailErrors[selectedGroup.id]" role="alert" class="flex items-center justify-between gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{{ readableMessage(detailErrors[selectedGroup.id]) }}<button type="button" class="shrink-0 underline" @click="loadGroupDetail(selectedGroup.id, true)">{{ t('admin.connectionHealth.refresh') }}</button></p>
+          <div v-else-if="!detailsLoaded.has(selectedGroup.id)" class="space-y-3" aria-busy="true"><p class="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 class="h-4 w-4 animate-spin" />{{ t('admin.connectionHealth.cards.loadingChannels') }}</p><div v-for="i in 3" :key="i" class="h-32 animate-pulse rounded-lg bg-surface" /></div>
           <p v-if="selectedGroup.accountsError" role="alert" class="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{{ readableMessage(selectedGroup.accountsError) }}</p>
-          <p v-else-if="!selectedGroup.accounts.length" class="py-16 text-center text-sm text-muted-foreground">{{ t('admin.connectionHealth.groupDetail.empty') }}</p>
+          <p v-else-if="detailsLoaded.has(selectedGroup.id) && !selectedGroup.accounts.length" class="py-16 text-center text-sm text-muted-foreground">{{ t('admin.connectionHealth.groupDetail.empty') }}</p>
           <p v-if="(selectedGroup.priorityConflictCount ?? 0) > 0" class="text-xs text-amber-600">{{ t('admin.connectionHealth.cards.priorityConflict', { count: selectedGroup.priorityConflictCount }) }}</p>
           <ChannelHealthCard v-for="account in automatedChannels" :key="account.targetId" :account="account" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" :show-quality="Boolean(selectedGroup.quality?.enabled || account.qualityEnabled)" :quality-enabled="Boolean(selectedGroup.quality?.globalEnabled)" :quality-unavailable="Boolean(selectedGroup.quality?.errorKey)" :quality-busy="qualityBusyTargets.has(account.targetId)" :quality-probe-method="qualityProbeMethods.get(account.targetId)" @probe-quality="runChannelQuality" @view-quality="openQualityHistory" :quality-error="qualityChannelErrors[account.targetId]" :priority-busy="priorityBusyTargets.has(account.targetId)" :priority-error="priorityErrors[account.targetId]" @toggle-priority="toggleChannelPriority" :suspension-busy="suspensionBusyTargets.has(account.targetId)" :suspension-error="suspensionErrors[account.targetId]" @toggle-suspension="toggleChannelSuspension" @toggle-quality="toggleChannelQuality" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
           <details v-if="inactiveChannels.length" :key="selectedGroup.id" class="group rounded-lg border border-border/60">

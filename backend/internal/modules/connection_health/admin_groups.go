@@ -16,6 +16,9 @@ import (
 // real_connections 对接链路。探活字段（probeAvailable / modelHealth 等）来自独立 admin 探活
 // 状态（connection_health_states 中以 targetId 为键的行），不再从 real_connections 叠加。
 type AdminGroupHealth struct {
+	AccountsLoaded      bool `json:"accountsLoaded"`
+	DirectoryRefreshing bool `json:"directoryRefreshing,omitempty"`
+
 	ID                    string                  `json:"id"`
 	Name                  string                  `json:"name"`
 	Platform              string                  `json:"platform"`
@@ -137,6 +140,10 @@ func (s *Service) SetPlatformGroupReader(reader PlatformGroupReader) {
 // -> 独立探活状态叠加」聚合分组健康主列表。探活状态来自以 targetId 为键的独立探活状态行，
 // 不依赖 real_connections。
 func (s *Service) AdminGroups(ctx context.Context, userID string) ([]AdminGroupHealth, error) {
+	return s.readAdminGroups(ctx, userID, adminGroupReadOptions{})
+}
+
+func (s *Service) readAdminGroups(ctx context.Context, userID string, options adminGroupReadOptions) ([]AdminGroupHealth, error) {
 	adminAccountID, err := s.currentAdminAccountID(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -151,7 +158,31 @@ func (s *Service) AdminGroups(ctx context.Context, userID string) ([]AdminGroupH
 	}
 	platform := string(session.Platform)
 
-	groups, err := s.platformGroups.FetchAdminAllGroups(session)
+	cachedDirectory := options.summary || options.groupID != ""
+	var groups []upstream.AdminGroupInfo
+	var inventory []monitorInventoryGroup
+	var directoryRefreshing bool
+	if cachedDirectory {
+		key := monitorDirectoryKey(userID, adminAccountID, session)
+		groups, _, directoryRefreshing, err = s.monitorGroupCache.get(ctx, key, true, func() ([]upstream.AdminGroupInfo, error) { return s.platformGroups.FetchAdminAllGroups(session) })
+		if err == nil {
+			if options.groupID != "" {
+				found := false
+				for _, group := range groups {
+					if group.ID == options.groupID {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return nil, requestError(ErrorNotFound)
+				}
+			}
+			inventory = s.monitorAccounts(ctx, key, session, groups, !options.summary)
+		}
+	} else {
+		groups, err = s.platformGroups.FetchAdminAllGroups(session)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +247,10 @@ func (s *Service) AdminGroups(ctx context.Context, userID string) ([]AdminGroupH
 	}
 	// 真实上游 API Key 分组倍率仅用于展示，不参与探活或优先级计算。读取失败时降级为空，
 	// 保证既有分组健康功能不会因为可选的倍率信息不可用而中断。
-	upstreamKeyGroups := s.upstreamKeyGroupsByAdminAccount(ctx, userID, adminAccountID, platform)
+	var upstreamKeyGroups map[string]upstreamKeyGroupInfo
+	if !cachedDirectory {
+		upstreamKeyGroups = s.upstreamKeyGroupsByAdminAccount(ctx, userID, adminAccountID, platform)
+	}
 
 	// stateIndex[targetId][modelName] = 独立探活当前健康状态。旧的 real_connection 状态行
 	// 也会出现在这里（connection_id 为 UUID），但不会与 targetId 命名空间碰撞，互不影响。
@@ -231,8 +265,10 @@ func (s *Service) AdminGroups(ctx context.Context, userID string) ([]AdminGroupH
 	}
 
 	result := make([]AdminGroupHealth, 0, len(groups))
-	for _, group := range groups {
+	for groupIndex, group := range groups {
 		health := AdminGroupHealth{
+			AccountsLoaded:      true,
+			DirectoryRefreshing: directoryRefreshing,
 			ID:                  group.ID,
 			GroupProbeSupported: session.Platform == upstream.PlatformSub2API,
 			Name:                group.Name,
@@ -257,7 +293,15 @@ func (s *Service) AdminGroups(ctx context.Context, userID string) ([]AdminGroupH
 			}
 		}
 
-		accounts, accErr := s.platformGroups.ListAdminGroupAccounts(session, group)
+		var accounts []upstream.AdminGroupAccountInfo
+		var accErr error
+		if cachedDirectory {
+			accounts, accErr = inventory[groupIndex].accounts, inventory[groupIndex].err
+			health.AccountsLoaded = inventory[groupIndex].loaded
+			health.DirectoryRefreshing = health.DirectoryRefreshing || inventory[groupIndex].refreshing
+		} else {
+			accounts, accErr = s.platformGroups.ListAdminGroupAccounts(session, group)
+		}
 		if accErr != nil {
 			log.Printf("[connection-health] admin group accounts fetch failed group_id=%s group_name=%s err=%v", group.ID, group.Name, accErr)
 			health.AccountsError = ErrorAccountsFetch
@@ -375,10 +419,36 @@ func (s *Service) AdminGroups(ctx context.Context, userID string) ([]AdminGroupH
 		health.HealthSummary = summary
 		result = append(result, health)
 	}
-	s.attachChannelProbeBudgets(ctx, userID, adminAccountID, result, policyByID)
-	s.attachGroupProbeHistory(ctx, userID, adminAccountID, result)
-	s.attachLatencyPriorities(ctx, userID, adminAccountID, session.Platform, result, policies, states, priorityStates)
-	s.attachQuality(ctx, userID, adminAccountID, result)
+	if options.summary {
+		// Histories on the sidebar belong to gateway groups, not their channels.
+		summaries := make([]AdminGroupHealth, len(result))
+		for i := range result {
+			summaries[i] = result[i]
+			summaries[i].Accounts = nil
+		}
+		s.attachGroupProbeHistory(ctx, userID, adminAccountID, summaries)
+		s.attachQualityGroupSettings(ctx, userID, adminAccountID, summaries)
+		for i := range result {
+			result[i].RecentProbes = summaries[i].RecentProbes
+			result[i].ProbeHistoryError = summaries[i].ProbeHistoryError
+			result[i].Quality = summaries[i].Quality
+		}
+	} else {
+		// Resolve shared-channel decisions with memberships from every group before
+		// selecting the requested group. Expensive histories are only read for it.
+		s.attachChannelProbeBudgets(ctx, userID, adminAccountID, result, policyByID)
+		s.attachLatencyPriorities(ctx, userID, adminAccountID, session.Platform, result, policies, states, priorityStates)
+		if options.groupID != "" {
+			for _, group := range result {
+				if group.ID == options.groupID {
+					result = []AdminGroupHealth{group}
+					break
+				}
+			}
+		}
+		s.attachGroupProbeHistory(ctx, userID, adminAccountID, result)
+		s.attachQuality(ctx, userID, adminAccountID, result)
+	}
 	configs, err := s.repo.ListGroupProbeConfigs(ctx, userID, adminAccountID)
 	if err != nil {
 		return nil, err

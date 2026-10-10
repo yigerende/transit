@@ -91,6 +91,12 @@ export const getConnectionHealthGroups = async (): Promise<OwnGroupHealth[]> =>
 export const getConnectionHealthAdminGroups = async (): Promise<AdminGroupHealth[]> =>
   requestJson<AdminGroupHealth[]>('/connection-health/admin-groups')
 
+export const getConnectionHealthGroupSummaries = (): Promise<AdminGroupHealth[]> =>
+  requestJson('/connection-health/admin-groups?view=summary')
+
+export const getConnectionHealthGroupDetail = (groupId: string): Promise<AdminGroupHealth> =>
+  requestJson(`/connection-health/admin-groups/${encodeURIComponent(groupId)}/health`)
+
 export const getConnectionHealthEvents = async (connectionId?: string, limit = 100): Promise<ConnectionHealthEvent[]> => {
   const params = new URLSearchParams()
   if (connectionId) params.set('connectionId', connectionId)

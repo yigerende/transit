@@ -1035,6 +1035,7 @@ export default {
         modelRequired: 'Enter a valid probe model name.'
       },
       cards: {
+        loadingChannels: 'Loading channels…',
         accounts: 'Monitoring {count}/{total}',
         recent: 'Last {count} probes',
         slow: 'Slow {count}',

@@ -96,6 +96,29 @@ func (s *Service) SetChannelQuality(ctx context.Context, user, targetID string, 
 	return QualityChannel{TargetID: target.TargetID, Enabled: enabled, Independent: enabled}, nil
 }
 
+func (s *Service) attachQualityGroupSettings(ctx context.Context, user, workspace string, groups []AdminGroupHealth) {
+	if s.qualityRepo == nil {
+		return
+	}
+	settings, err := s.qualityRepo.GetQualitySettings(ctx, user, workspace)
+	if err != nil {
+		s.qualityUnavailable(groups)
+		return
+	}
+	switches, err := s.qualityRepo.ListQualityGroups(ctx, user, workspace)
+	if err != nil {
+		s.qualityUnavailable(groups)
+		return
+	}
+	enabled := map[string]bool{}
+	for _, group := range switches {
+		enabled[group.GroupID] = group.Enabled
+	}
+	for i := range groups {
+		groups[i].Quality = &QualityGroup{GroupID: groups[i].ID, Enabled: enabled[groups[i].ID], GlobalEnabled: settings.Enabled}
+	}
+}
+
 func (s *Service) attachQuality(ctx context.Context, user, workspace string, groups []AdminGroupHealth) {
 	if s.qualityRepo == nil {
 		return

@@ -112,6 +112,7 @@ func (s *Service) SetChannelPriority(ctx context.Context, user, targetID string,
 	if err = s.repo.SetChannelPriority(ctx, user, workspace, target.TargetID, enabled); err != nil {
 		return ChannelPriority{}, err
 	}
+	defer s.invalidateMonitorAccount(user, workspace, target.AccountID)
 	result := ChannelPriority{TargetID: target.TargetID, Enabled: enabled, Priority: cloneIntPointer(account.Priority)}
 	if !enabled {
 		for _, state := range states {

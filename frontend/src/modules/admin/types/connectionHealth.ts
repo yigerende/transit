@@ -172,6 +172,8 @@ export interface GroupProbeSample {
 }
 
 export interface AdminGroupHealth {
+  accountsLoaded?: boolean
+  directoryRefreshing?: boolean
   quality?: import('./quality').QualityGroup
   probeConfig?: GroupProbeConfig
   groupProbeSupported?: boolean
