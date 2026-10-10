@@ -435,7 +435,7 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 	if err != nil {
 		return QualitySample{}, err
 	}
-	sample := QualitySample{ID: id, TargetID: c.targetID, Model: q.Model, QuestionID: question.ID, QuestionName: question.Name, ExpectedAnswer: question.Answer, MatchMode: question.MatchMode, MaxDurationMS: question.MaxDurationMS}
+	sample := QualitySample{Manual: manual, ID: id, TargetID: c.targetID, Model: q.Model, QuestionID: question.ID, QuestionName: question.Name, ExpectedAnswer: question.Answer, MatchMode: question.MatchMode, MaxDurationMS: question.MaxDurationMS}
 	started := time.Now()
 	sample.StartedAt = &started
 	sample.Prompt, sample.Mode = question.Prompt, q.Mode

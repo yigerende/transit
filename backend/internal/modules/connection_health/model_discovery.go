@@ -25,6 +25,8 @@ type DiscoveredModel struct {
 	Name           string `json:"name"`
 	OwnedBy        string `json:"ownedBy"`
 	ProviderFamily string `json:"providerFamily"`
+	ProbeMode      string `json:"probeMode,omitempty"`
+	PolicyID       string `json:"policyId,omitempty"`
 }
 
 // ModelDiscoveryRunner 独立于 RealProbeRunner，专门请求 /v1/models 列表。
@@ -90,13 +92,20 @@ func (r *ModelDiscoveryRunner) ListModels(ctx context.Context, baseURL string, k
 }
 
 // DiscoverTargetModels 是手动探活弹窗打开时调用的服务方法：重新解析 targetId 归属 + 凭据，
-// 拿到该 target 当前真实可用的模型列表，模型池不依赖任何探活策略配置。
+// 拿到该 target 当前真实可用的模型列表，有生效策略时返回其模型和探活方式；无策略时发现渠道模型。
 func (s *Service) DiscoverTargetModels(ctx context.Context, userID string, targetID string) ([]DiscoveredModel, error) {
-	session, _, account, _, err := s.resolveManualTarget(ctx, userID, targetID)
+	job, err := s.manualProbeJob(ctx, userID, targetID)
 	if err != nil {
 		return nil, err
 	}
-	cred, err := s.platformGroups.ResolveProbeCredential(session, account)
+	if len(job.models) > 0 {
+		models := make([]DiscoveredModel, 0, len(job.models))
+		for _, spec := range job.models {
+			models = append(models, DiscoveredModel{ID: spec.modelName, Name: spec.modelName, ProviderFamily: spec.providerFamily, ProbeMode: normalizeProbeMode(spec.policy.ProbeMode), PolicyID: spec.policy.ID})
+		}
+		return models, nil
+	}
+	cred, err := s.platformGroups.ResolveProbeCredential(job.session, job.account)
 	if err != nil {
 		return nil, requestError(reasonToErrorKey(upstream.ProbeCredentialReason(err)))
 	}

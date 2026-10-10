@@ -875,7 +875,7 @@ export default {
       },
       latencyPriority: {
         averageFirstToken: '短期加权首字',
-  "help": "仅调整上游优先级。选定一个探活模型，只用有效期内成功的自动探活计算加权延迟。",
+  "help": "仅调整上游优先级。选定一个探活模型，使用有效期内成功的策略探活（含手动）计算加权延迟。",
   "model": "用于延迟判定的模型",
   "firstModel": "自动选择首个启用模型（按名称排序）",
   "sampleCount": "平均样本数",
@@ -982,7 +982,7 @@ export default {
         probingNow: '正在降智检测…', probeBusy: '该渠道正在降智检测，请稍后刷新查看结果。', probeUnavailable: '当前渠道不可检测或配置已变更，请检查渠道并刷新重试。',
         stripTitle: '降智检测', toggleGroup: '切换分组 {name} 的降智检测', globalPaused: '全局暂停', configureFirst: '请先启用并保存全局降智检测配置，再开启左侧分组。',
         invalidModel: '请输入有效的检测模型。', invalidConfig: '请检查检测参数：间隔 10～86400 秒，连续次数 1～20，并发 1～32，题目超时 5～300 秒 / API 超时 5～600 秒，输出 Token 128～32768，历史 1～1000。', invalidQuestion: '请填写题目名称、内容和答案，并检查耗时阈值（1～300000 ms）及匹配方式。', invalidRegex: '答案正则表达式无效。', questionsRequired: '开启检测需至少启用一道题，题库最多 50 题。',
-        statuses: { healthPaused: '随探活暂停', normal: '无降智', suspect: '疑似降智', degraded: '降智', recovering: '恢复观察', error: '检测失败', off: '未开启', notSelected: '未选择', pending: '待检测', unavailable: '记录不可用' },
+        statuses: { manualOnly: '仅手动测试', healthPaused: '随探活暂停', normal: '无降智', suspect: '疑似降智', degraded: '降智', recovering: '恢复观察', error: '检测失败', off: '未开启', notSelected: '未选择', pending: '待检测', unavailable: '记录不可用' },
         selectionHint: '此渠道未在自动化策略中选中，不执行降智检测；已有历史记录保留。',
         healthPausedHint: '该渠道已探活暂停，降智检测同步暂停；探活恢复后按原配置自动继续，已有记录保留。',
         passed: '通过', failed: '答题异常', error: '检测失败', recent: '近 {count} 次', failedCount: '答题异常 {count}', errorCount: '检测失败 {count}', passRate: '通过率 {rate}', rateHint: '仅统计有效答题；网络等检测失败不计入通过率。',
@@ -1532,7 +1532,7 @@ export default {
             },
             manualProbe: {
               title: '9. 手动探活',
-              description: '手动探活会实时获取渠道支持的模型，选择模型后即可测试。结果会保存到渠道探活历史，但不修改自动策略状态、不消耗策略预算，也不触发自动降级或恢复。未分配策略的渠道也可以手动探活。左侧分组探活使用独立的分组 Key，通过 Sub2API 转发请求，结果与渠道记录分开保存。'
+              description: '手动探活使用当前生效策略的模型、探活方式、最大延迟和每日预算，计入连续失败、恢复次数及加权延迟，按已允许的动作调整优先级或暂停、恢复。无生效策略时可以手动测试并记录历史。手动降智测试使用全局对应配置，遵守探活暂停限制。左侧分组探活使用独立的分组 Key，通过 Sub2API 转发请求，结果与渠道记录分开保存。'
             },
             nextProbeCopy: {
               title: '10. "下次探活"文案说明',
@@ -1562,7 +1562,7 @@ export default {
         loadingModels: '正在从上游获取可用模型列表...',
         retryLoad: '重新加载',
         empty: '未获取到任何可用模型。',
-        selectHint: '默认选择第一个模型，可多选。结果会保存到渠道探活记录。',
+        selectHint: '默认选择第一个模型，可多选。按生效策略测试并参与失败、恢复及延迟判断，结果写入探活条；无生效策略时仅测试并记录。',
         startTest: '开始测试',
         testing: '测试中...',
         resultTitle: '测试结果',
@@ -1583,7 +1583,8 @@ export default {
         unknown: '暂时无法读取分组健康数据，请稍后重试。',
         network: '网络异常，请检查连接后重试。',
         notFound: '探活目标不存在或无权访问。',
-        noMatchingModels: '所选模型未匹配当前探活策略。',
+        noMatchingModels: '所选模型未匹配当前探活策略，请重新打开探活窗口。',
+        probeBudgetExhausted: '策略今日探活预算已用完，本次未执行。',
         accountsFetch: '该分组账号列表加载失败。',
         targetNotFound: '探活目标不存在或不属于当前工作区。',
         credentialUnavailable: '无法安全获取上游凭据，暂不可探活。',

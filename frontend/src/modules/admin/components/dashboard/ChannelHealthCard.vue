@@ -15,6 +15,8 @@ const { t } = useI18n()
 const prefix = 'admin.connectionHealth'
 const qualityMethods: QualityManualMethod[] = ['questions', 'manxue_candy', 'manxue_pelican']
 const selectedForAutomation = computed(() => channelAutomationEnabled(props.account))
+const hasManualProbes = computed(() => props.account.recentProbes?.some(sample => sample.manual))
+const hasManualQuality = computed(() => props.account.qualityHistory?.some(sample => sample.manual))
 const automaticQualityEnabled = computed(() => selectedForAutomation.value && props.account.qualityEnabled !== false)
 const canProbeQuality = computed(() => props.account.probeAvailable && !props.account.qualityPausedByHealth && !props.qualityUnavailable)
 const latest = computed(() => latestChannelProbe(props.account))
@@ -71,7 +73,7 @@ const state = computed(() => {
     <p v-if="priorityError" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ priorityError }}</p>
     <p v-if="account.priorityRestorePending" role="status" class="text-xs text-amber-600 dark:text-amber-400">{{ t(`${prefix}.channelPriority.restoring`) }}</p>
     <p v-if="suspensionError" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ suspensionError }}</p>
-    <ProbeHistoryStrip v-if="selectedForAutomation" :samples="account.recentProbes" :unavailable="historyUnavailable">
+    <ProbeHistoryStrip v-if="selectedForAutomation || hasManualProbes" :samples="account.recentProbes" :unavailable="historyUnavailable">
       <template #before-stats>
         <span class="text-muted-foreground">{{ t(`${prefix}.groupDetail.columns.priority`) }} {{ account.priority ?? '—' }}</span>
       </template>
@@ -98,7 +100,7 @@ const state = computed(() => {
       </div>
     </details>
     <p v-if="selectedForAutomation && account.latencyPriorityError" class="text-xs text-amber-600 dark:text-amber-400">{{ t(`${latencyPrefix}.unavailable`) }}</p>
-    <template v-if="selectedForAutomation && showQuality">
+    <template v-if="(selectedForAutomation && showQuality) || hasManualQuality">
       <QualityHistoryStrip :samples="account.qualityHistory" :state="account.qualityState" :paused-by-health="account.qualityPausedByHealth" :enabled="qualityEnabled && account.qualityEnabled !== false" :selected="account.qualitySelected" :unavailable="qualityUnavailable" />
     </template>
   </section>

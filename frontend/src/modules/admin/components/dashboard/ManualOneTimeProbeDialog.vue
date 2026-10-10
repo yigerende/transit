@@ -118,7 +118,7 @@ const startTest = async () => {
   phase.value = 'testing'
   testErrorKey.value = ''
   const outcome = await runManualProbeOnce(targetId, Array.from(selected.value))
-  if (!('errorKey' in outcome)) emit('probed')
+  emit('probed')
   if (sequence !== loadSequence || !props.open || props.target?.targetId !== targetId) return
   if ('errorKey' in outcome) {
     testErrorKey.value = outcome.errorKey
@@ -216,6 +216,7 @@ const close = () => {
                     />
                     <div class="min-w-0 flex-1">
                       <p class="truncate text-sm font-medium text-foreground">{{ model.name }}</p>
+                      <p v-if="model.probeMode" class="text-xs text-muted-foreground">{{ t(`admin.connectionHealth.policyDrawer.probeModes.${model.probeMode}`) }}</p>
                       <p v-if="model.ownedBy" class="truncate text-xs text-muted-foreground">{{ model.ownedBy }}</p>
                     </div>
                   </label>
@@ -242,7 +243,7 @@ const close = () => {
                         <span class="truncate text-sm font-medium text-foreground">{{ result.modelName }}</span>
                         <span class="inline-flex shrink-0 items-center gap-1 rounded-full bg-surface-elevated px-2 py-0.5 text-xs text-muted-foreground">
                           <span class="h-1.5 w-1.5 rounded-full" :class="connectionHealthRecordColorClass(result.result)" />
-                          {{ resultLabel(result.result) }}
+                          {{ resultLabel(result.errorKey || result.result) }}
                         </span>
                       </div>
                       <div class="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">

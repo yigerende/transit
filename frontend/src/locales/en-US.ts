@@ -875,7 +875,7 @@ export default {
       },
       latencyPriority: {
         averageFirstToken: 'Weighted first token',
-  "help": "Only updates upstream priority. Average recent successful automatic probes of one selected model.",
+  "help": "Only updates upstream priority. Average recent successful policy probes (including manual probes) of one selected model.",
   "model": "Model for latency ranking",
   "firstModel": "First enabled model (alphabetical)",
   "sampleCount": "Sample count",
@@ -983,7 +983,7 @@ export default {
         probingNow: 'Checking quality…', probeBusy: 'A quality check is already running for this channel. Refresh shortly to see its result.', probeUnavailable: 'This channel cannot be checked or its configuration has changed. Check the channel and refresh.',
         stripTitle: 'Quality checks', toggleGroup: 'Toggle quality detection for {name}', globalPaused: 'Globally paused', configureFirst: 'Enable and save global quality settings first, then enable groups on the left.',
         invalidModel: 'Enter a valid detection model.', invalidConfig: 'Check parameters: interval 10–86400s, streaks 1–20, concurrency 1–32, question timeout 5–300s / API timeout 5–600s, output tokens 128–32768, history 1–1000.', invalidQuestion: 'Enter a question name, prompt and answer; check matching mode and duration threshold (1–300000 ms).', invalidRegex: 'The answer regular expression is invalid.', questionsRequired: 'Enable at least one question. The bank supports up to 50 questions.',
-        statuses: { healthPaused: 'Paused by health check', normal: 'Normal', suspect: 'Suspected degradation', degraded: 'Degraded', recovering: 'Recovering', error: 'Check failed', off: 'Disabled', notSelected: 'Not selected', pending: 'Pending', unavailable: 'History unavailable' },
+        statuses: { manualOnly: 'Manual tests only', healthPaused: 'Paused by health check', normal: 'Normal', suspect: 'Suspected degradation', degraded: 'Degraded', recovering: 'Recovering', error: 'Check failed', off: 'Disabled', notSelected: 'Not selected', pending: 'Pending', unavailable: 'History unavailable' },
         selectionHint: 'This channel is not selected in automation policies and will not be tested. Existing history is retained.',
         passed: 'Passed', failed: 'Abnormal answer', error: 'Check failed', recent: 'Last {count}', failedCount: 'Abnormal {count}', errorCount: 'Failed {count}', passRate: 'Pass rate {rate}', rateHint: 'Only valid answers count; request failures are excluded.',
         historyLabel: 'Last {count} quality checks: {failed} abnormal answers, {errors} failed requests, {rate} pass rate. Green passes, red abnormal answers, amber failed checks. Oldest on the left.',
@@ -1532,7 +1532,7 @@ export default {
             },
             manualProbe: {
               title: '9. Manual probing',
-              description: 'Manual probing fetches the available channel models and tests your selection. Results are saved to channel history without changing policy state, consuming policy budgets, or triggering automatic degrade or restore actions. Channels without a policy can also be tested. Group probes on the left use a separate group key through Sub2API and save their own results independently.'
+              description: 'Manual probing uses the effective policy models, method, latency limit and daily budget. Results count toward failures, recovery and weighted latency, and trigger permitted actions. Unmanaged channels can be tested with history only. Manual quality tests use global settings and honor health suspension. Group probes on the left use a separate group key through Sub2API and save their own results independently.'
             },
             nextProbeCopy: {
               title: '10. What "next probe" copy means',
@@ -1562,7 +1562,7 @@ export default {
         loadingModels: 'Fetching available models from upstream...',
         retryLoad: 'Retry',
         empty: 'No available models were found.',
-        selectHint: 'The first model is selected by default. You can select more. Results are saved to channel history.',
+        selectHint: 'Select models to test with the effective policy. Results count toward failures, recovery and latency, and appear in history. Without an active policy, tests only record history.',
         startTest: 'Start Test',
         testing: 'Testing...',
         resultTitle: 'Test Results',
@@ -1583,7 +1583,8 @@ export default {
         unknown: 'Group health data is temporarily unavailable. Please try again.',
         network: 'Network error. Check your connection and try again.',
         notFound: 'Probe target not found or inaccessible.',
-        noMatchingModels: 'Selected models do not match the current probe policy.',
+        noMatchingModels: 'Selected models do not match the current probe policy. Reopen the probe dialog.',
+        probeBudgetExhausted: 'The policy daily probe budget is exhausted. No request was sent.',
         accountsFetch: 'Failed to load accounts for this group.',
         targetNotFound: 'Probe target not found or not in the current workspace.',
         credentialUnavailable: 'Cannot securely obtain upstream credentials; probing unavailable.',

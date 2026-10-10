@@ -81,8 +81,8 @@ func validateLatencyPriority(c LatencyPriorityConfig) bool {
 	return false
 }
 
-// Each sample is an automatic successful probe of one model. Failed requests,
-// manual probes, expired samples and other models never enter the average.
+// Each sample is a successful policy probe (automatic or manual) of one model. Failed requests,
+// unmanaged manual probes, expired samples and other models never enter the average.
 type PriorityProbeSample struct {
 	ProbeMode string    `json:"probeMode"`
 	ID        string    `json:"id"`

@@ -2,6 +2,7 @@ package connection_health
 
 import (
 	"context"
+	"errors"
 	"log"
 	"strings"
 	"time"
@@ -68,6 +69,7 @@ type probeModelSpec struct {
 // targetProbeResult 暂存单模型探活结果。一个账号的全部到期模型完成后，再统一决定一次上游
 // 动作并写事件，避免多模型按执行顺序互相启停同一个账号。
 type targetProbeResult struct {
+	manual          bool
 	state           *ConnectionHealthState
 	previousState   State
 	outcome         ProbeOutcome
@@ -290,7 +292,7 @@ func (s *Service) resolveManualTarget(ctx context.Context, userID string, target
 // base_url_unavailable / model_unavailable 等对应的 i18n key）。
 //
 // 注意：这是旧的「策略候选池」手动探活路径，会写入 connection_health_states/events。
-// 新账号弹窗的一次性手动探活已改用 ManualProbeTarget（见 manual_probe.go），不写状态/事件。
+// 新账号弹窗的一次性手动探活已改用 ManualProbeTarget（见 manual_probe.go），按生效策略写入状态和事件。
 // 本接口继续保留只为兼容可能存在的旧调用方。
 func (s *Service) ProbeTarget(ctx context.Context, userID string, targetID string, models []string) ([]ModelHealth, error) {
 	session, target, account, adminAccountID, err := s.resolveManualTarget(ctx, userID, targetID)
@@ -424,7 +426,7 @@ func (s *Service) probeTargetOnce(ctx context.Context, userID string, adminAccou
 		return nil, err
 	}
 	if current == nil {
-		defaultState := defaultTargetState(userID, adminAccountID, target, spec.modelName)
+		defaultState := defaultTargetState(userID, adminAccountID, targetForProbeSpec(target, spec), spec.modelName)
 		current = &defaultState
 	}
 
@@ -470,6 +472,7 @@ func (s *Service) probeTargetOnce(ctx context.Context, userID string, adminAccou
 	}
 
 	next := *current
+	setTargetStateSource(&next, targetForProbeSpec(target, spec))
 	next.State = transitionOut.NextState
 	next.CurrentWeight = transitionOut.Weight
 	next.ConsecutiveFailures = transitionOut.ConsecutiveFailures
@@ -510,10 +513,11 @@ func probeBudgetLimit(policy Policy) int {
 	return defaultInt(policy.DailyProbeBudget, 1000)
 }
 
-func (s *Service) finishTargetProbeBatch(ctx context.Context, userID string, adminAccountID string, session upstream.Session, target AdminProbeTarget, specs []probeModelSpec, results []targetProbeResult) {
+func (s *Service) finishTargetProbeBatch(ctx context.Context, userID string, adminAccountID string, session upstream.Session, target AdminProbeTarget, specs []probeModelSpec, results []targetProbeResult) error {
 	if len(results) == 0 {
-		return
+		return nil
 	}
+	var historyErr error
 	currentSpecs := append([]probeModelSpec(nil), specs...)
 	for i := range currentSpecs {
 		currentSpecs[i].policy = s.currentTargetActionPermissions(ctx, userID, adminAccountID, target.TargetID, currentSpecs[i].policy)
@@ -549,19 +553,25 @@ func (s *Service) finishTargetProbeBatch(ctx context.Context, userID string, adm
 			if index == actionIndex {
 				action = remoteAction
 			}
-			s.recordTargetEvent(ctx, userID, adminAccountID, eventTarget, result.spec.policy.ID, result.spec.modelName,
+			historyErr = errors.Join(historyErr, s.recordTargetEvent(ctx, userID, adminAccountID, eventTarget, result.spec.policy.ID, result.spec.modelName,
 				string(result.outcome.Result), string(result.previousState), string(result.state.State), &result.latencyMs,
-				result.state.LastErrorKey, result.state.LastErrorDetail, action, result.spec.policy.ProbeMode)
+				result.state.LastErrorKey, result.state.LastErrorDetail, action, result.manual, result.spec.policy.ProbeMode))
 		}
-		return
+		return historyErr
 	}
 	for index := range results {
 		result := &results[index]
 		eventTarget := targetForProbeSpec(target, result.spec)
-		s.recordTargetEvent(ctx, userID, adminAccountID, eventTarget, result.spec.policy.ID, result.spec.modelName,
+		historyErr = errors.Join(historyErr, s.recordTargetEvent(ctx, userID, adminAccountID, eventTarget, result.spec.policy.ID, result.spec.modelName,
 			string(result.outcome.Result), string(result.previousState), string(result.state.State), &result.latencyMs,
-			result.state.LastErrorKey, result.state.LastErrorDetail, "", result.spec.policy.ProbeMode)
+			result.state.LastErrorKey, result.state.LastErrorDetail, "", result.manual, result.spec.policy.ProbeMode))
 	}
+	return historyErr
+}
+
+func setTargetStateSource(state *ConnectionHealthState, target AdminProbeTarget) {
+	state.OwnGroupID, state.UpstreamGroupID = target.AdminGroupID, target.AdminGroupID
+	state.OwnGroupName, state.UpstreamGroupName = target.AdminGroupName, target.AdminGroupName
 }
 
 func targetForProbeSpec(target AdminProbeTarget, spec probeModelSpec) AdminProbeTarget {
@@ -594,26 +604,28 @@ func defaultTargetState(userID string, adminAccountID string, target AdminProbeT
 
 // recordTargetEvent 写入一条独立探活事件（connection_id 列存 targetId）。error_detail 已在
 // probe_runner 里脱敏，绝不含明文 key。
-func (s *Service) recordTargetEvent(ctx context.Context, userID string, adminAccountID string, target AdminProbeTarget, policyID string, modelName string, result string, fromState string, toState string, latencyMs *int, errorKey string, errorDetail string, remoteAction string, probeModes ...string) {
+func (s *Service) recordTargetEvent(ctx context.Context, userID string, adminAccountID string, target AdminProbeTarget, policyID string, modelName string, result string, fromState string, toState string, latencyMs *int, errorKey string, errorDetail string, remoteAction string, manual bool, probeModes ...string) error {
 	id, err := newID()
 	if err != nil {
 		log.Printf("[connection-health] generate target event id failed: %v", err)
-		return
+		return err
 	}
 	mode := ProbeModeLight
 	if len(probeModes) > 0 {
 		mode = normalizeProbeMode(probeModes[0])
 	}
 	event := ConnectionHealthEvent{
-		ProbeMode: mode,
-		ID:        id, ConnectionID: target.TargetID, ModelName: modelName, UserID: userID, AdminAccountID: adminAccountID,
+		ProbeMode: mode, Manual: manual, CreatedAt: time.Now(),
+		ID: id, ConnectionID: target.TargetID, ModelName: modelName, UserID: userID, AdminAccountID: adminAccountID,
 		PolicyID: policyID, AdminGroupID: target.AdminGroupID,
 		OwnGroupName: target.AdminGroupName, UpstreamSiteID: "", UpstreamGroupName: target.AdminGroupName, Result: result,
 		FromState: fromState, ToState: toState, LatencyMs: latencyMs, ErrorKey: errorKey, ErrorDetail: errorDetail, RemoteAction: remoteAction,
 	}
 	if err := s.repo.InsertEvent(ctx, event); err != nil {
 		log.Printf("[connection-health] insert target event failed target_id=%s err=%v", target.TargetID, err)
+		return err
 	}
+	return nil
 }
 
 // splitModelList 把逗号分隔的模型字符串拆成去空列表（连接层已有 splitModels 在 upstream 包，

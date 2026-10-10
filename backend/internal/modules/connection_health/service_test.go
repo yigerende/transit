@@ -329,7 +329,7 @@ func (f *fakeRepository) ListRecentProbesByTargets(ctx context.Context, userID, 
 	result := []GroupProbeSample{}
 	for _, event := range f.events {
 		if event.UserID == userID && event.AdminAccountID == adminAccountID && slices.Contains(targetIDs, event.ConnectionID) && slices.Contains(probeResultKeys(), event.Result) {
-			result = append(result, GroupProbeSample{ProbeMode: event.ProbeMode, ID: event.ID, TargetID: event.ConnectionID, ModelName: event.ModelName, Result: event.Result, LatencyMs: event.LatencyMs, CreatedAt: event.CreatedAt})
+			result = append(result, GroupProbeSample{Manual: event.Manual, ProbeMode: event.ProbeMode, ID: event.ID, TargetID: event.ConnectionID, ModelName: event.ModelName, Result: event.Result, LatencyMs: event.LatencyMs, CreatedAt: event.CreatedAt})
 		}
 	}
 	return result, nil

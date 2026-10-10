@@ -148,6 +148,7 @@ export interface AdminGroupAccount {
 }
 
 export interface GroupProbeSample {
+  manual?: boolean
   probeMode?: string
   id: string
   targetId: string
@@ -297,15 +298,18 @@ export interface ProbeModelCandidate {
 // ManualProbeModelOption 是手动一次性探活弹窗展示的模型候选，来自后端 server-only 现查
 // 上游 /v1/models 的结果，只含安全字段，不含 base_url/key/credentials。
 export interface ManualProbeModelOption {
+  probeMode?: ConnectionHealthProbeMode
+  policyId?: string
   id: string
   name: string
   ownedBy?: string
   providerFamily?: string
 }
 
-// ManualProbeResult 是手动一次性探活单个模型的 transient 结果：只用于弹窗内展示，
-// 不对应任何落库的状态/事件记录。
+// Manual probes persist history and, when managed, participate in policy evaluation.
 export interface ManualProbeResult {
+  probeMode?: ConnectionHealthProbeMode
+  policyId?: string
   modelName: string
   result: string
   healthy: boolean

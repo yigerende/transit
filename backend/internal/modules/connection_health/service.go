@@ -159,6 +159,7 @@ type OwnGroupHealth struct {
 
 // EventView 是事件的对外展示形态，字段命名与前端 camelCase 对齐。
 type EventView struct {
+	Manual            bool      `json:"manual,omitempty"`
 	ProbeMode         string    `json:"probeMode"`
 	ID                string    `json:"id"`
 	ConnectionID      string    `json:"connectionId"`
@@ -637,8 +638,8 @@ func toEventViews(events []ConnectionHealthEvent) []EventView {
 	views := make([]EventView, 0, len(events))
 	for _, e := range events {
 		views = append(views, EventView{
-			ProbeMode: normalizeProbeMode(e.ProbeMode),
-			ID:        e.ID, ConnectionID: e.ConnectionID, ModelName: e.ModelName, OwnGroupName: e.OwnGroupName,
+			ProbeMode: normalizeProbeMode(e.ProbeMode), Manual: e.Manual,
+			ID: e.ID, ConnectionID: e.ConnectionID, ModelName: e.ModelName, OwnGroupName: e.OwnGroupName,
 			UpstreamSiteID: e.UpstreamSiteID, UpstreamGroupName: e.UpstreamGroupName, Result: e.Result,
 			FromState: e.FromState, ToState: e.ToState, LatencyMs: e.LatencyMs, ErrorKey: e.ErrorKey,
 			RemoteAction: e.RemoteAction, CreatedAt: e.CreatedAt,

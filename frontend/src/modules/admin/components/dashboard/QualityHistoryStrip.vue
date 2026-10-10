@@ -13,7 +13,8 @@ const passed = computed(() => samples.value.filter(s => s.result === 'passed').l
 const failed = computed(() => samples.value.filter(s => s.result === 'failed').length)
 const errors = computed(() => samples.value.filter(s => s.result === 'error').length)
 const rate = computed(() => passed.value + failed.value ? `${Math.round(passed.value/(passed.value+failed.value)*100)}%` : '—')
-const status = computed(() => props.unavailable ? 'unavailable' : !props.selected ? 'notSelected' : !props.enabled ? 'off' : props.pausedByHealth ? 'healthPaused' : props.state?.status || 'pending')
+const manualOnly = computed(() => (!props.selected || !props.enabled) && samples.value.some(sample => sample.manual))
+const status = computed(() => props.unavailable ? 'unavailable' : props.pausedByHealth ? 'healthPaused' : manualOnly.value ? 'manualOnly' : !props.selected ? 'notSelected' : !props.enabled ? 'off' : props.state?.status || 'pending')
 const color = (sample: QualitySample | null) => !sample ? 'bg-slate-200/70 dark:bg-slate-700/60' : sample.result === 'passed' ? 'bg-emerald-500 dark:bg-emerald-400' : sample.result === 'failed' ? 'bg-red-500 dark:bg-red-400' : 'bg-amber-400'
 function title(sample: QualitySample | null) {
   if (!sample) return t(`${p}.noRecord`)
@@ -136,7 +137,7 @@ onBeforeUnmount(keepTooltipOpen)
     <Teleport to="body">
       <div v-if="activeIndex !== null" :id="tooltipId" ref="tooltip" role="tooltip" tabindex="0" class="fixed z-[9999] max-h-[min(28rem,calc(100vh-1rem))] w-max max-w-[min(28rem,calc(100vw-1rem))] overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-lg border border-border bg-card px-3 py-2 text-xs leading-5 text-foreground shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" :style="[tooltipPosition, { visibility: tooltipReady ? 'visible' : 'hidden' }]" @pointerenter="keepTooltipOpen" @pointerleave="scheduleHide" @focusin="keepTooltipOpen" @focusout="scheduleHide" @keydown.esc.stop.prevent="hideTooltip">{{ tooltipText }}</div>
     </Teleport>
-    <p v-if="unavailable || !selected || pausedByHealth || !samples.length" class="text-xs text-muted-foreground">{{ t(`${p}.${unavailable ? 'historyUnavailable' : !selected ? 'selectionHint' : pausedByHealth ? 'healthPausedHint' : enabled ? 'waiting' : 'enableHint'}`) }}</p>
+    <p v-if="unavailable || (!selected && !manualOnly) || pausedByHealth || !samples.length" class="text-xs text-muted-foreground">{{ t(`${p}.${unavailable ? 'historyUnavailable' : pausedByHealth ? 'healthPausedHint' : !selected ? 'selectionHint' : enabled ? 'waiting' : 'enableHint'}`) }}</p>
     <p v-else-if="state?.latest.errorKey" class="text-xs text-amber-600 dark:text-amber-400">{{ t(connectionHealthMessageKey(state.latest.errorKey,te)) }}<span v-if="state.degraded"> · {{ t(`${p}.previousDegraded`) }}</span></p>
   </div>
 </template>

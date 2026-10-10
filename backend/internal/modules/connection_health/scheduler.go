@@ -315,8 +315,12 @@ func (s *Service) runAdminProbeJob(ctx context.Context, j adminProbeJob) {
 			results = append(results, *result)
 		}
 	}
-	// Cached upstream status may predate our previous action. Read it afresh before
-	// conflict detection or changing an upstream channel's status/weight.
+	s.refreshProbeActionTarget(&j)
+	s.finishTargetProbeBatch(ctx, j.userID, j.adminAccountID, j.session, j.target, j.models, results)
+}
+
+// Refresh upstream status before conflict detection or remote actions.
+func (s *Service) refreshProbeActionTarget(j *adminProbeJob) {
 	if hasRemoteActionModel(j.models) {
 		fresh := false
 		for _, group := range j.groups {
@@ -341,7 +345,6 @@ func (s *Service) runAdminProbeJob(ctx context.Context, j adminProbeJob) {
 			}
 		}
 	}
-	s.finishTargetProbeBatch(ctx, j.userID, j.adminAccountID, j.session, j.target, j.models, results)
 }
 
 // recordTargetCredentialUnavailable 在凭据解析失败时，对每个到期模型回填 last_probe_at（按探活
@@ -357,10 +360,11 @@ func (s *Service) recordTargetCredentialUnavailable(ctx context.Context, userID 
 		}
 		var next ConnectionHealthState
 		if current == nil {
-			next = defaultTargetState(userID, adminAccountID, target, spec.modelName)
+			next = defaultTargetState(userID, adminAccountID, targetForProbeSpec(target, spec), spec.modelName)
 		} else {
 			next = *current
 		}
+		setTargetStateSource(&next, targetForProbeSpec(target, spec))
 		next = stateWithoutSuspension(next, spec.policy)
 		next.LastProbeAt = &now
 		next.LastLatencyMs = nil
@@ -373,7 +377,7 @@ func (s *Service) recordTargetCredentialUnavailable(ctx context.Context, userID 
 			continue
 		}
 		eventTarget := targetForProbeSpec(target, spec)
-		s.recordTargetEvent(ctx, userID, adminAccountID, eventTarget, spec.policy.ID, spec.modelName, string(ResultUnsupported), string(next.State), string(next.State), nil, reason, "", "", spec.policy.ProbeMode)
+		s.recordTargetEvent(ctx, userID, adminAccountID, eventTarget, spec.policy.ID, spec.modelName, string(ResultUnsupported), string(next.State), string(next.State), nil, reason, "", "", false, spec.policy.ProbeMode)
 	}
 }
 

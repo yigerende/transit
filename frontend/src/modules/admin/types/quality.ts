@@ -41,6 +41,7 @@ export interface QualityGroup {
   errorKey?: string
 }
 export interface QualitySample {
+  manual?: boolean
   startedAt?: string
   prompt?: string
   mode?: 'content' | 'time' | 'content_time'

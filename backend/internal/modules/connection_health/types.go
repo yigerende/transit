@@ -233,6 +233,7 @@ type ConnectionHealthState struct {
 
 // ConnectionHealthEvent 对应 connection_health_events 表：探活或远端动作的一条留痕记录。
 type ConnectionHealthEvent struct {
+	Manual            bool `json:"manual,omitempty"`
 	ProbeMode         string
 	ID                string
 	ConnectionID      string

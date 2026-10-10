@@ -150,6 +150,7 @@ type QualityChannel struct {
 }
 
 type QualitySample struct {
+	Manual          bool       `json:"manual,omitempty"`
 	StartedAt       *time.Time `json:"startedAt,omitempty"`
 	Prompt          string     `json:"prompt,omitempty"`
 	Mode            string     `json:"mode,omitempty"`

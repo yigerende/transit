@@ -11,6 +11,7 @@ const groupProbeHistoryLimit = 100
 
 // GroupProbeSample contains only the fields needed for a group's probe timeline.
 type GroupProbeSample struct {
+	Manual    bool      `json:"manual,omitempty"`
 	ProbeMode string    `json:"probeMode"`
 	ID        string    `json:"id"`
 	TargetID  string    `json:"targetId"`
@@ -79,10 +80,10 @@ func (r *Repository) ListRecentProbesByTargets(ctx context.Context, userID, admi
 	// LATERAL uses the existing (connection_id, created_at) index for each target
 	// instead of sorting the workspace's full event history on every refresh.
 	rows, err := r.db.Query(ctx, `
-		SELECT event.id, target.target_id, event.model_name, event.result, event.latency_ms, event.probe_mode, event.created_at
+		SELECT event.id, target.target_id, event.model_name, event.result, event.latency_ms, event.probe_mode, event.manual, event.created_at
 		FROM unnest($3::text[]) AS target(target_id)
 		CROSS JOIN LATERAL (
-			SELECT id, model_name, result, latency_ms, probe_mode, created_at
+			SELECT id, model_name, result, latency_ms, probe_mode, manual, created_at
 			FROM connection_health_events
 			WHERE user_id = $1 AND admin_account_id = $2
 				AND connection_id = target.target_id AND result = ANY($4::text[])
@@ -96,7 +97,7 @@ func (r *Repository) ListRecentProbesByTargets(ctx context.Context, userID, admi
 	samples := make([]GroupProbeSample, 0)
 	for rows.Next() {
 		var sample GroupProbeSample
-		if err := rows.Scan(&sample.ID, &sample.TargetID, &sample.ModelName, &sample.Result, &sample.LatencyMs, &sample.ProbeMode, &sample.CreatedAt); err != nil {
+		if err := rows.Scan(&sample.ID, &sample.TargetID, &sample.ModelName, &sample.Result, &sample.LatencyMs, &sample.ProbeMode, &sample.Manual, &sample.CreatedAt); err != nil {
 			return nil, err
 		}
 		samples = append(samples, sample)

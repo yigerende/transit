@@ -58,10 +58,8 @@ func TestManualProbeTarget_CredentialUnavailableReturnsStructuredError(t *testin
 	}
 }
 
-// TestManualProbeTarget_SuccessDoesNotTouchStateOrEvents 核心隔离验证：手动一次性探活成功执行后，
-// 既不写 connection_health_states 也不写 connection_health_events、不消耗探活预算——
-// 与旧 ProbeTarget（会落库状态/事件）形成对照。
-func TestManualProbeTarget_SuccessDoesNotTouchStateOrEvents(t *testing.T) {
+// Unmanaged probes persist evidence without changing policy state or actions.
+func TestManualProbeTarget_UnmanagedPersistsHistoryWithoutPolicyActions(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
@@ -95,12 +93,12 @@ func TestManualProbeTarget_SuccessDoesNotTouchStateOrEvents(t *testing.T) {
 	if len(repo.states) != 0 {
 		t.Fatalf("manual one-time probe must not write any state, got %+v", repo.states)
 	}
-	if len(repo.events) != 0 {
-		t.Fatalf("manual one-time probe must not write any event, got %+v", repo.events)
+	if len(repo.events) != 2 || !repo.events[0].Manual {
+		t.Fatalf("manual probes must always record history, got %+v", repo.events)
 	}
 	svc.dispatcher = panicIfCalledRemoteActionRunner{}
 	results, err = svc.manualProbeTarget(context.Background(), "user1", "newapi:ws1:100", []string{"model-a"}, true)
-	if err != nil || len(results) != 1 || len(repo.events) != 1 {
+	if err != nil || len(results) != 1 || len(repo.events) != 3 {
 		t.Fatalf("opt-in history was not saved: %v", err)
 	}
 	event := repo.events[0]
@@ -111,13 +109,13 @@ func TestManualProbeTarget_SuccessDoesNotTouchStateOrEvents(t *testing.T) {
 		t.Fatal("history opt-in must not touch policy state/budget/actions")
 	}
 	visible, err := svc.Events(context.Background(), "user1", "newapi:ws1:100", 100)
-	if err != nil || len(visible) != 1 {
+	if err != nil || len(visible) != 3 {
 		t.Fatalf("manual events should be visible without a policy: %v", err)
 	}
 }
 
 // TestManualProbeTarget_FailureResultIncludesRedactedDetail 验证探活失败时结果携带脱敏后的
-// errorKey/errorDetail（不含明文 key），且仍不落库。
+// errorKey/errorDetail（不含明文 key），且保留失败历史。
 func TestManualProbeTarget_FailureResultIncludesRedactedDetail(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -147,8 +145,8 @@ func TestManualProbeTarget_FailureResultIncludesRedactedDetail(t *testing.T) {
 	if strings.Contains(results[0].ErrorDetail, "secret-key-value") {
 		t.Fatalf("error detail leaked the plaintext key: %q", results[0].ErrorDetail)
 	}
-	if len(repo.states) != 0 || len(repo.events) != 0 {
-		t.Fatalf("failed manual probe must still not write state/events, states=%v events=%v", repo.states, repo.events)
+	if len(repo.states) != 0 || len(repo.events) != 1 || !repo.events[0].Manual {
+		t.Fatalf("failed unmanaged probe must record history without policy state, states=%v events=%v", repo.states, repo.events)
 	}
 }
 
@@ -177,10 +175,8 @@ func (panicIfCalledRemoteActionRunner) ApplyTargetState(ctx context.Context, ses
 	panic("ApplyTargetState must never be called by manual one-time probing")
 }
 
-// TestManualProbeTarget_NeverRunsRemoteAction 验证手动一次性探活即使遭遇会在策略路径触发
-// 远端动作的硬失败（如 401），也绝不调用 dispatcher（用一个"任何方法被调用就 panic"的
-// RemoteActionRunner 兜底验证），也仍然不写 state/event。
-func TestManualProbeTarget_NeverRunsRemoteAction(t *testing.T) {
+// Unassigned channels cannot trigger remote actions, including on hard failures.
+func TestManualProbeTarget_UnmanagedNeverRunsRemoteAction(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
@@ -206,7 +202,7 @@ func TestManualProbeTarget_NeverRunsRemoteAction(t *testing.T) {
 	if len(results) != 1 || results[0].Healthy {
 		t.Fatalf("expected one unhealthy transient result, got %+v", results)
 	}
-	if len(repo.states) != 0 || len(repo.events) != 0 {
-		t.Fatalf("manual one-time probe must not write any state/event even on hard failure, states=%v events=%v", repo.states, repo.events)
+	if len(repo.states) != 0 || len(repo.events) != 1 || !repo.events[0].Manual {
+		t.Fatalf("unmanaged failures must record history without policy state, states=%v events=%v", repo.states, repo.events)
 	}
 }

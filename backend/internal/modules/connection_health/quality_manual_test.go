@@ -35,7 +35,7 @@ func TestManualQualityRunsBeforeDueAndRotatesSharedHistory(t *testing.T) {
 	const target = "sub2api:ws1:a"
 	for i, group := range []string{"one", "two"} {
 		sample, err := svc.ProbeChannelQuality(ctx, "user", target, group, "questions")
-		if err != nil || sample.Result != "passed" || sample.QuestionID != q.Questions[i].ID {
+		if err != nil || !sample.Manual || sample.Result != "passed" || sample.QuestionID != q.Questions[i].ID {
 			t.Fatalf("check %d: %+v, %v", i, sample, err)
 		}
 	}
