@@ -50,25 +50,16 @@ func TestManualQualityRunsBeforeDueAndRotatesSharedHistory(t *testing.T) {
 	}
 }
 
-func TestManualQualityRejectsDisabledUnselectedOrForeignTargets(t *testing.T) {
-	for _, scenario := range []string{"global-off", "group-off", "channel-off", "excluded", "unassigned", "wrong-group", "empty-group", "foreign-workspace", "wrong-platform", "missing-channel"} {
+func TestManualQualityRejectsUnconfiguredOrForeignTargets(t *testing.T) {
+	for _, scenario := range []string{"unconfigured", "wrong-group", "empty-group", "foreign-workspace", "wrong-platform", "missing-channel"} {
 		t.Run(scenario, func(t *testing.T) {
-			svc, repo, health, runner := qualityTestService(t)
-			q := enableManualQuality(t, svc)
+			svc, repo, _, runner := qualityTestService(t)
+			if scenario != "unconfigured" {
+				enableManualQuality(t, svc)
+			}
 			ctx := context.Background()
 			target, group := "sub2api:ws1:a", "one"
 			switch scenario {
-			case "global-off":
-				q.Enabled = false
-				_, _ = svc.SaveQualityConfiguration(ctx, "user", q)
-			case "group-off":
-				_, _ = svc.SetGroupQuality(ctx, "user", group, false)
-			case "channel-off":
-				_, _ = svc.SetChannelQuality(ctx, "user", target, false)
-			case "excluded":
-				health.groupExclusions = []GroupTargetExclusion{{UserID: "user", AdminAccountID: "ws1", AdminGroupID: group, TargetID: target}}
-			case "unassigned":
-				health.groupAssignments = nil
 			case "wrong-group":
 				group = "off"
 			case "empty-group":
@@ -87,6 +78,91 @@ func TestManualQualityRejectsDisabledUnselectedOrForeignTargets(t *testing.T) {
 				t.Fatal("rejected check consumed a request or wrote history")
 			}
 		})
+	}
+}
+
+func TestManualQualityWorksWithoutAutomaticOptIns(t *testing.T) {
+	for _, scenario := range []string{"global-off", "group-off", "channel-off", "excluded", "unassigned", "all-off"} {
+		for _, method := range []string{"questions", "manxue_candy", "manxue_pelican"} {
+			t.Run(scenario+"/"+method, func(t *testing.T) {
+				svc, repo, health, runner := qualityTestService(t)
+				q := enableManualQuality(t, svc)
+				ctx := context.Background()
+				const target = "sub2api:ws1:a"
+				if scenario == "global-off" || scenario == "all-off" {
+					q.Enabled = false
+					q, _ = svc.SaveQualityConfiguration(ctx, "user", q)
+				}
+				if scenario == "group-off" || scenario == "all-off" {
+					for _, group := range []string{"one", "two"} {
+						_, _ = svc.SetGroupQuality(ctx, "user", group, false)
+					}
+				}
+				if scenario == "channel-off" || scenario == "all-off" {
+					_, _ = svc.SetChannelQuality(ctx, "user", target, false)
+				}
+				if scenario == "excluded" {
+					health.groupExclusions = []GroupTargetExclusion{{UserID: "user", AdminAccountID: "ws1", AdminGroupID: "one", TargetID: target}, {UserID: "user", AdminAccountID: "ws1", AdminGroupID: "two", TargetID: target}}
+				}
+				if scenario == "unassigned" || scenario == "all-off" {
+					health.groupAssignments = nil
+				}
+				before, _ := json.Marshal([]any{repo.configs, repo.groups, repo.channels, health.groupAssignments, health.groupExclusions})
+				apiRunner := &manxueServiceRunner{}
+				if method != "questions" {
+					svc.qualityRunner = apiRunner
+				}
+				sample, err := svc.ProbeChannelQuality(ctx, "user", target, "one", method)
+				if err != nil || sample.ID == "" || sample.Result == "error" {
+					t.Fatalf("manual check failed: %+v %v", sample, err)
+				}
+				history, _ := svc.QualityHistory(ctx, "user", target)
+				if len(history) != 1 || history[0].ID != sample.ID {
+					t.Fatal("manual evidence missing from details")
+				}
+				state := repo.states[qualityScopeKey("user", "ws1")][target]
+				state.NextProbeAt = time.Time{}
+				repo.states[qualityScopeKey("user", "ws1")][target] = state
+				svc.runQualityScope(ctx, QualityScope{UserID: "user", WorkspaceID: "ws1"}, make(chan struct{}, 32))
+				after, _ := json.Marshal([]any{repo.configs, repo.groups, repo.channels, health.groupAssignments, health.groupExclusions})
+				if string(before) != string(after) || runner.calls+apiRunner.calls != 1 || len(health.events) != 0 || len(health.states) != 0 || len(health.targetActionStates) != 0 {
+					t.Fatal("manual check enabled automation or changed health/actions")
+				}
+			})
+		}
+	}
+}
+
+func TestManualQualityPostgresPersistsWithAutomaticDetectionOff(t *testing.T) {
+	ctx, pool := qualityTestPool(t)
+	repo := NewRepository(pool)
+	q := defaultQualitySettings()
+	q.Revision = "manual-disabled"
+	q.HistoryLimit = 1
+	if err := repo.SaveQualitySettings(ctx, "user", "site", q); err != nil {
+		t.Fatal(err)
+	}
+	_ = repo.SetQualityChannel(ctx, "user", "site", "target", false)
+	for _, id := range []string{"first", "second"} {
+		state := QualityState{TargetID: "target", Revision: q.Revision, Latest: QualitySample{ID: id, TargetID: "target", HTML: "<svg></svg>", CreatedAt: time.Now()}}
+		if ok, err := repo.SaveManualQualityResult(ctx, "user", "site", q, state); !ok || err != nil {
+			t.Fatalf("manual evidence rejected: %t %v", ok, err)
+		}
+	}
+	history, _ := repo.ListQualityHistory(ctx, "user", "site", []string{"target"}, 100)
+	detail, _ := repo.GetQualitySample(ctx, "user", "site", "target", "second")
+	channels, _ := repo.ListQualityChannels(ctx, "user", "site")
+	groups, _ := repo.ListQualityGroups(ctx, "user", "site")
+	config, _ := repo.GetQualitySettings(ctx, "user", "site")
+	if len(history) != 1 || history[0].ID != "second" || detail == nil || detail.HTML == "" || config.Enabled || len(groups) != 0 || len(channels) != 1 || channels[0].Enabled {
+		t.Fatal("manual persistence lost details/retention or enabled automation")
+	}
+	q.Revision = "stale"
+	if ok, err := repo.SaveManualQualityResult(ctx, "user", "site", q, QualityState{TargetID: "target"}); ok || err != nil {
+		t.Fatal("manual save bypassed revision guard")
+	}
+	if ok, err := repo.SaveManualQualityResult(ctx, "foreign", "site", q, QualityState{TargetID: "target"}); ok || err != nil {
+		t.Fatal("manual save bypassed workspace ownership")
 	}
 }
 

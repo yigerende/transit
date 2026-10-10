@@ -145,8 +145,7 @@ async function toggleChannelQuality(account: AdminGroupAccount) {
 async function runChannelQuality(account: AdminGroupAccount, method: QualityManualMethod) {
   const group = selectedGroup.value
   const target = account.targetId
-  if (!group?.quality?.enabled || !group.quality.globalEnabled || group.quality.errorKey
-    || account.qualityEnabled === false || !account.qualitySelected || account.qualityPausedByHealth
+  if (!group || group.quality?.errorKey || !account.probeAvailable || account.qualityPausedByHealth
     || qualityBusyTargets.value.has(target) || qualityProbeMethods.value.has(target)) return
   qualityProbeMethods.value.set(target, method)
   delete qualityChannelErrors.value[target]
@@ -156,6 +155,7 @@ async function runChannelQuality(account: AdminGroupAccount, method: QualityManu
   } catch (err) {
     const key = err instanceof Error ? err.message : 'admin.connectionHealth.errors.request'
     qualityChannelErrors.value[target] = t(connectionHealthMessageKey(key, te))
+    if (key === 'admin.connectionHealth.quality.configureManualFirst') qualitySettingsOpen.value = true
   } finally {
     qualityProbeMethods.value.delete(target)
   }
@@ -500,7 +500,7 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
               <span class="ml-auto tabular-nums">{{ inactiveChannels.length }}</span>
             </summary>
             <div class="space-y-2 border-t border-border/60 p-2">
-              <ChannelHealthCard v-for="account in inactiveChannels" :key="account.targetId" :account="account" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
+              <ChannelHealthCard v-for="account in inactiveChannels" :key="account.targetId" :account="account" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" :quality-unavailable="Boolean(selectedGroup.quality?.errorKey)" :quality-busy="qualityBusyTargets.has(account.targetId)" :quality-probe-method="qualityProbeMethods.get(account.targetId)" :quality-error="qualityChannelErrors[account.targetId]" @probe-quality="runChannelQuality" @view-quality="openQualityHistory" @toggle-quality="toggleChannelQuality" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
             </div>
           </details>
         </div>

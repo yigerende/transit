@@ -387,7 +387,7 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 	}
 	unavailable := requestError(qualityPrefix + "probeUnavailable")
 	current, err := s.qualityRepo.GetQualitySettings(ctx, scope.UserID, scope.WorkspaceID)
-	if err != nil || !current.Enabled || current.Revision != q.Revision {
+	if err != nil || (!manual && !current.Enabled) || current.Revision != q.Revision {
 		return QualitySample{}, unavailable
 	}
 	switches, err := s.qualityRepo.ListQualityGroups(ctx, scope.UserID, scope.WorkspaceID)
@@ -407,10 +407,13 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 	if selection.pausedChannels[c.targetID] {
 		return QualitySample{}, requestError(qualityPrefix + "healthPausedHint")
 	}
+	canProbe := func(selection qualitySelection, group string) bool {
+		return !selection.pausedChannels[c.targetID] && (manual || selection.selected(group, c.targetID))
+	}
 	// Refresh the group membership before each real request, including queued jobs.
 	matched := false
 	for _, id := range c.groups {
-		if !allowed[id] || !selection.canProbe(id, c.targetID) {
+		if (!manual && !allowed[id]) || !canProbe(selection, id) {
 			continue
 		}
 		accounts, err := s.platformGroups.ListAdminGroupAccounts(session, upstream.AdminGroupInfo{ID: id, Name: id})
@@ -435,7 +438,7 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 	// The user may have unchecked this channel while it was queued or while the
 	// upstream inventory was loading. Re-read before resolving any credentials.
 	selection, err = s.loadQualitySelection(ctx, scope.UserID, scope.WorkspaceID)
-	if err != nil || !selection.canProbe(c.groups[0], c.targetID) {
+	if err != nil || !canProbe(selection, c.groups[0]) {
 		return QualitySample{}, unavailable
 	}
 	active := q.activeQuestions()
@@ -468,11 +471,11 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 		// Credential resolution can involve a slow upstream read. Honor a selection
 		// change made during that read before sending the billable model request.
 		selection, err = s.loadQualitySelection(ctx, scope.UserID, scope.WorkspaceID)
-		if err != nil || !selection.canProbe(c.groups[0], c.targetID) {
+		if err != nil || !canProbe(selection, c.groups[0]) {
 			return QualitySample{}, unavailable
 		}
 		current, err = s.qualityRepo.GetQualitySettings(ctx, scope.UserID, scope.WorkspaceID)
-		if err != nil || !current.Enabled || current.Revision != q.Revision {
+		if err != nil || (!manual && !current.Enabled) || current.Revision != q.Revision {
 			return QualitySample{}, unavailable
 		}
 		// A group may have been switched off while credentials were loading.
@@ -483,7 +486,7 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 				groupEnabled = true
 			}
 		}
-		if err != nil || !groupEnabled {
+		if err != nil || (!manual && !groupEnabled) {
 			return QualitySample{}, unavailable
 		}
 		outcome := s.qualityRunner.ProbeQuality(ctx, cred, c.account.Platform, q, question)
@@ -499,7 +502,7 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 		return QualitySample{}, ctx.Err()
 	}
 	selection, err = s.loadQualitySelection(ctx, scope.UserID, scope.WorkspaceID)
-	if err != nil || !selection.canProbe(c.groups[0], c.targetID) {
+	if err != nil || !canProbe(selection, c.groups[0]) {
 		return QualitySample{}, unavailable
 	}
 	sample.CreatedAt = time.Now()
@@ -510,7 +513,12 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 		state.NextQuestionID = nextQuestion
 	}
 	state.Latest.Answer = truncate(strings.TrimSpace(state.Latest.Answer), 65536)
-	saved, err := s.qualityRepo.SaveQualityResult(ctx, scope.UserID, scope.WorkspaceID, c.groups, q, state)
+	var saved bool
+	if manual {
+		saved, err = s.qualityRepo.SaveManualQualityResult(ctx, scope.UserID, scope.WorkspaceID, q, state)
+	} else {
+		saved, err = s.qualityRepo.SaveQualityResult(ctx, scope.UserID, scope.WorkspaceID, c.groups, q, state)
+	}
 	if err != nil {
 		log.Printf("[quality] saving result failed")
 		return QualitySample{}, err

@@ -15,7 +15,7 @@ const { t } = useI18n()
 const prefix = 'admin.connectionHealth'
 const qualityMethods: QualityManualMethod[] = ['questions', 'manxue_candy', 'manxue_pelican']
 const selectedForAutomation = computed(() => channelAutomationEnabled(props.account))
-const canProbeQuality = computed(() => props.qualityEnabled && props.account.qualityEnabled !== false && props.account.qualitySelected && !props.account.qualityPausedByHealth && !props.qualityUnavailable)
+const canProbeQuality = computed(() => props.account.probeAvailable && !props.account.qualityPausedByHealth && !props.qualityUnavailable)
 const latest = computed(() => latestChannelProbe(props.account))
 const latencyPrefix = `${prefix}.latencyPriority`
 const priorityDecision = computed(() => props.account.latencyPriority)
@@ -35,11 +35,11 @@ const state = computed(() => {
 
 <template>
   <section class="min-w-0 space-y-3 rounded-lg border border-border/60 bg-card p-4" :aria-label="account.name || account.id">
-    <div class="flex items-center justify-between gap-2" :class="selectedForAutomation ? 'flex-wrap' : ''">
-      <div class="min-w-0" :class="selectedForAutomation ? '' : 'flex-1'">
-        <h3 class="text-sm font-medium text-foreground" :class="selectedForAutomation ? 'break-words' : 'truncate'" :title="account.name || account.id">{{ account.name || account.id }}</h3>
+    <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+      <div class="min-w-[8rem] max-w-full flex-1">
+        <h3 class="truncate text-sm font-medium text-foreground" :title="account.name || account.id">{{ account.name || account.id }}</h3>
       </div>
-      <div class="flex shrink-0 flex-wrap items-center gap-2">
+      <div class="flex max-w-full flex-wrap items-center gap-x-2 gap-y-1">
         <button v-if="selectedForAutomation" type="button" role="switch" :aria-checked="account.priorityEnabled !== false" :aria-label="t(`${prefix}.channelPriority.toggle`, { name: account.name || account.id })" :title="t(`${prefix}.channelPriority.hint`)" :disabled="priorityBusy" class="flex items-center gap-1.5 rounded px-1 py-2 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50" @click.stop="emit('toggle-priority', account)">
           <span>{{ t(`${prefix}.channelPriority.label`) }}</span>
           <Loader2 v-if="priorityBusy" class="h-4 w-7 animate-spin" />
@@ -50,11 +50,23 @@ const state = computed(() => {
           <Loader2 v-if="suspensionBusy" class="h-4 w-7 animate-spin" />
           <span v-else class="relative h-4 w-7 rounded-full transition-colors" :class="account.suspensionEnabled !== false ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="account.suspensionEnabled !== false ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
         </button>
+        <button type="button" role="switch" :aria-checked="account.qualityEnabled !== false" :aria-label="t(`${prefix}.quality.toggleChannel`, { name: account.name || account.id })" :title="t(`${prefix}.quality.channelSwitchHint`)" :disabled="qualityBusy || qualityUnavailable" class="flex h-6 shrink-0 items-center justify-center gap-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50" @click.stop="emit('toggle-quality', account)">
+          <span class="text-xs text-muted-foreground">{{ t(`${prefix}.quality.automaticLabel`) }}</span>
+          <Loader2 v-if="qualityBusy" class="h-4 w-4 animate-spin text-muted-foreground" />
+          <span v-else class="relative h-4 w-7 rounded-full transition-colors" :class="account.qualityEnabled !== false ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="account.qualityEnabled !== false ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
+        </button>
+        <button v-for="method in qualityMethods" :key="method" type="button" class="inline-flex h-6 shrink-0 items-center justify-center gap-1 rounded border border-border/60 px-1.5 text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-40" :disabled="qualityBusy || Boolean(qualityProbeMethod) || !canProbeQuality" :aria-busy="qualityProbeMethod === method" :aria-label="t(`${prefix}.quality.manualLabels.${method}`)" :title="t(`${prefix}.quality.${qualityProbeMethod === method ? 'probingNow' : account.qualityPausedByHealth ? 'healthPausedHint' : canProbeQuality ? `manualHints.${method}` : 'probeUnavailable'}`)" @click.stop="emit('probe-quality', account, method)">
+          <Loader2 v-if="qualityProbeMethod === method" class="h-3 w-3 animate-spin" aria-hidden="true" />
+          <Play v-else class="h-3 w-3" aria-hidden="true" />
+          {{ t(`${prefix}.quality.manualLabels.${method}`) }}
+        </button>
+        <button type="button" class="inline-flex h-6 shrink-0 items-center gap-1 rounded px-1.5 text-xs text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" :aria-label="t(`${prefix}.quality.detail.open`, { name: account.name || account.id })" @click.stop="emit('view-quality', account)"><Eye class="h-3.5 w-3.5" />{{ t(`${prefix}.quality.detail.channelButton`) }}</button>
         <span class="rounded-full px-2.5 py-1 text-xs" :class="state === 'healthy' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : state === 'unhealthy' ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-surface text-muted-foreground'">{{ t(`${prefix}.cards.status.${state}`) }}</span>
-        <button type="button" class="rounded-lg border border-border/70 p-2 text-muted-foreground hover:text-primary disabled:opacity-40" :disabled="!account.probeAvailable" :aria-label="t(`${prefix}.actions.probe`)" :title="t(`${prefix}.actions.probe`)" @click="emit('probe', account)"><Zap class="h-3.5 w-3.5" /></button>
+        <button type="button" class="inline-flex h-6 items-center gap-1 rounded border border-border/60 px-1.5 text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-40" :disabled="!account.probeAvailable" :aria-label="t(`${prefix}.actions.probe`)" :title="t(`${prefix}.actions.probe`)" @click.stop="emit('probe', account)"><Zap class="h-3 w-3" />{{ t(`${prefix}.actions.probeShort`) }}</button>
         <button type="button" class="rounded-lg border border-border/70 p-2 text-muted-foreground hover:text-primary" :aria-label="t(`${prefix}.actions.viewEvents`)" :title="t(`${prefix}.actions.viewEvents`)" @click="emit('view-events', account)"><Eye class="h-3.5 w-3.5" /></button>
       </div>
     </div>
+    <p v-if="qualityError" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ qualityError }}</p>
     <p v-if="priorityError" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ priorityError }}</p>
     <p v-if="account.priorityRestorePending" role="status" class="text-xs text-amber-600 dark:text-amber-400">{{ t(`${prefix}.channelPriority.restoring`) }}</p>
     <p v-if="suspensionError" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ suspensionError }}</p>
@@ -86,21 +98,7 @@ const state = computed(() => {
     </details>
     <p v-if="selectedForAutomation && account.latencyPriorityError" class="text-xs text-amber-600 dark:text-amber-400">{{ t(`${latencyPrefix}.unavailable`) }}</p>
     <template v-if="selectedForAutomation && showQuality">
-      <QualityHistoryStrip :samples="account.qualityHistory" :state="account.qualityState" :paused-by-health="account.qualityPausedByHealth" :enabled="qualityEnabled && account.qualityEnabled !== false" :selected="account.qualitySelected" :unavailable="qualityUnavailable">
-        <template #controls>
-          <button type="button" role="switch" :aria-checked="account.qualityEnabled !== false" :aria-label="t(`${prefix}.quality.toggleChannel`, { name: account.name || account.id })" :title="t(`${prefix}.quality.channelSwitchHint`)" :disabled="qualityBusy || qualityUnavailable" class="flex h-6 w-7 shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50" @click.stop="emit('toggle-quality', account)">
-            <Loader2 v-if="qualityBusy" class="h-4 w-4 animate-spin text-muted-foreground" />
-            <span v-else class="relative h-4 w-7 rounded-full transition-colors" :class="account.qualityEnabled !== false ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="account.qualityEnabled !== false ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
-          </button>
-          <button v-for="method in qualityMethods" :key="method" type="button" class="inline-flex h-6 shrink-0 items-center justify-center gap-1 rounded border border-border/60 px-1.5 text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-40" :disabled="qualityBusy || Boolean(qualityProbeMethod) || !canProbeQuality" :aria-busy="qualityProbeMethod === method" :aria-label="t(`${prefix}.quality.manualLabels.${method}`)" :title="t(`${prefix}.quality.${qualityProbeMethod === method ? 'probingNow' : account.qualityPausedByHealth ? 'healthPausedHint' : canProbeQuality ? `manualHints.${method}` : 'probeUnavailable'}`)" @click.stop="emit('probe-quality', account, method)">
-            <Loader2 v-if="qualityProbeMethod === method" class="h-3 w-3 animate-spin" aria-hidden="true" />
-            <Play v-else class="h-3 w-3" aria-hidden="true" />
-            {{ t(`${prefix}.quality.manualLabels.${method}`) }}
-          </button>
-          <button type="button" class="inline-flex h-6 shrink-0 items-center gap-1 rounded px-1.5 text-xs text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" :aria-label="t(`${prefix}.quality.detail.open`, { name: account.name || account.id })" @click.stop="emit('view-quality', account)"><Eye class="h-3.5 w-3.5" />{{ t(`${prefix}.quality.detail.button`) }}</button>
-        </template>
-      </QualityHistoryStrip>
-      <p v-if="qualityError" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ qualityError }}</p>
+      <QualityHistoryStrip :samples="account.qualityHistory" :state="account.qualityState" :paused-by-health="account.qualityPausedByHealth" :enabled="qualityEnabled && account.qualityEnabled !== false" :selected="account.qualitySelected" :unavailable="qualityUnavailable" />
     </template>
   </section>
 </template>

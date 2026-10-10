@@ -61,6 +61,7 @@ type qualityRepository interface {
 	SetQualityChannel(context.Context, string, string, string, bool) error
 	ListQualityStates(context.Context, string, string) ([]QualityState, error)
 	SaveQualityResult(context.Context, string, string, []string, QualitySettings, QualityState) (bool, error)
+	SaveManualQualityResult(context.Context, string, string, QualitySettings, QualityState) (bool, error)
 	ListQualityHistory(context.Context, string, string, []string, int) ([]QualitySample, error)
 	GetQualitySample(context.Context, string, string, string, string) (*QualitySample, error)
 }
@@ -184,40 +185,52 @@ func (r *Repository) ListQualityStates(ctx context.Context, user, workspace stri
 // Atomically guard against stale config, disabled groups and workspace deletion.
 // Stores only quality evidence. Health policy state/events/actions are untouched.
 func (r *Repository) SaveQualityResult(ctx context.Context, user, workspace string, groups []string, q QualitySettings, state QualityState) (bool, error) {
+	return r.saveQualityResult(ctx, user, workspace, groups, q, state, false)
+}
+
+// Explicit checks retain their evidence even when automatic detection is off.
+// The service still verifies workspace ownership, group membership and health suspension.
+func (r *Repository) SaveManualQualityResult(ctx context.Context, user, workspace string, q QualitySettings, state QualityState) (bool, error) {
+	return r.saveQualityResult(ctx, user, workspace, nil, q, state, true)
+}
+
+func (r *Repository) saveQualityResult(ctx context.Context, user, workspace string, groups []string, q QualitySettings, state QualityState, manual bool) (bool, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return false, err
 	}
 	defer tx.Rollback(ctx)
 	var revision string
-	err = tx.QueryRow(ctx, `SELECT revision FROM connection_health_quality_settings WHERE user_id=$1 AND admin_account_id=$2 AND config->>'enabled'='true' FOR SHARE`, user, workspace).Scan(&revision)
+	err = tx.QueryRow(ctx, `SELECT revision FROM connection_health_quality_settings WHERE user_id=$1 AND admin_account_id=$2 AND ($3 OR config->>'enabled'='true') FOR SHARE`, user, workspace, manual).Scan(&revision)
 	if errors.Is(err, pgx.ErrNoRows) || err == nil && revision != q.Revision {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	var group string
-	err = tx.QueryRow(ctx, `SELECT group_id FROM connection_health_quality_groups WHERE user_id=$1 AND admin_account_id=$2 AND group_id=ANY($3::text[]) AND enabled ORDER BY group_id LIMIT 1 FOR SHARE`, user, workspace, groups).Scan(&group)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	// Materialize the default-on row and lock it, so a concurrent disable cannot
-	// race the result commit even when this channel has never been configured.
-	if _, err := tx.Exec(ctx, `INSERT INTO connection_health_quality_channels(user_id,admin_account_id,target_id,enabled)
+	if !manual {
+		var group string
+		err = tx.QueryRow(ctx, `SELECT group_id FROM connection_health_quality_groups WHERE user_id=$1 AND admin_account_id=$2 AND group_id=ANY($3::text[]) AND enabled ORDER BY group_id LIMIT 1 FOR SHARE`, user, workspace, groups).Scan(&group)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		// Materialize the default-on row and lock it, so a concurrent disable cannot
+		// race the result commit even when this channel has never been configured.
+		if _, err := tx.Exec(ctx, `INSERT INTO connection_health_quality_channels(user_id,admin_account_id,target_id,enabled)
 		VALUES($1,$2,$3,true) ON CONFLICT(user_id,admin_account_id,target_id) DO NOTHING`, user, workspace, state.TargetID); err != nil {
-		return false, err
-	}
-	var channelEnabled bool
-	if err := tx.QueryRow(ctx, `SELECT enabled FROM connection_health_quality_channels
+			return false, err
+		}
+		var channelEnabled bool
+		if err := tx.QueryRow(ctx, `SELECT enabled FROM connection_health_quality_channels
 		WHERE user_id=$1 AND admin_account_id=$2 AND target_id=$3 FOR SHARE`, user, workspace, state.TargetID).Scan(&channelEnabled); err != nil {
-		return false, err
-	}
-	if !channelEnabled {
-		return false, nil
+			return false, err
+		}
+		if !channelEnabled {
+			return false, nil
+		}
 	}
 	sample := state.Latest
 	sample.HasHTML = sample.HasHTML || sample.HTML != ""

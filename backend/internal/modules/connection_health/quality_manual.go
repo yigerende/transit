@@ -7,7 +7,8 @@ import (
 )
 
 // ProbeChannelQuality bypasses the interval with the selected one-off detector,
-// retaining selection gates and result history. It has no remote actions.
+// retaining health suspension and result history. Automatic opt-ins do not
+// restrict an explicit manual check. It has no remote actions.
 func (s *Service) ProbeChannelQuality(ctx context.Context, user, targetID, groupID, method string) (QualitySample, error) {
 	if strings.TrimSpace(groupID) == "" {
 		return QualitySample{}, requestError(ErrorRequest)
@@ -20,9 +21,11 @@ func (s *Service) ProbeChannelQuality(ctx context.Context, user, targetID, group
 	if err != nil {
 		return QualitySample{}, err
 	}
-	if !q.Enabled || q.Revision == "" {
-		return QualitySample{}, requestError(qualityPrefix + "configureFirst")
+	if q.Revision == "" {
+		return QualitySample{}, requestError(qualityPrefix + "configureManualFirst")
 	}
+	// Validate the chosen detector even when automatic detection is disabled.
+	q.Enabled = true
 	// One-off detector selection never changes the saved automatic configuration.
 	switch method {
 	case "questions":

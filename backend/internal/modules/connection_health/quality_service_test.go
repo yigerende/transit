@@ -106,15 +106,21 @@ func (r *fakeQualityRepo) ListQualityStates(_ context.Context, u, w string) ([]Q
 	}
 	return out, nil
 }
-func (r *fakeQualityRepo) SaveQualityResult(_ context.Context, u, w string, groups []string, q QualitySettings, st QualityState) (bool, error) {
+func (r *fakeQualityRepo) SaveQualityResult(ctx context.Context, u, w string, groups []string, q QualitySettings, st QualityState) (bool, error) {
+	return r.saveQualityResult(ctx, u, w, groups, q, st, false)
+}
+func (r *fakeQualityRepo) SaveManualQualityResult(ctx context.Context, u, w string, q QualitySettings, st QualityState) (bool, error) {
+	return r.saveQualityResult(ctx, u, w, nil, q, st, true)
+}
+func (r *fakeQualityRepo) saveQualityResult(_ context.Context, u, w string, groups []string, q QualitySettings, st QualityState, manual bool) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	key := qualityScopeKey(u, w)
-	if enabled, exists := r.channels[key][st.TargetID]; exists && !enabled {
+	if enabled, exists := r.channels[key][st.TargetID]; !manual && exists && !enabled {
 		return false, nil
 	}
 	current := r.configs[key]
-	if !current.Enabled || current.Revision != q.Revision {
+	if (!manual && !current.Enabled) || current.Revision != q.Revision {
 		return false, nil
 	}
 	allowed := false
@@ -123,7 +129,7 @@ func (r *fakeQualityRepo) SaveQualityResult(_ context.Context, u, w string, grou
 			allowed = true
 		}
 	}
-	if !allowed {
+	if !manual && !allowed {
 		return false, nil
 	}
 	if r.states[key] == nil {

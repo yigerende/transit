@@ -941,7 +941,7 @@ export default {
       },
       quality: {
         detail: {
-          button: 'Details', open: 'View quality check details for {name}', title: 'Quality checks · {name}',
+          button: 'Details', channelButton: 'Quality details', open: 'View quality check details for {name}', title: 'Quality checks · {name}',
           subtitle: 'Newest start time first, including custom questions, API Candy and API Pelican checks.',
           filter: 'Filter check type', allTypes: 'All check types', refresh: 'Refresh check history', records: 'Quality check history',
           empty: 'No checks of this type yet.', count: '{count} records', selectRecord: 'Select a record to view details',
@@ -951,6 +951,7 @@ export default {
           noHtml: 'No artwork HTML was saved for this record. Older artwork cannot be recovered; new checks retain the returned artwork.', htmlTooLarge: 'Artwork exceeded 2 MB and was not saved. The assessment is retained.',
           question: 'Question', noPrompt: 'The question text was not saved for this older record.', matchMode: 'Match mode:', judgement: 'Rules and results', noAnswer: 'No answer was returned.', candyHint: 'Candy verdicts come from the API and do not use local question answers or latency thresholds.',
         },
+        automaticLabel: 'Auto quality', configureManualFirst: 'Save the global quality settings first. Automatic detection can remain off.',
         detectionMethod: 'Detection method', methodQuestions: 'Custom questions', methodManxue: 'Manxue AI API',
         manxueOptions: 'API detection', manxueBenchmark: 'Benchmark', benchmarks: { candy: 'Candy test', pelican: 'Pelican test' },
         manxueProtocol: 'Upstream protocol', manxueServiceTier: 'Service tier', manxueDocs: 'API documentation',
@@ -963,7 +964,7 @@ export default {
         manxueFailed: 'Manxue could not complete the test. This does not count as degradation.',
         manxueExpired: 'The Manxue task was not found or has expired.',
         manxueTimeout: 'Manxue timed out; cancellation of this task was attempted.',
-        toggleChannel: 'Toggle quality checks for channel {name}', channelSwitchHint: 'Controls quality checks for this channel across all its groups. History is retained when off. Global and group checks must be enabled and the channel selected in an automation policy.',
+        toggleChannel: 'Toggle quality checks for channel {name}', channelSwitchHint: 'Controls automatic quality checks across all groups. Requires global and group checks and selection in a policy. Turning it off does not prevent manual tests or remove history.',
         settingsTitle: 'Quality detection settings', settingsHint: 'All enabled groups in this workspace share these settings. Save, then enable groups on the left. Only channels selected and saved in automation policies are tested.',
         displayOnly: 'Results only. Channel status, priority and weight are unaffected.',
         globalEnabled: 'Enable quality detection', questions: 'Question checks', schedule: 'Detection settings', model: 'Detection model', reasoningEffort: 'Reasoning effort', defaultEffort: 'Model default', mode: 'Evaluation',
@@ -977,7 +978,7 @@ export default {
         manualLabels: { questions: 'Custom questions', manxue_candy: 'API Candy', manxue_pelican: 'API Pelican' },
         healthPausedHint: 'Quality checks are paused while this channel is health-suspended. They resume with the saved settings after health recovery; existing history is kept.',
         manualHints: { questions: 'Run one check using the saved custom question bank.', manxue_candy: 'Run a Manxue API Candy test. Sends this channel’s URL, key and model to Manxue and consumes channel credits.', manxue_pelican: 'Run a Manxue API Pelican test. Sends this channel’s URL, key and model to Manxue and consumes channel credits.' },
-        probingNow: 'Checking quality…', probeBusy: 'A quality check is already running for this channel. Refresh shortly to see its result.', probeUnavailable: 'Enable global, group and channel quality checks and select this channel in the automation policy. Refresh after changing settings.',
+        probingNow: 'Checking quality…', probeBusy: 'A quality check is already running for this channel. Refresh shortly to see its result.', probeUnavailable: 'This channel cannot be checked or its configuration has changed. Check the channel and refresh.',
         stripTitle: 'Quality checks', toggleGroup: 'Toggle quality detection for {name}', globalPaused: 'Globally paused', configureFirst: 'Enable and save global quality settings first, then enable groups on the left.',
         invalidModel: 'Enter a valid detection model.', invalidConfig: 'Check parameters: interval 10–86400s, streaks 1–20, concurrency 1–32, question timeout 5–300s / API timeout 5–600s, output tokens 128–32768, history 1–1000.', invalidQuestion: 'Enter a question name, prompt and answer; check matching mode and duration threshold (1–300000 ms).', invalidRegex: 'The answer regular expression is invalid.', questionsRequired: 'Enable at least one question. The bank supports up to 50 questions.',
         statuses: { healthPaused: 'Paused by health check', normal: 'Normal', suspect: 'Suspected degradation', degraded: 'Degraded', recovering: 'Recovering', error: 'Check failed', off: 'Disabled', notSelected: 'Not selected', pending: 'Pending', unavailable: 'History unavailable' },
@@ -1304,7 +1305,7 @@ export default {
         lastError: 'Last Error'
       },
       actions: {
-        probe: 'Probe Now',
+        probe: 'Probe Now', probeShort: 'Probe',
         disable: 'Disable',
         restore: 'Restore',
         viewEvents: 'View Events'

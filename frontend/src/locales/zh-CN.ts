@@ -941,7 +941,7 @@ export default {
       },
       quality: {
         detail: {
-          button: '详情', open: '查看渠道 {name} 的降智检测详情', title: '降智检测 · {name}',
+          button: '详情', channelButton: '降智详情', open: '查看渠道 {name} 的降智检测详情', title: '降智检测 · {name}',
           subtitle: '按检测开始时间从新到旧排列，包含自定义题目、API 糖果和 API 鹈鹕记录。',
           filter: '筛选检测类型', allTypes: '全部检测类型', refresh: '刷新检测记录', records: '降智检测记录',
           empty: '暂无该类型的检测记录。', count: '共 {count} 条记录', selectRecord: '选择一条记录查看详情',
@@ -951,6 +951,7 @@ export default {
           noHtml: '该记录未保存作品 HTML。旧记录无法补回，新检测会保存接口返回的作品。', htmlTooLarge: '作品源码超过 2 MB，未保存预览；检测判定仍已保留。',
           question: '检测题目', noPrompt: '这条旧记录未保存题目正文。', matchMode: '匹配方式：', judgement: '判定规则与结果', noAnswer: '没有返回答案。', candyHint: '糖果测试的判定由 API 返回，不使用本地自定义题目的答案和耗时阈值。',
         },
+        automaticLabel: '自动降智', configureManualFirst: '请先保存全局降智检测配置，无需开启自动检测。',
         detectionMethod: '检测方式', methodQuestions: '自定义题目', methodManxue: '满血 AI API',
         manxueOptions: 'API 检测', manxueBenchmark: '测试类型', benchmarks: { candy: '糖果测试', pelican: '鹈鹕测试' },
         manxueProtocol: '上游接口协议', manxueServiceTier: '服务档位', manxueDocs: '查看 API 文档',
@@ -963,7 +964,7 @@ export default {
         manxueFailed: '满血 AI 检测未成功完成，本次不计入降智次数。',
         manxueExpired: '满血 AI 检测任务不存在或已过期。',
         manxueTimeout: '满血 AI 检测超时，已尝试取消本次任务。',
-        toggleChannel: '切换渠道 {name} 的降智检测', channelSwitchHint: '仅控制此渠道的降智检测，同一渠道在各分组共用。关闭保留历史；开启仍需全局、分组开启且渠道已被策略选中。',
+        toggleChannel: '切换渠道 {name} 的降智检测', channelSwitchHint: '仅控制自动降智检测，同一渠道在各分组共用。开启仍需全局、分组开启且渠道已被策略选中；关闭不影响手动测试和历史。',
         settingsTitle: '降智检测配置', settingsHint: '当前站点的所有已开启分组共用此配置。保存后在左侧开启分组，仅检测自动化策略中已勾选并保存的渠道。',
         displayOnly: '仅检测展示，不改变渠道状态、优先级或权重。',
         globalEnabled: '启用降智检测', questions: '题目检测', schedule: '检测配置', model: '检测模型', reasoningEffort: '推理强度', defaultEffort: '模型默认', mode: '判断方式',
@@ -976,7 +977,7 @@ export default {
         save: '保存配置', saving: '保存中…', loading: '加载中…', close: '关闭', retry: '重试', moveUp: '上移题目', moveDown: '下移题目', enableQuestion: '启用题目 {name}', removeQuestion: '删除题目 {name}',
         manualLabels: { questions: '自定义题目', manxue_candy: 'API 糖果测试', manxue_pelican: 'API 鹈鹕测试' },
         manualHints: { questions: '立即使用已保存的自定义题库检测一次。', manxue_candy: '立即通过 Manxue API 进行糖果测试，将提交此渠道的地址、Key 和模型，并消耗渠道额度。', manxue_pelican: '立即通过 Manxue API 进行鹈鹕测试，将提交此渠道的地址、Key 和模型，并消耗渠道额度。' },
-        probingNow: '正在降智检测…', probeBusy: '该渠道正在降智检测，请稍后刷新查看结果。', probeUnavailable: '请启用全局、分组及渠道降智检测，并在自动化策略中选中该渠道；配置变更后请刷新重试。',
+        probingNow: '正在降智检测…', probeBusy: '该渠道正在降智检测，请稍后刷新查看结果。', probeUnavailable: '当前渠道不可检测或配置已变更，请检查渠道并刷新重试。',
         stripTitle: '降智检测', toggleGroup: '切换分组 {name} 的降智检测', globalPaused: '全局暂停', configureFirst: '请先启用并保存全局降智检测配置，再开启左侧分组。',
         invalidModel: '请输入有效的检测模型。', invalidConfig: '请检查检测参数：间隔 10～86400 秒，连续次数 1～20，并发 1～32，题目超时 5～300 秒 / API 超时 5～600 秒，输出 Token 128～32768，历史 1～1000。', invalidQuestion: '请填写题目名称、内容和答案，并检查耗时阈值（1～300000 ms）及匹配方式。', invalidRegex: '答案正则表达式无效。', questionsRequired: '开启检测需至少启用一道题，题库最多 50 题。',
         statuses: { healthPaused: '随探活暂停', normal: '无降智', suspect: '疑似降智', degraded: '降智', recovering: '恢复观察', error: '检测失败', off: '未开启', notSelected: '未选择', pending: '待检测', unavailable: '记录不可用' },
@@ -1304,7 +1305,7 @@ export default {
         lastError: '最近错误'
       },
       actions: {
-        probe: '手动探活',
+        probe: '手动探活', probeShort: '探活',
         disable: '禁用',
         restore: '恢复',
         viewEvents: '查看事件'
