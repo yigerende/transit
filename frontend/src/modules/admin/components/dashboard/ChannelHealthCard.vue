@@ -59,6 +59,10 @@ const state = computed(() => {
       <template #before-stats>
         <span class="text-muted-foreground">{{ t(`${prefix}.groupDetail.columns.priority`) }} {{ account.priority ?? '—' }}</span>
       </template>
+      <template #after-stats>
+        <span v-for="model in account.modelHealth" :key="model.modelName" class="whitespace-nowrap rounded-md px-2 py-1 text-xs" :class="connectionHealthStateBadgeClass(model.state)">{{ model.modelName }} · {{ t(`${prefix}.stateLabels.${model.state}`) }}</span>
+        <span v-for="model in account.unprobedModels" :key="`pending-${model.modelName}`" class="whitespace-nowrap rounded-md bg-surface px-2 py-1 text-xs text-muted-foreground">{{ model.modelName }} · {{ t(`${prefix}.notProbed`) }}</span>
+      </template>
     </ProbeHistoryStrip>
     <details v-if="selectedForAutomation && priorityDecision" class="rounded-md bg-surface/40 px-2 py-1.5 text-xs">
       <summary class="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
@@ -89,9 +93,5 @@ const state = computed(() => {
       </QualityHistoryStrip>
       <p v-if="qualityError" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ qualityError }}</p>
     </template>
-    <div v-if="selectedForAutomation && (account.modelHealth.length || account.unprobedModels?.length)" class="flex flex-wrap gap-2">
-      <span v-for="model in account.modelHealth" :key="model.modelName" class="rounded-md px-2 py-1 text-xs" :class="connectionHealthStateBadgeClass(model.state)">{{ model.modelName }} · {{ t(`${prefix}.stateLabels.${model.state}`) }}</span>
-      <span v-for="model in account.unprobedModels" :key="`pending-${model.modelName}`" class="rounded-md bg-surface px-2 py-1 text-xs text-muted-foreground">{{ model.modelName }} · {{ t(`${prefix}.notProbed`) }}</span>
-    </div>
   </section>
 </template>

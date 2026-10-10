@@ -48,6 +48,7 @@ const lastProbe = computed(() => {
           <span :class="errors ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'">{{ t(`${prefix}.errors`, { count: errors }) }}</span>
           <span class="text-emerald-700 dark:text-emerald-400">{{ t(`${prefix}.successRate`, { value: successRate }) }}</span>
         </template>
+        <slot name="after-stats" />
         <span v-if="lastProbe" class="text-xs text-muted-foreground">{{ lastProbe }}</span>
       </div>
       <span class="whitespace-nowrap text-muted-foreground" :title="t(`${prefix}.latencyHint`)">{{ t(`${prefix}.averageLatency`) }} <strong class="ml-1 font-semibold tabular-nums text-foreground">{{ averageLatency }}</strong></span>
