@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useDocumentVisibility, useIntervalFn } from '@vueuse/core'
+import { useDocumentVisibility, useIntervalFn, useLocalStorage } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import {
   Activity,
@@ -229,6 +229,20 @@ onMounted(() => {
 })
 
 const documentVisibility = useDocumentVisibility()
+const savedAutoRefreshSeconds = useLocalStorage('transithub.connectionHealth.autoRefreshSeconds', 30)
+const autoRefreshSeconds = computed(() => {
+  const seconds = Number(savedAutoRefreshSeconds.value)
+  return Number.isFinite(seconds) && seconds >= 5 ? Math.min(3600, Math.round(seconds)) : 30
+})
+const autoRefreshInterval = computed(() => autoRefreshSeconds.value * 1000)
+const saveAutoRefreshInterval = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const seconds = Number(input.value)
+  if (input.value.trim() && Number.isFinite(seconds)) {
+    savedAutoRefreshSeconds.value = Math.max(5, Math.min(3600, Math.round(seconds)))
+  }
+  input.value = String(autoRefreshSeconds.value)
+}
 let autoRefreshInFlight = false
 const autoRefresh = async () => {
   if (documentVisibility.value !== 'visible' || autoRefreshInFlight) return
@@ -244,7 +258,7 @@ const autoRefresh = async () => {
   }
 }
 // immediate=false 会让 VueUse 的 interval 保持暂停；这里只关闭首次回调，计时器本身必须启动。
-useIntervalFn(() => void autoRefresh(), 30_000, { immediate: true, immediateCallback: false })
+useIntervalFn(() => void autoRefresh(), autoRefreshInterval, { immediate: true, immediateCallback: false })
 watch(documentVisibility, (visibility) => {
   if (visibility === 'visible') void autoRefresh()
 })
@@ -429,6 +443,18 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
           <Loader2 v-if="isLoading" class="h-4 w-4 animate-spin" />
           <RefreshCw v-else class="h-4 w-4" />{{ t('admin.connectionHealth.refresh') }}
         </Button>
+        <label class="flex h-8 items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground" :title="t('admin.connectionHealth.autoRefresh.hint')">
+          <span>{{ t('admin.connectionHealth.autoRefresh.label') }}</span>
+          <input
+            type="number" min="5" max="3600" step="1"
+            :value="autoRefreshSeconds"
+            :aria-label="t('admin.connectionHealth.autoRefresh.intervalLabel')"
+            class="h-8 w-16 rounded-md border border-border/70 bg-background px-2 text-center text-xs tabular-nums text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+            @change="saveAutoRefreshInterval"
+            @keydown.enter.prevent="saveAutoRefreshInterval"
+          >
+          <span>{{ t('admin.connectionHealth.autoRefresh.seconds') }}</span>
+        </label>
       </div>
     </header>
 

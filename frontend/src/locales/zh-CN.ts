@@ -1082,6 +1082,12 @@ export default {
       summaryLabel: '分组健康汇总',
       groupListLabel: '上游分组列表',
       refresh: '刷新',
+      autoRefresh: {
+        label: '自动刷新',
+        intervalLabel: '页面自动刷新间隔（秒）',
+        seconds: '秒',
+        hint: '支持 5–3600 秒，按回车或移开焦点自动保存到当前浏览器。仅刷新页面数据，探活间隔在自动化策略中设置。'
+      },
       empty: '当前 admin workspace 下暂无可探活的账号/渠道。',
       adminEmpty: '当前 admin workspace 下暂无分组。',
       notConnected: '未对接',

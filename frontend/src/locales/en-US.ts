@@ -1082,6 +1082,12 @@ export default {
       summaryLabel: 'Group health summary',
       groupListLabel: 'Upstream group list',
       refresh: 'Refresh',
+      autoRefresh: {
+        label: 'Auto refresh',
+        intervalLabel: 'Page refresh interval (seconds)',
+        seconds: 's',
+        hint: '5–3600 seconds. Press Enter or leave the field to save in this browser. Refreshes page data only; probe intervals are set in automation policies.'
+      },
       empty: 'No probeable accounts/channels under the current admin workspace.',
       adminEmpty: 'No groups under the current admin workspace.',
       notConnected: 'Not connected',
