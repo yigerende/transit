@@ -68,6 +68,8 @@ type AdminGroupHealthSummary struct {
 // 只要后端能安全解析 base_url + key + model 就可独立探活，不再需要 real_connections。
 // 绝不包含 key / token / cookie / credentials / secret / authorization 明文。
 type AdminGroupAccount struct {
+	ProbeBudgets           []ChannelProbeBudget     `json:"probeBudgets,omitempty"`
+	ProbeBudgetError       bool                     `json:"probeBudgetError,omitempty"`
 	PriorityEnabled        bool                     `json:"priorityEnabled"`
 	PriorityRestorePending bool                     `json:"priorityRestorePending"`
 	SuspensionEnabled      bool                     `json:"suspensionEnabled"`
@@ -373,6 +375,7 @@ func (s *Service) AdminGroups(ctx context.Context, userID string) ([]AdminGroupH
 		health.HealthSummary = summary
 		result = append(result, health)
 	}
+	s.attachChannelProbeBudgets(ctx, userID, adminAccountID, result, policyByID)
 	s.attachGroupProbeHistory(ctx, userID, adminAccountID, result)
 	s.attachLatencyPriorities(ctx, userID, adminAccountID, session.Platform, result, policies, states, priorityStates)
 	s.attachQuality(ctx, userID, adminAccountID, result)

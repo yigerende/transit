@@ -40,13 +40,22 @@ func TestProbeOnce_StopsRealProbingAfterDailyBudgetExhausted(t *testing.T) {
 	if hits != 1 {
 		t.Fatalf("expected daily budget to block the second real probe request, got %d hits", hits)
 	}
+	target.ModelName = "another-model"
+	if _, err := svc.probeOnce(context.Background(), conn, policy, target); err != nil || hits != 1 {
+		t.Fatalf("models on the same channel must share quota: hits=%d err=%v", hits, err)
+	}
+	otherChannel := conn
+	otherChannel.ID = "conn-2"
+	if _, err := svc.probeOnce(context.Background(), otherChannel, policy, target); err != nil || hits != 2 {
+		t.Fatalf("another channel must have its own quota: hits=%d err=%v", hits, err)
+	}
 
 	secondPolicy := policy
 	secondPolicy.ID = "policy-2"
 	if _, err := svc.probeOnce(context.Background(), conn, secondPolicy, target); err != nil {
 		t.Fatalf("unexpected error for independent policy budget: %v", err)
 	}
-	if hits != 2 {
+	if hits != 3 {
 		t.Fatalf("one policy must not consume another policy's budget, got %d hits", hits)
 	}
 }

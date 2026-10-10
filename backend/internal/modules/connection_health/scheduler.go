@@ -547,9 +547,9 @@ func (s *Service) collectAdminProbeJobsWithGroupsAndCache(ctx context.Context, p
 				if !s.isDue(ctx, candidate.target.TargetID, spec.modelName, spec.policy, time.Now()) {
 					continue
 				}
-				budgetKey := ws.userID + "|" + ws.adminAccountID + "|" + spec.policy.ID
+				budgetKey := ws.userID + "|" + ws.adminAccountID + "|" + spec.policy.ID + "|" + candidate.target.TargetID
 				if !budgetLoaded[budgetKey] {
-					count, countErr := s.repo.CountProbesToday(ctx, ws.userID, ws.adminAccountID, spec.policy.ID, dayStart)
+					count, countErr := s.repo.CountProbesToday(ctx, ws.userID, ws.adminAccountID, spec.policy.ID, candidate.target.TargetID, dayStart)
 					if countErr != nil {
 						log.Printf("[connection-health] count policy probe budget failed policy_id=%s err=%v", spec.policy.ID, countErr)
 						continue

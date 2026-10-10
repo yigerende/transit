@@ -873,6 +873,10 @@ export default {
         toggle: '允许自动暂停渠道 {name}',
         hint: '关闭后，该渠道不会自动暂停，探活和优先级开关不受影响；共享分组同步生效。系统此前暂停的渠道会自动恢复，人工停用不受影响。开启仍需分组策略授权。'
       },
+      probeBudget: {
+        exhausted: '{models} · 今日探活已达上限 {used}/{limit}，{time}（北京时间）恢复',
+        unavailable: '探活额度读取失败，请稍后刷新。'
+      },
       latencyPriority: {
         averageFirstToken: '短期加权首字',
   "help": "仅调整上游优先级。选定一个探活模型，使用有效期内成功的策略探活（含手动）计算加权延迟。",
@@ -1462,7 +1466,7 @@ export default {
         maxProbeTokensLabel: '最大 token',
         probePromptPlaceholder: '探活 prompt（留空使用默认值）',
         probeIntervalLabel: '探活间隔（秒）',
-        dailyBudgetLabel: '每日探活预算',
+        dailyBudgetLabel: '每渠道每日探活上限',
         failureThresholdLabel: '失败阈值',
         successThresholdLabel: '恢复成功阈值',
         autoDegradeLabel: '自动降级',
@@ -1490,7 +1494,7 @@ export default {
           modelTargets: '这里配置该策略要探活的模型列表，自动调度和手动探活都会按这些模型逐一执行探活请求。',
           provider: '一个探活策略只能选择一个 provider（openai / anthropic / gemini / custom），下方新增的所有模型探活目标都会自动使用这个 provider，避免同一策略内混用不同厂商的模型。',
           probeInterval: '按上次探活开始时间加该间隔安排下一次探活，成功、失败或暂停均使用相同间隔；同一渠道不会重叠请求。',
-          dailyBudget: '限制当前 workspace 每天最多执行多少次真实探活请求；预算耗尽后会跳过真实探活请求，避免消耗过高，不代表系统异常。',
+          dailyBudget: '每个渠道在当前策略下独立计算，互不占用次数。自动探活和受策略管理的手动探活均计数；多个模型每次请求各算一次。同一渠道跨分组按生效策略去重探活，北京时间每日 00:00 重置。60 秒一次、单模型每天约 1440 次。',
           failureThreshold: '超时、网络错误、限流、鉴权失败等统一累计。连续失败达到该次数后按自动化开关更新健康状态、优先级或暂停渠道；成功一次即清零连续失败次数。',
           successThreshold: '连续探活成功达到该次数后直接恢复健康，并按自动化开关恢复渠道；失败一次即清零连续成功次数。',
           autoDegrade: '开启后按连续失败和连续成功阈值更新健康状态。允许暂停渠道关闭时仅影响优先级；关闭自动降级后仅记录探活结果。',
@@ -1522,7 +1526,7 @@ export default {
             },
             budget: {
               title: '5. 预算规则',
-              description: '每条策略都配置了"每日探活预算"，用于限制当前 workspace 每天最多执行多少次真实探活请求。预算耗尽后，调度器会跳过真实探活请求，也不会写入新的探活事件——即使某个模型已经到期，也可能持续显示"已到期，等待调度"而没有新事件产生，这是预算限制导致的正常现象，不代表系统故障。'
+              description: '每条策略的上限按渠道独立计算。自动探活和受策略管理的手动探活共用该渠道额度，多个模型每次请求各算一次；同一渠道跨分组按生效策略去重探活。达到上限后只停止该渠道在该策略下的探活，页面显示已用次数和恢复时间，北京时间每日 00:00 重置。60 秒一次、单模型每天约 1440 次。'
             },
             stateTransition: {
               title: '6. 状态变化',
@@ -1590,7 +1594,7 @@ export default {
         network: '网络异常，请检查连接后重试。',
         notFound: '探活目标不存在或无权访问。',
         noMatchingModels: '所选模型未匹配当前探活策略，请重新打开探活窗口。',
-        probeBudgetExhausted: '策略今日探活预算已用完，本次未执行。',
+        probeBudgetExhausted: '该渠道在当前策略下的今日探活次数已达上限，北京时间 00:00 重置，本次未执行。',
         accountsFetch: '该分组账号列表加载失败。',
         targetNotFound: '探活目标不存在或不属于当前工作区。',
         credentialUnavailable: '无法安全获取上游凭据，暂不可探活。',

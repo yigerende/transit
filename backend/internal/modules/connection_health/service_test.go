@@ -345,26 +345,46 @@ func (f *fakeRepository) CountFailureEventsSince(ctx context.Context, userID str
 	return count, nil
 }
 
-func (f *fakeRepository) CountProbesToday(ctx context.Context, userID string, adminAccountID string, policyID string, dayStart time.Time) (int, error) {
+func (f *fakeRepository) ListProbeBudgetUsage(ctx context.Context, userID, adminAccountID string, dayStart time.Time) ([]ProbeBudgetUsage, error) {
+	keys := map[string]bool{}
+	for key := range f.budgetClaims {
+		keys[key] = true
+	}
+	for _, e := range f.events {
+		keys[e.UserID+"|"+e.AdminAccountID+"|"+e.PolicyID+"|"+e.ConnectionID+"|"+dayStart.Format(time.RFC3339)] = true
+	}
+	var result []ProbeBudgetUsage
+	for key := range keys {
+		parts := strings.Split(key, "|")
+		if len(parts) != 5 || parts[0] != userID || parts[1] != adminAccountID || parts[4] != dayStart.Format(time.RFC3339) {
+			continue
+		}
+		count, _ := f.CountProbesToday(ctx, userID, adminAccountID, parts[2], parts[3], dayStart)
+		result = append(result, ProbeBudgetUsage{PolicyID: parts[2], TargetID: parts[3], Used: count})
+	}
+	return result, nil
+}
+
+func (f *fakeRepository) CountProbesToday(ctx context.Context, userID string, adminAccountID string, policyID string, targetID string, dayStart time.Time) (int, error) {
 	count := 0
 	for _, e := range f.events {
-		if e.UserID == userID && e.AdminAccountID == adminAccountID && e.PolicyID == policyID && isProbeResultString(e.Result) {
+		if e.UserID == userID && e.AdminAccountID == adminAccountID && e.PolicyID == policyID && e.ConnectionID == targetID && (e.CreatedAt.IsZero() || (!e.CreatedAt.Before(dayStart) && e.CreatedAt.Before(dayStart.Add(24*time.Hour)))) && isProbeResultString(e.Result) {
 			count++
 		}
 	}
-	key := userID + "|" + adminAccountID + "|" + policyID + "|" + dayStart.Format(time.RFC3339)
+	key := userID + "|" + adminAccountID + "|" + policyID + "|" + targetID + "|" + dayStart.Format(time.RFC3339)
 	if claimed := f.budgetClaims[key]; claimed > count {
 		return claimed, nil
 	}
 	return count, nil
 }
 
-func (f *fakeRepository) TryConsumeProbeBudget(ctx context.Context, userID string, adminAccountID string, policyID string, dayStart time.Time, limit int) (bool, error) {
-	key := userID + "|" + adminAccountID + "|" + policyID + "|" + dayStart.Format(time.RFC3339)
+func (f *fakeRepository) TryConsumeProbeBudget(ctx context.Context, userID string, adminAccountID string, policyID string, targetID string, dayStart time.Time, limit int) (bool, error) {
+	key := userID + "|" + adminAccountID + "|" + policyID + "|" + targetID + "|" + dayStart.Format(time.RFC3339)
 	if _, initialized := f.budgetClaims[key]; !initialized {
 		count := 0
 		for _, event := range f.events {
-			if event.UserID == userID && event.AdminAccountID == adminAccountID && event.PolicyID == policyID && isProbeResultString(event.Result) {
+			if event.UserID == userID && event.AdminAccountID == adminAccountID && event.PolicyID == policyID && event.ConnectionID == targetID && (event.CreatedAt.IsZero() || (!event.CreatedAt.Before(dayStart) && event.CreatedAt.Before(dayStart.Add(24*time.Hour)))) && isProbeResultString(event.Result) {
 				count++
 			}
 		}

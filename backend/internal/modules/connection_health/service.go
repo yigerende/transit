@@ -39,8 +39,9 @@ type healthRepository interface {
 	ListRecentProbesByTargets(ctx context.Context, userID string, adminAccountID string, targetIDs []string) ([]GroupProbeSample, error)
 	ListPriorityProbeSamples(ctx context.Context, userID, adminAccountID string, targetIDs []string, since time.Time) ([]PriorityProbeSample, error)
 	CountFailureEventsSince(ctx context.Context, userID string, adminAccountID string, since time.Time) (int, error)
-	CountProbesToday(ctx context.Context, userID string, adminAccountID string, policyID string, dayStart time.Time) (int, error)
-	TryConsumeProbeBudget(ctx context.Context, userID string, adminAccountID string, policyID string, dayStart time.Time, limit int) (bool, error)
+	ListProbeBudgetUsage(ctx context.Context, userID, adminAccountID string, dayStart time.Time) ([]ProbeBudgetUsage, error)
+	CountProbesToday(ctx context.Context, userID string, adminAccountID string, policyID string, targetID string, dayStart time.Time) (int, error)
+	TryConsumeProbeBudget(ctx context.Context, userID string, adminAccountID string, policyID string, targetID string, dayStart time.Time, limit int) (bool, error)
 	TryAcquireSchedulerLease(ctx context.Context) (release func(), acquired bool, err error)
 	AcquireTargetLease(ctx context.Context, targetID string) (release func(), err error)
 	ListEnabledPolicies(ctx context.Context) ([]Policy, error)
@@ -1068,7 +1069,7 @@ func (s *Service) probeOnce(ctx context.Context, conn my_sites.RealConnection, p
 	}
 
 	dayStart := probeBudgetDayStart(time.Now())
-	allowed, err := s.repo.TryConsumeProbeBudget(ctx, policy.UserID, policy.AdminAccountID, policy.ID, dayStart, probeBudgetLimit(policy))
+	allowed, err := s.repo.TryConsumeProbeBudget(ctx, policy.UserID, policy.AdminAccountID, policy.ID, conn.ID, dayStart, probeBudgetLimit(policy))
 	if err != nil {
 		return nil, err
 	}

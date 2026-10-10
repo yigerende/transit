@@ -35,15 +35,15 @@ func (r *cadenceRepo) InsertEvent(ctx context.Context, event ConnectionHealthEve
 	defer r.mu.Unlock()
 	return r.fakeRepository.InsertEvent(ctx, event)
 }
-func (r *cadenceRepo) CountProbesToday(ctx context.Context, user, workspace, policy string, day time.Time) (int, error) {
+func (r *cadenceRepo) CountProbesToday(ctx context.Context, user, workspace, policy, target string, day time.Time) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.fakeRepository.CountProbesToday(ctx, user, workspace, policy, day)
+	return r.fakeRepository.CountProbesToday(ctx, user, workspace, policy, target, day)
 }
-func (r *cadenceRepo) TryConsumeProbeBudget(ctx context.Context, user, workspace, policy string, day time.Time, limit int) (bool, error) {
+func (r *cadenceRepo) TryConsumeProbeBudget(ctx context.Context, user, workspace, policy, target string, day time.Time, limit int) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.fakeRepository.TryConsumeProbeBudget(ctx, user, workspace, policy, day, limit)
+	return r.fakeRepository.TryConsumeProbeBudget(ctx, user, workspace, policy, target, day, limit)
 }
 
 type cadenceReader struct {
@@ -192,7 +192,7 @@ func TestScheduler_DisabledOrExcludedQueuedWorkNeverRequestsCredentials(t *testi
 				_ = repo.UpsertState(context.Background(), ConnectionHealthState{ConnectionID: jobs[0].target.TargetID, ModelName: "model-0", State: StateHealthy, LastProbeAt: &now})
 			case "budget":
 				repo.policies[0].DailyProbeBudget = 1
-				_, _ = repo.TryConsumeProbeBudget(context.Background(), "user1", "ws1", "p1", probeBudgetDayStart(time.Now()), 1)
+				_, _ = repo.TryConsumeProbeBudget(context.Background(), "user1", "ws1", "p1", jobs[0].target.TargetID, probeBudgetDayStart(time.Now()), 1)
 			}
 			requests := 0
 			svc.probeRunner.client.Transport = latencyTestTransport(func(r *http.Request) (*http.Response, error) { requests++; return nil, context.DeadlineExceeded })

@@ -431,7 +431,7 @@ func (s *Service) probeTargetOnce(ctx context.Context, userID string, adminAccou
 	}
 
 	dayStart := probeBudgetDayStart(time.Now())
-	allowed, err := s.repo.TryConsumeProbeBudget(ctx, userID, adminAccountID, spec.policy.ID, dayStart, probeBudgetLimit(spec.policy))
+	allowed, err := s.repo.TryConsumeProbeBudget(ctx, userID, adminAccountID, spec.policy.ID, target.TargetID, dayStart, probeBudgetLimit(spec.policy))
 	if err != nil {
 		return nil, err
 	}

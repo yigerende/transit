@@ -225,7 +225,7 @@ func (r *Repository) EnsureSchema(ctx context.Context) error {
 			updated_at timestamptz NOT NULL DEFAULT now()
 		)`,
 	}
-	statements = append(statements, `ALTER TABLE connection_health_events ADD COLUMN IF NOT EXISTS manual boolean NOT NULL DEFAULT false`, repairProbeStateSourceSQL)
+	statements = append(statements, channelProbeBudgetSchemaSQL, `ALTER TABLE connection_health_events ADD COLUMN IF NOT EXISTS manual boolean NOT NULL DEFAULT false`, repairProbeStateSourceSQL)
 	for _, stmt := range statements {
 		if _, err := r.db.Exec(ctx, stmt); err != nil {
 			return err
@@ -353,6 +353,7 @@ func (r *Repository) DeletePolicy(ctx context.Context, id string, userID string,
 		`DELETE FROM connection_health_model_targets WHERE policy_id = $1 AND user_id = $2 AND admin_account_id = $3`,
 		`DELETE FROM connection_health_policy_assignments WHERE policy_id = $1 AND user_id = $2 AND admin_account_id = $3`,
 		`DELETE FROM connection_health_group_policy_assignments WHERE policy_id = $1 AND user_id = $2 AND admin_account_id = $3`,
+		`DELETE FROM connection_health_channel_probe_budget_usage WHERE policy_id = $1 AND user_id = $2 AND admin_account_id = $3`,
 		`DELETE FROM connection_health_probe_budget_usage WHERE policy_id = $1 AND user_id = $2 AND admin_account_id = $3`,
 	}
 	for _, statement := range cleanupStatements {
@@ -712,18 +713,17 @@ func (r *Repository) CountFailureEventsSince(ctx context.Context, userID string,
 	return count, nil
 }
 
-// CountProbesToday 按策略统计当天真实探活次数。旧事件没有 policy_id，不再与新策略共享预算；
-// 这样升级后每条策略都严格消费自己的 DailyProbeBudget。
-func (r *Repository) CountProbesToday(ctx context.Context, userID string, adminAccountID string, policyID string, dayStart time.Time) (int, error) {
+// CountProbesToday counts this channel under its effective policy; models share the channel quota.
+func (r *Repository) CountProbesToday(ctx context.Context, userID string, adminAccountID string, policyID string, targetID string, dayStart time.Time) (int, error) {
 	row := r.db.QueryRow(ctx, `
 		SELECT GREATEST(
 			(SELECT count(*) FROM connection_health_events
-			 WHERE user_id = $1 AND admin_account_id = $2 AND policy_id = $3 AND created_at >= $4
+			 WHERE user_id = $1 AND admin_account_id = $2 AND policy_id = $3 AND connection_id = $6 AND created_at >= $4 AND created_at < $4 + interval '1 day'
 			   AND result = ANY($5)),
-			COALESCE((SELECT used FROM connection_health_probe_budget_usage
-			          WHERE user_id = $1 AND admin_account_id = $2 AND policy_id = $3 AND day_start = $4), 0)
+			COALESCE((SELECT used FROM connection_health_channel_probe_budget_usage
+			          WHERE user_id = $1 AND admin_account_id = $2 AND policy_id = $3 AND target_id = $6 AND day_start = $4), 0)
 		)
-	`, userID, adminAccountID, policyID, dayStart, probeResultKeys())
+	`, userID, adminAccountID, policyID, dayStart, probeResultKeys(), targetID)
 	var count int
 	if err := row.Scan(&count); err != nil {
 		return 0, err
@@ -733,7 +733,7 @@ func (r *Repository) CountProbesToday(ctx context.Context, userID string, adminA
 
 // TryConsumeProbeBudget atomically reserves one probe. The first reservation of a day seeds
 // the counter from existing events so a rolling upgrade does not reset an already-used budget.
-func (r *Repository) TryConsumeProbeBudget(ctx context.Context, userID string, adminAccountID string, policyID string, dayStart time.Time, limit int) (bool, error) {
+func (r *Repository) TryConsumeProbeBudget(ctx context.Context, userID string, adminAccountID string, policyID string, targetID string, dayStart time.Time, limit int) (bool, error) {
 	if limit <= 0 {
 		return false, nil
 	}
@@ -743,24 +743,24 @@ func (r *Repository) TryConsumeProbeBudget(ctx context.Context, userID string, a
 	}
 	defer tx.Rollback(ctx)
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO connection_health_probe_budget_usage (
-			user_id, admin_account_id, policy_id, day_start, used, updated_at
+		INSERT INTO connection_health_channel_probe_budget_usage (
+			user_id, admin_account_id, policy_id, day_start, used, updated_at, target_id
 		)
-		SELECT $1, $2, $3, $4, count(*)::integer, now()
+		SELECT $1, $2, $3, $4, count(*)::integer, now(), $6
 		FROM connection_health_events
-		WHERE user_id = $1 AND admin_account_id = $2 AND policy_id = $3 AND created_at >= $4
+		WHERE user_id = $1 AND admin_account_id = $2 AND policy_id = $3 AND connection_id = $6 AND created_at >= $4 AND created_at < $4 + interval '1 day'
 			AND result = ANY($5)
-		ON CONFLICT (user_id, admin_account_id, policy_id, day_start) DO NOTHING
-	`, userID, adminAccountID, policyID, dayStart, probeResultKeys()); err != nil {
+		ON CONFLICT (user_id, admin_account_id, policy_id, target_id, day_start) DO NOTHING
+	`, userID, adminAccountID, policyID, dayStart, probeResultKeys(), targetID); err != nil {
 		return false, err
 	}
 	var used int
 	err = tx.QueryRow(ctx, `
-		UPDATE connection_health_probe_budget_usage
+		UPDATE connection_health_channel_probe_budget_usage
 		SET used = used + 1, updated_at = now()
-		WHERE user_id = $1 AND admin_account_id = $2 AND policy_id = $3 AND day_start = $4 AND used < $5
+		WHERE user_id = $1 AND admin_account_id = $2 AND policy_id = $3 AND target_id = $6 AND day_start = $4 AND used < $5
 		RETURNING used
-	`, userID, adminAccountID, policyID, dayStart, limit).Scan(&used)
+	`, userID, adminAccountID, policyID, dayStart, limit, targetID).Scan(&used)
 	if errors.Is(err, pgx.ErrNoRows) {
 		if commitErr := tx.Commit(ctx); commitErr != nil {
 			return false, commitErr

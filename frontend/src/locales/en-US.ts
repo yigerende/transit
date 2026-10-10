@@ -873,6 +873,10 @@ export default {
         toggle: 'Allow automatic suspension of {name}',
         hint: 'Off: no automatic suspension; probing and the priority switch are unaffected. Applies across all groups sharing this channel. System-suspended channels are restored; manual disables are preserved. On still requires policy permission.'
       },
+      probeBudget: {
+        exhausted: '{models} · Daily probe limit reached {used}/{limit}. Resumes {time} (UTC+8)',
+        unavailable: 'Probe quota could not be loaded. Please refresh.'
+      },
       latencyPriority: {
         averageFirstToken: 'Weighted first token',
   "help": "Only updates upstream priority. Average recent successful policy probes (including manual probes) of one selected model.",
@@ -1462,7 +1466,7 @@ export default {
         maxProbeTokensLabel: 'Max tokens',
         probePromptPlaceholder: 'Probe prompt (leave empty for default)',
         probeIntervalLabel: 'Probe Interval (seconds)',
-        dailyBudgetLabel: 'Daily Probe Budget',
+        dailyBudgetLabel: 'Daily Probes per Channel',
         failureThresholdLabel: 'Failure Threshold',
         successThresholdLabel: 'Recovery Success Threshold',
         autoDegradeLabel: 'Auto Degrade',
@@ -1490,7 +1494,7 @@ export default {
           modelTargets: 'The models this policy probes. Both automatic scheduling and manual probes run against exactly these models.',
           provider: 'A probe policy can only use one provider (openai / anthropic / gemini / custom). Every model target added below automatically uses this provider, so a single policy never mixes providers.',
           probeInterval: 'The next probe is due one configured interval after the last probe started, whether it succeeded, failed, or the channel is suspended.',
-          dailyBudget: 'Caps how many real probe requests this workspace can run per day. Once the budget is used up, real probe requests are skipped to avoid excessive cost — this is expected, not a system error.',
+          dailyBudget: 'Each channel has an independent quota under this policy. Automatic and policy-managed manual probes share it; each model request counts once. Shared channels are deduplicated across groups using the effective policy. Resets at 00:00 UTC+8. One model every 60 seconds uses about 1,440 probes per day.',
           failureThreshold: 'All probe failures count, including timeouts, network errors, rate limits and authentication failures. Health, priority or suspension changes at this consecutive failure threshold, according to the automation switches. A success resets the failure count.',
           successThreshold: 'Reaching this consecutive success threshold restores healthy status and the channel according to the automation switches. A failure resets the success count.',
           autoDegrade: 'Update health at the consecutive failure and success thresholds. With suspension disabled, health only affects priority. Disabling Auto Degrade only records results.',
@@ -1522,7 +1526,7 @@ export default {
             },
             budget: {
               title: '5. Budget rules',
-              description: 'Every policy has a "daily probe budget" that caps how many real probe requests this workspace can run per day. Once the budget is exhausted, the scheduler skips real probe requests and does not write new probe events — so a model can keep showing "due, waiting for scheduler" with no new events even though it is genuinely due. This is expected behavior caused by the budget limit, not a system fault.'
+              description: 'The policy limit applies independently to each channel. Automatic and policy-managed manual probes share that quota; each model request counts once. Shared channels are deduplicated across groups using the effective policy. At the limit, only that channel under that policy stops probing, with usage and reset time shown. Resets at 00:00 UTC+8. One model every 60 seconds uses about 1,440 probes per day.'
             },
             stateTransition: {
               title: '6. State transitions',
@@ -1590,7 +1594,7 @@ export default {
         network: 'Network error. Check your connection and try again.',
         notFound: 'Probe target not found or inaccessible.',
         noMatchingModels: 'Selected models do not match the current probe policy. Reopen the probe dialog.',
-        probeBudgetExhausted: 'The policy daily probe budget is exhausted. No request was sent.',
+        probeBudgetExhausted: 'This channel has reached its daily probe limit under the effective policy. Resets at 00:00 UTC+8. No request was sent.',
         accountsFetch: 'Failed to load accounts for this group.',
         targetNotFound: 'Probe target not found or not in the current workspace.',
         credentialUnavailable: 'Cannot securely obtain upstream credentials; probing unavailable.',

@@ -21,6 +21,8 @@ const automaticQualityEnabled = computed(() => selectedForAutomation.value && pr
 const canProbeQuality = computed(() => props.account.probeAvailable && !props.account.qualityPausedByHealth && !props.qualityUnavailable)
 const latest = computed(() => latestChannelProbe(props.account))
 const latencyPrefix = `${prefix}.latencyPriority`
+const exhaustedBudgets = computed(() => props.account.probeBudgets?.filter(budget => budget.exhausted) ?? [])
+const budgetResetTime = (value: string) => new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
 const priorityDecision = computed(() => props.account.latencyPriority)
 const sampleWeight = (index: number): string => {
   const d = priorityDecision.value
@@ -74,6 +76,10 @@ const state = computed(() => {
     <p v-if="priorityError" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ priorityError }}</p>
     <p v-if="account.priorityRestorePending" role="status" class="text-xs text-amber-600 dark:text-amber-400">{{ t(`${prefix}.channelPriority.restoring`) }}</p>
     <p v-if="suspensionError" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ suspensionError }}</p>
+    <p v-for="budget in exhaustedBudgets" :key="budget.policyId" role="status" class="break-words text-xs text-amber-600 dark:text-amber-400" :title="budget.policyName">
+      {{ t(`${prefix}.probeBudget.exhausted`, { models: budget.models.join('、'), used: budget.used, limit: budget.limit, time: budgetResetTime(budget.resetsAt) }) }}
+    </p>
+    <p v-if="account.probeBudgetError" role="status" class="text-xs text-amber-600 dark:text-amber-400">{{ t(`${prefix}.probeBudget.unavailable`) }}</p>
     <ProbeHistoryStrip v-if="selectedForAutomation || hasManualProbes" :samples="account.recentProbes" :unavailable="historyUnavailable">
       <template #before-stats>
         <span class="text-muted-foreground">{{ t(`${prefix}.groupDetail.columns.priority`) }} {{ account.priority ?? '—' }}</span>

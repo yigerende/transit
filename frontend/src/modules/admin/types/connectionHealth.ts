@@ -95,7 +95,19 @@ export interface AdminGroupUnprobedModel {
   providerFamily: string
 }
 
+export interface ChannelProbeBudget {
+  policyId: string
+  policyName: string
+  models: string[]
+  used: number
+  limit: number
+  exhausted: boolean
+  resetsAt: string
+}
+
 export interface AdminGroupAccount {
+  probeBudgets?: ChannelProbeBudget[]
+  probeBudgetError?: boolean
   latencyPriority?: LatencyPriorityDecision
   latencyPriorityError?: boolean
   qualityEnabled?: boolean
