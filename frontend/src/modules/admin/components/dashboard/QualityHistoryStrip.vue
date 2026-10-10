@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, useId, watch } from 'vue'
+import { useEventListener } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { connectionHealthMessageKey, formatConnectionHealthTime } from '../../composables/useConnectionHealth'
 import type { QualitySample, QualityState } from '../../types/quality'
@@ -23,6 +24,75 @@ function title(sample: QualitySample | null) {
   const detail = sample.errorKey ? t(connectionHealthMessageKey(sample.errorKey,te)) : `${t(`${p}.actualAnswer`)}: ${sample.answer}\n${t(`${p}.expectedAnswer`)}: ${sample.expectedAnswer}\n${t(`${p}.contentResult`)}: ${t(`${p}.${sample.contentPassed?'passed':'failed'}`)} · ${t(`${p}.timeResult`)}: ${t(`${p}.${sample.timePassed?'passed':'failed'}`)} (${sample.durationMs} / <${sample.maxDurationMs} ms)`
   return `${sample.questionName} · ${sample.model}\n${t(`${p}.${sample.result}`)} · ${(sample.durationMs/1000).toFixed(2)}s\n${detail}\n${formatConnectionHealthTime(sample.createdAt)}`
 }
+
+const strip = ref<HTMLElement | null>(null)
+const tooltip = ref<HTMLElement | null>(null)
+const tooltipId = useId()
+const activeIndex = ref<number | null>(null)
+const tooltipText = computed(() => activeIndex.value === null ? '' : title(history.value[activeIndex.value] ?? null))
+const tooltipPosition = ref({ left: '0px', top: '0px' })
+const tooltipReady = ref(false)
+let pointer: { x: number; y: number } | null = null
+let positionSequence = 0
+
+function hideTooltip() {
+  positionSequence++
+  activeIndex.value = null
+  tooltipReady.value = false
+  pointer = null
+}
+
+function hoverSample(event: PointerEvent) {
+  if (event.pointerType === 'touch' || !strip.value) return
+  pointer = { x: event.clientX, y: event.clientY }
+  const bounds = strip.value.getBoundingClientRect()
+  const gap = parseFloat(getComputedStyle(strip.value).columnGap) || 0
+  // Include the narrow gaps in each cell's hit area, so crossing them does not
+  // dismiss the tooltip. Fixed slot keys keep hover intact when records arrive.
+  const index = Math.floor((pointer.x - bounds.left + gap / 2) / ((bounds.width + gap) / history.value.length))
+  activeIndex.value = Math.max(0, Math.min(history.value.length - 1, index))
+}
+
+function focusSample() {
+  if (activeIndex.value !== null) return
+  pointer = null
+  activeIndex.value = history.value.length - 1
+}
+
+function navigateSample(event: KeyboardEvent) {
+  if (event.key === 'Escape') { hideTooltip(); return }
+  const direction = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0
+  if (!direction) return
+  event.preventDefault()
+  pointer = null
+  activeIndex.value = Math.max(0, Math.min(history.value.length - 1, (activeIndex.value ?? history.value.length - 1) + direction))
+}
+
+async function positionTooltip() {
+  const sequence = ++positionSequence
+  await nextTick()
+  if (sequence !== positionSequence || activeIndex.value === null || !strip.value || !tooltip.value) return
+  if (pointer && !strip.value.contains(document.elementFromPoint(pointer.x, pointer.y))) {
+    hideTooltip()
+    return
+  }
+  const cell = strip.value.children[activeIndex.value]
+  if (!cell) { hideTooltip(); return }
+  const anchor = cell.getBoundingClientRect()
+  const box = tooltip.value.getBoundingClientRect()
+  const padding = 8
+  const left = Math.max(padding, Math.min(anchor.left + anchor.width / 2 - box.width / 2, window.innerWidth - box.width - padding))
+  const above = anchor.top - box.height - padding
+  const top = above >= padding ? above : Math.max(padding, Math.min(anchor.bottom + padding, window.innerHeight - box.height - padding))
+  tooltipPosition.value = { left: `${left}px`, top: `${top}px` }
+  tooltipReady.value = true
+}
+
+watch([activeIndex, history, tooltipText], () => void positionTooltip(), { flush: 'post' })
+useEventListener(window, 'scroll', hideTooltip, { capture: true, passive: true })
+useEventListener(window, 'resize', hideTooltip)
+useEventListener(window, 'blur', hideTooltip)
+useEventListener(document, 'visibilitychange', () => { if (document.hidden) hideTooltip() })
 </script>
 <template>
   <div class="space-y-3 border-t border-border/40 pt-3">
@@ -35,9 +105,12 @@ function title(sample: QualitySample | null) {
       </div>
       <span v-if="state" class="text-muted-foreground" :title="title(state.latest)">{{ state.latest.model }} · {{ (state.latest.durationMs/1000).toFixed(2) }}s</span>
     </div>
-    <div class="flex h-5 gap-px overflow-hidden rounded sm:gap-[2px]" role="img" :aria-label="t(`${p}.historyLabel`, { count:samples.length, failed, errors, rate })">
-      <span v-for="(sample,index) in history" :key="sample?.id ?? `empty-${index}`" class="min-w-0 flex-1 rounded-[1px] transition-opacity hover:opacity-60" :class="color(sample)" :title="title(sample)" aria-hidden="true" />
+    <div ref="strip" class="flex h-5 gap-px overflow-hidden rounded outline-none focus-visible:ring-2 focus-visible:ring-primary sm:gap-[2px]" role="group" tabindex="0" :aria-label="t(`${p}.historyLabel`, { count:samples.length, failed, errors, rate })" :aria-describedby="activeIndex !== null ? tooltipId : undefined" @pointerenter="hoverSample" @pointermove="hoverSample" @pointerleave="hideTooltip" @pointercancel="hideTooltip" @focus="focusSample" @blur="hideTooltip" @keydown="navigateSample">
+      <span v-for="(sample,index) in history" :key="index" class="min-w-0 flex-1 rounded-[1px] transition-opacity" :class="[color(sample), activeIndex === index ? 'opacity-60' : '']" aria-hidden="true" />
     </div>
+    <Teleport to="body">
+      <div v-if="activeIndex !== null" :id="tooltipId" ref="tooltip" role="tooltip" class="pointer-events-none fixed z-[9999] max-h-[min(28rem,calc(100vh-1rem))] w-max max-w-[min(28rem,calc(100vw-1rem))] overflow-hidden whitespace-pre-wrap break-words rounded-lg border border-border bg-card px-3 py-2 text-xs leading-5 text-foreground shadow-lg" :style="[tooltipPosition, { visibility: tooltipReady ? 'visible' : 'hidden' }]">{{ tooltipText }}</div>
+    </Teleport>
     <p v-if="unavailable || !selected || pausedByHealth || !samples.length" class="text-xs text-muted-foreground">{{ t(`${p}.${unavailable ? 'historyUnavailable' : !selected ? 'selectionHint' : pausedByHealth ? 'healthPausedHint' : enabled ? 'waiting' : 'enableHint'}`) }}</p>
     <p v-else-if="state?.latest.errorKey" class="text-xs text-amber-600 dark:text-amber-400">{{ t(connectionHealthMessageKey(state.latest.errorKey,te)) }}<span v-if="state.degraded"> · {{ t(`${p}.previousDegraded`) }}</span></p>
   </div>
