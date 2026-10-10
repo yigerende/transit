@@ -118,6 +118,9 @@ func (s *Service) SetAdminGroupPolicyConfiguration(ctx context.Context, userID s
 		if edit.MaxLatencyMs == nil {
 			edit.MaxLatencyMs = intPtr(defaultInt(existing.MaxLatencyMs, DefaultMaxLatencyMs))
 		}
+		if strings.TrimSpace(edit.ProbeMode) == "" {
+			edit.ProbeMode = existing.ProbeMode
+		}
 		policy, targets, err := buildPolicyAndTargets(userID, groupContext.adminAccountID, existing.ID, edit)
 		if err != nil {
 			return AdminGroupPolicyConfiguration{}, err

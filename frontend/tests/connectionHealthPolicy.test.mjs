@@ -55,11 +55,19 @@ test('toggle preserves suspension permission, thresholds and model configuration
   const off = policyInputWithEnabled(original, false)
   assert.equal(off.enabled, false)
   for (const [key, value] of Object.entries(original)) {
-    if (key !== 'enabled' && key !== 'probeMode') assert.deepEqual(off[key], value, key)
+    if (key !== 'enabled') assert.deepEqual(off[key], value, key)
   }
   assert.deepEqual(policyInputWithEnabled({ ...original, enabled: false }, true), { ...off, enabled: true })
   assert.notEqual(off.modelTargets, original.modelTargets)
   assert.equal(original.enabled, true)
   assert.equal(policyInputWithEnabled(policy({ maxLatencyMs: undefined }), false).maxLatencyMs, 20000)
   assert.equal(policyInputWithEnabled(policy({ autoSuspendEnabled: undefined }), false).autoSuspendEnabled, false)
+})
+
+test('group toggle retains each selected probe method', () => {
+  for (const probeMode of ['real_model', 'arithmetic', 'sub2api_test', 'first_token']) {
+    const off = policyInputWithEnabled(policy({ probeMode }), false)
+    assert.equal(off.probeMode, probeMode)
+    assert.equal(policyInputWithEnabled(off, true).probeMode, probeMode)
+  }
 })

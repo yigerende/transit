@@ -119,6 +119,9 @@ func TestRecentProbesByTargetsPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, probeModeHistorySchema); err != nil {
+		t.Fatal(err)
+	}
 	samples, err := NewRepository(pool).ListRecentProbesByTargets(ctx, "user", "workspace", []string{"busy", "quiet"})
 	if err != nil {
 		t.Fatal(err)

@@ -82,14 +82,14 @@ const state = computed(() => {
     </ProbeHistoryStrip>
     <details v-if="selectedForAutomation && priorityDecision" class="rounded-md bg-surface/40 px-2 py-1.5 text-xs">
       <summary class="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
-        <span>{{ t(`${latencyPrefix}.average`) }} <strong class="font-semibold text-foreground">{{ priorityDecision.averageMs != null ? `${(priorityDecision.averageMs / 1000).toFixed(2)}s` : '—' }}</strong></span>
+        <span>{{ t(`${latencyPrefix}.${priorityDecision.probeMode === 'first_token' ? 'averageFirstToken' : 'average'}`) }} <strong class="font-semibold text-foreground">{{ priorityDecision.averageMs != null ? `${(priorityDecision.averageMs / 1000).toFixed(2)}s` : '—' }}</strong></span>
         <span>{{ t(`${latencyPrefix}.samples`, { used: priorityDecision.sampleCount, total: priorityDecision.requiredSamples }) }}</span>
         <span v-if="account.priorityEnabled !== false">{{ t(`${latencyPrefix}.decision`, { priority: priorityDecision.priority }) }}</span>
         <span v-else>{{ t(`${prefix}.channelPriority.off`) }}</span>
         <span class="ml-auto text-primary">{{ t(`${latencyPrefix}.details`) }}</span>
       </summary>
       <div class="mt-2 space-y-1.5 break-words border-t border-border/40 pt-2 text-muted-foreground">
-        <p>{{ t(`${latencyPrefix}.policyLine`, { name: priorityDecision.policyName }) }}</p>
+        <p>{{ t(`${latencyPrefix}.policyLine`, { name: priorityDecision.policyName }) }} · {{ t(`admin.connectionHealth.policyDrawer.probeModes.${priorityDecision.probeMode || 'real_model'}`) }}</p>
         <p>{{ t(`${latencyPrefix}.modelLine`, { model: priorityDecision.modelName, seconds: priorityDecision.maxAgeSeconds }) }}</p>
         <p>{{ t(`${latencyPrefix}.reasons.${priorityDecision.reason}`, { n: (priorityDecision.bandIndex ?? 0) + 1 }) }}</p>
         <p v-if="priorityDecision.sharedPolicyCount > 1">{{ t(`${latencyPrefix}.shared`, { count: priorityDecision.sharedPolicyCount }) }}</p>

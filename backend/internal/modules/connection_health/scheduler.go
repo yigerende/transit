@@ -288,15 +288,25 @@ func (s *Service) runAdminProbeJob(ctx context.Context, j adminProbeJob) {
 		return
 	}
 
-	cred, err := s.platformGroups.ResolveProbeCredential(j.session, j.account)
-	if err != nil {
-		reason := upstream.ProbeCredentialReason(err)
-		s.recordTargetCredentialUnavailable(ctx, j.userID, j.adminAccountID, j.target, j.dueSpecs, reason)
-		return
+	var cred upstream.ProbeCredential
+	if probeSpecsNeedCredentials(j.dueSpecs) {
+		cred, err = s.platformGroups.ResolveProbeCredential(j.session, j.account)
+		if err != nil {
+			direct, native := []probeModelSpec{}, []probeModelSpec{}
+			for _, spec := range j.dueSpecs {
+				if normalizeProbeMode(spec.policy.ProbeMode) == ProbeModeSub2API {
+					native = append(native, spec)
+				} else {
+					direct = append(direct, spec)
+				}
+			}
+			s.recordTargetCredentialUnavailable(ctx, j.userID, j.adminAccountID, j.target, direct, upstream.ProbeCredentialReason(err))
+			j.dueSpecs = native
+		}
 	}
 	results := make([]targetProbeResult, 0, len(j.dueSpecs))
 	for _, spec := range j.dueSpecs {
-		result, err := s.probeTargetOnce(ctx, j.userID, j.adminAccountID, j.target, cred, spec)
+		result, err := s.probeTargetOnce(ctx, j.userID, j.adminAccountID, j.target, cred, spec, j.session)
 		if err != nil {
 			log.Printf("[connection-health] scheduled target probe failed target_id=%s model=%s err=%v", j.target.TargetID, spec.modelName, err)
 			continue
@@ -363,7 +373,7 @@ func (s *Service) recordTargetCredentialUnavailable(ctx context.Context, userID 
 			continue
 		}
 		eventTarget := targetForProbeSpec(target, spec)
-		s.recordTargetEvent(ctx, userID, adminAccountID, eventTarget, spec.policy.ID, spec.modelName, string(ResultUnsupported), string(next.State), string(next.State), nil, reason, "", "")
+		s.recordTargetEvent(ctx, userID, adminAccountID, eventTarget, spec.policy.ID, spec.modelName, string(ResultUnsupported), string(next.State), string(next.State), nil, reason, "", "", spec.policy.ProbeMode)
 	}
 }
 

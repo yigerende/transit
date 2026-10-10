@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"transithub/backend/internal/modules/upstream"
 )
 
 // DefaultMaxLatencyMs is the default deadline for a complete channel probe response.
@@ -20,6 +22,9 @@ const defaultProbePrompt = "hi"
 // ProbeRequest 是发起一次真实轻量探活所需的全部参数。UpstreamKey 只用于构造请求凭据，
 // 探活结果（ProbeOutcome）绝不回填明文 key。
 type ProbeRequest struct {
+	ProbeMode      string
+	AdminSession   *upstream.Session
+	AccountID      string
 	BaseURL        string
 	UpstreamKey    string
 	ProviderFamily string
@@ -42,6 +47,9 @@ func NewRealProbeRunner() *RealProbeRunner {
 // Probe 发起一次真实轻量探活，返回分类后的结果。err 只用于调用方感知调用本身是否被 ctx 取消，
 // 正常的上游错误都归类进 ProbeOutcome.Result，不通过 error 返回。
 func (r *RealProbeRunner) Probe(ctx context.Context, req ProbeRequest) ProbeOutcome {
+	if normalizeProbeMode(req.ProbeMode) != ProbeModeLight {
+		return r.probeWithMode(ctx, req)
+	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(defaultInt(req.MaxLatencyMs, DefaultMaxLatencyMs))*time.Millisecond)
 	defer cancel()
 	maxTokens := req.MaxTokens

@@ -8,7 +8,7 @@ import { defaultLatencyPriority, validLatencyPriority } from '../../utils/latenc
 import PolicyRunFlowDialog from './PolicyRunFlowDialog.vue'
 import { getAdminGroupPolicyConfiguration } from '../../api/connectionHealth'
 import { connectionHealthMessageKey } from '../../composables/useConnectionHealth'
-import type { AdminGroupHealth, ConnectionHealthPolicy, ConnectionHealthPriorityMode, ConnectionHealthStrategyMode, ModelTargetInput, PolicyInput } from '../../types/connectionHealth'
+import type { AdminGroupHealth, ConnectionHealthPolicy, ConnectionHealthPriorityMode, ConnectionHealthProbeMode, ConnectionHealthStrategyMode, ModelTargetInput, PolicyInput } from '../../types/connectionHealth'
 import { resolveConnectionHealthStrategyMode } from '../../utils/connectionHealthPolicy'
 
 export interface OwnGroupOption {
@@ -46,6 +46,8 @@ const DEFAULTS = {
   maxProbeTokens: 1,
 }
 
+const probeMode = ref<ConnectionHealthProbeMode>('real_model')
+const probeModes: ConnectionHealthProbeMode[] = ['real_model', 'arithmetic', 'sub2api_test', 'first_token']
 const name = ref('')
 const enabled = ref(true)
 const ownGroupId = ref('')
@@ -113,6 +115,7 @@ const isMultiplierOnly = computed(() => strategyMode.value === 'multiplier_only'
 
 const resetForm = () => {
   const p = props.policy
+  probeMode.value = (p?.probeMode || 'real_model') as ConnectionHealthProbeMode
   name.value = p?.name ?? ''
   enabled.value = p?.enabled ?? true
   ownGroupId.value = p?.ownGroupId ?? ''
@@ -222,6 +225,7 @@ const handleSave = () => {
     enabled: enabled.value,
     ownGroupId: ownGroupId.value,
     ownGroupName: ownGroup?.name ?? '',
+    probeMode: probeMode.value,
     probeIntervalSeconds: probeIntervalSeconds.value,
     maxLatencyMs: maxLatencyMs.value,
     failureThreshold: failureThreshold.value,
@@ -392,6 +396,16 @@ const handleSave = () => {
                 </div>
               </div>
 
+              <div v-if="!isMultiplierOnly" class="space-y-2 border-t border-border/40 pt-4">
+                <label for="policy-probe-mode" class="text-xs font-medium text-muted-foreground">{{ t(`${prefix}.probeModeLabel`) }}</label>
+                <select id="policy-probe-mode" v-model="probeMode" class="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-sm text-foreground">
+                  <option v-for="mode in probeModes" :key="mode" :value="mode">{{ t(`${prefix}.probeModes.${mode}`) }}</option>
+                </select>
+                <p class="text-xs leading-5 text-muted-foreground">{{ t(`${prefix}.probeModeHints.${probeMode}`) }}</p>
+                <p class="text-xs leading-5 text-muted-foreground">{{ t(`${prefix}.sharedProbeModeHint`) }}</p>
+                <p v-if="probeMode === 'sub2api_test'" class="rounded-lg bg-amber-500/10 p-2.5 text-xs leading-5 text-amber-700 dark:text-amber-400">{{ t(`${prefix}.nativeProbeNotice`) }}</p>
+              </div>
+
               <!-- 模型探活目标 -->
               <div v-if="!isMultiplierOnly" class="space-y-2 border-t border-border/40 pt-4">
                 <div class="flex items-center justify-between">
@@ -436,12 +450,13 @@ const handleSave = () => {
                       <input v-model="target.enabled" type="checkbox" class="h-3.5 w-3.5 rounded border-border/60" />
                       {{ t(`${prefix}.modelEnabledLabel`) }}
                     </label>
-                    <label class="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <label v-if="probeMode === 'real_model'" class="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                       {{ t(`${prefix}.maxProbeTokensLabel`) }}
                       <input v-model.number="target.maxProbeTokens" type="number" min="1" class="h-7 w-16 rounded-md border border-border/60 bg-background px-1.5 text-xs text-foreground" />
                     </label>
                   </div>
                   <input
+                    v-if="probeMode === 'real_model' || probeMode === 'first_token'"
                     v-model="target.probePrompt"
                     type="text"
                     :placeholder="t(`${prefix}.probePromptPlaceholder`)"
@@ -453,9 +468,9 @@ const handleSave = () => {
               <!-- 阈值配置 -->
               <div v-if="!isMultiplierOnly" class="grid grid-cols-2 gap-3 border-t border-border/40 pt-4">
                 <div class="col-span-2 space-y-1.5">
-                  <label for="policy-max-latency" class="text-xs font-medium text-muted-foreground">{{ t(`${prefix}.maxLatencyLabel`) }}</label>
+                  <label for="policy-max-latency" class="text-xs font-medium text-muted-foreground">{{ t(`${prefix}.${probeMode === 'first_token' ? 'maxFirstTokenLatencyLabel' : 'maxLatencyLabel'}`) }}</label>
                   <input id="policy-max-latency" v-model.number="maxLatencyMs" type="number" min="1" max="2147483647" step="1" class="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-sm text-foreground" />
-                  <p class="text-xs leading-5 text-muted-foreground">{{ t(`${prefix}.maxLatencyHelp`) }}</p>
+                  <p class="text-xs leading-5 text-muted-foreground">{{ t(`${prefix}.${probeMode === 'first_token' ? 'maxFirstTokenLatencyHelp' : 'maxLatencyHelp'}`) }}</p>
                 </div>
                 <div class="space-y-1.5">
                   <label class="flex items-center gap-1 text-xs font-medium text-muted-foreground">

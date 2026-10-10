@@ -84,6 +84,7 @@ func validateLatencyPriority(c LatencyPriorityConfig) bool {
 // Each sample is an automatic successful probe of one model. Failed requests,
 // manual probes, expired samples and other models never enter the average.
 type PriorityProbeSample struct {
+	ProbeMode string    `json:"probeMode"`
 	ID        string    `json:"id"`
 	TargetID  string    `json:"-"`
 	ModelName string    `json:"-"`
@@ -92,6 +93,7 @@ type PriorityProbeSample struct {
 }
 
 type LatencyPriorityDecision struct {
+	ProbeMode         string                `json:"probeMode"`
 	PolicyID          string                `json:"policyId"`
 	PolicyName        string                `json:"policyName"`
 	ModelName         string                `json:"modelName"`
@@ -136,10 +138,10 @@ func latencyPriorityModel(p Policy) string {
 
 func evaluateLatencyPriority(p Policy, states []ConnectionHealthState, samples []PriorityProbeSample, previous *PrioritySyncState, now time.Time) LatencyPriorityDecision {
 	c := latencyConfig(p)
-	d := LatencyPriorityDecision{PolicyID: p.ID, PolicyName: p.Name, ModelName: latencyPriorityModel(p), RequiredSamples: c.SampleCount, MaxAgeSeconds: c.MaxAgeSeconds, Samples: []PriorityProbeSample{}, Weights: append([]float64(nil), c.Weights...), Priority: c.InsufficientPriority, Reason: "insufficient", SharedPolicyCount: 1}
+	d := LatencyPriorityDecision{ProbeMode: normalizeProbeMode(p.ProbeMode), PolicyID: p.ID, PolicyName: p.Name, ModelName: latencyPriorityModel(p), RequiredSamples: c.SampleCount, MaxAgeSeconds: c.MaxAgeSeconds, Samples: []PriorityProbeSample{}, Weights: append([]float64(nil), c.Weights...), Priority: c.InsufficientPriority, Reason: "insufficient", SharedPolicyCount: 1}
 	cutoff := now.Add(-time.Duration(c.MaxAgeSeconds) * time.Second)
 	for _, sample := range samples {
-		if sample.ModelName == d.ModelName && sample.LatencyMs >= 0 && !sample.CreatedAt.Before(cutoff) && !sample.CreatedAt.After(now) {
+		if normalizeProbeMode(sample.ProbeMode) == normalizeProbeMode(p.ProbeMode) && sample.ModelName == d.ModelName && sample.LatencyMs >= 0 && !sample.CreatedAt.Before(cutoff) && !sample.CreatedAt.After(now) {
 			d.Samples = append(d.Samples, sample)
 		}
 	}
@@ -226,12 +228,21 @@ func evaluateLatencyPriority(p Policy, states []ConnectionHealthState, samples [
 // multiplier mode, and the least preferred configured value wins across policies.
 func latencyDecisionForTarget(platform upstream.Platform, policies []Policy, states []ConnectionHealthState, samples []PriorityProbeSample, previous *PrioritySyncState, now time.Time) *LatencyPriorityDecision {
 	var chosen *LatencyPriorityDecision
+	// Shared channels execute one winning policy per model, using the same
+	// deterministic selection as the scheduler. All bands evaluate that method.
+	effectiveModes := map[string]string{}
+	for _, spec := range candidateModelSpecs(nil, policies) {
+		effectiveModes[spec.modelName] = spec.policy.ProbeMode
+	}
 	count := 0
 	for _, p := range policies {
 		if !hasLatencyPriorityPolicy([]Policy{p}) {
 			continue
 		}
 		count++
+		if mode, ok := effectiveModes[latencyPriorityModel(p)]; ok {
+			p.ProbeMode = mode
+		}
 		d := evaluateLatencyPriority(p, states, samples, previous, now)
 		worse := chosen == nil
 		if chosen != nil {
@@ -255,9 +266,9 @@ func latencyDecisionForTarget(platform upstream.Platform, policies []Policy, sta
 }
 
 func (r *Repository) ListPriorityProbeSamples(ctx context.Context, userID, adminAccountID string, targetIDs []string, since time.Time) ([]PriorityProbeSample, error) {
-	rows, err := r.db.Query(ctx, `SELECT id, connection_id, model_name, latency_ms, created_at FROM (
-		SELECT id, connection_id, model_name, latency_ms, created_at,
-		row_number() OVER (PARTITION BY connection_id, model_name ORDER BY created_at DESC,id DESC) AS rn
+	rows, err := r.db.Query(ctx, `SELECT id, connection_id, model_name, latency_ms, probe_mode, created_at FROM (
+		SELECT id, connection_id, model_name, latency_ms, probe_mode, created_at,
+		row_number() OVER (PARTITION BY connection_id, model_name, probe_mode ORDER BY created_at DESC,id DESC) AS rn
 		FROM connection_health_events WHERE user_id=$1 AND admin_account_id=$2 AND connection_id=ANY($3)
 		AND result='ok' AND policy_id<>'' AND latency_ms>=0 AND created_at >= $4
 	) samples WHERE rn<=20 ORDER BY created_at DESC,id DESC`, userID, adminAccountID, targetIDs, since)
@@ -268,7 +279,7 @@ func (r *Repository) ListPriorityProbeSamples(ctx context.Context, userID, admin
 	out := []PriorityProbeSample{}
 	for rows.Next() {
 		var p PriorityProbeSample
-		if err := rows.Scan(&p.ID, &p.TargetID, &p.ModelName, &p.LatencyMs, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.TargetID, &p.ModelName, &p.LatencyMs, &p.ProbeMode, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)

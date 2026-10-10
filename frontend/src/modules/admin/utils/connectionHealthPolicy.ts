@@ -51,6 +51,7 @@ export const policyInputWithEnabled = (policy: ConnectionHealthPolicy, enabled: 
   ownGroupId: policy.ownGroupId,
   ownGroupName: policy.ownGroupName,
   modelPattern: policy.modelPattern,
+  probeMode: (policy.probeMode || 'real_model') as PolicyInput['probeMode'],
   probeIntervalSeconds: policy.probeIntervalSeconds,
   maxLatencyMs: policy.maxLatencyMs ?? 20000,
   failureThreshold: policy.failureThreshold,

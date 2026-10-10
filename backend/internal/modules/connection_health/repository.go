@@ -132,6 +132,7 @@ func (r *Repository) EnsureSchema(ctx context.Context) error {
 			remote_action text NOT NULL DEFAULT '',
 			created_at timestamptz NOT NULL DEFAULT now()
 		)`,
+		probeModeHistorySchema,
 		`ALTER TABLE connection_health_events ADD COLUMN IF NOT EXISTS policy_id text NOT NULL DEFAULT ''`,
 		`ALTER TABLE connection_health_events ADD COLUMN IF NOT EXISTS admin_group_id text NOT NULL DEFAULT ''`,
 		`CREATE INDEX IF NOT EXISTS idx_connection_health_events_connection_created ON connection_health_events (connection_id, created_at DESC)`,
@@ -647,11 +648,11 @@ func (r *Repository) InsertEvent(ctx context.Context, e ConnectionHealthEvent) e
 		INSERT INTO connection_health_events (
 			id, connection_id, model_name, user_id, admin_account_id, policy_id, admin_group_id, own_group_name,
 			upstream_site_id, upstream_group_name, result, from_state, to_state,
-			latency_ms, error_key, error_detail, remote_action, created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())
+			latency_ms, error_key, error_detail, remote_action, probe_mode, created_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,now())
 	`, e.ID, e.ConnectionID, e.ModelName, e.UserID, e.AdminAccountID, e.PolicyID, e.AdminGroupID, e.OwnGroupName,
 		e.UpstreamSiteID, e.UpstreamGroupName, e.Result, e.FromState, e.ToState,
-		e.LatencyMs, e.ErrorKey, e.ErrorDetail, e.RemoteAction)
+		e.LatencyMs, e.ErrorKey, e.ErrorDetail, e.RemoteAction, normalizeProbeMode(e.ProbeMode))
 	return err
 }
 
@@ -665,7 +666,7 @@ func (r *Repository) ListEventsByConnection(ctx context.Context, connectionID st
 	rows, err := r.db.Query(ctx, `
 		SELECT id, connection_id, model_name, user_id, admin_account_id, policy_id, admin_group_id, own_group_name,
 			upstream_site_id, upstream_group_name, result, from_state, to_state,
-			latency_ms, error_key, error_detail, remote_action, created_at
+			latency_ms, error_key, error_detail, remote_action, probe_mode, created_at
 		FROM connection_health_events WHERE connection_id = $1 AND user_id = $2 AND admin_account_id = $3 ORDER BY created_at DESC LIMIT $4
 	`, connectionID, userID, adminAccountID, limit)
 	if err != nil {
@@ -683,7 +684,7 @@ func (r *Repository) ListRecentEventsByWorkspace(ctx context.Context, userID str
 	rows, err := r.db.Query(ctx, `
 		SELECT id, connection_id, model_name, user_id, admin_account_id, policy_id, admin_group_id, own_group_name,
 			upstream_site_id, upstream_group_name, result, from_state, to_state,
-			latency_ms, error_key, error_detail, remote_action, created_at
+			latency_ms, error_key, error_detail, remote_action, probe_mode, created_at
 		FROM connection_health_events WHERE user_id = $1 AND admin_account_id = $2 ORDER BY created_at DESC LIMIT $3
 	`, userID, adminAccountID, limit)
 	if err != nil {
@@ -885,7 +886,7 @@ func scanEvents(rows pgx.Rows) ([]ConnectionHealthEvent, error) {
 		var e ConnectionHealthEvent
 		if err := rows.Scan(&e.ID, &e.ConnectionID, &e.ModelName, &e.UserID, &e.AdminAccountID, &e.PolicyID, &e.AdminGroupID, &e.OwnGroupName,
 			&e.UpstreamSiteID, &e.UpstreamGroupName, &e.Result, &e.FromState, &e.ToState,
-			&e.LatencyMs, &e.ErrorKey, &e.ErrorDetail, &e.RemoteAction, &e.CreatedAt); err != nil {
+			&e.LatencyMs, &e.ErrorKey, &e.ErrorDetail, &e.RemoteAction, &e.ProbeMode, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		events = append(events, e)

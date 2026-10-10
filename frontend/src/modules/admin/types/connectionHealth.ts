@@ -148,6 +148,7 @@ export interface AdminGroupAccount {
 }
 
 export interface GroupProbeSample {
+  probeMode?: string
   id: string
   targetId: string
   modelName: string
@@ -200,6 +201,7 @@ export interface GroupProbeConfig {
 }
 
 export interface ConnectionHealthEvent {
+	probeMode?: ConnectionHealthProbeMode
   id: string
   connectionId: string
   modelName: string
@@ -313,7 +315,10 @@ export interface ManualProbeResult {
   probedAt: string
 }
 
+export type ConnectionHealthProbeMode = 'real_model' | 'arithmetic' | 'sub2api_test' | 'first_token'
+
 export interface PolicyInput {
+  probeMode?: ConnectionHealthProbeMode
   id?: string
   name: string
   enabled: boolean
@@ -367,6 +372,7 @@ export interface LatencyPriorityConfig {
   suspendedPriority: number
 }
 export interface LatencyPriorityDecision {
+  probeMode?: string
   policyId: string
   policyName: string
   modelName: string

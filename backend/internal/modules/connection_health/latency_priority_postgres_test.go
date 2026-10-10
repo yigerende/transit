@@ -2,6 +2,7 @@ package connection_health
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -111,5 +112,43 @@ func TestLatencyPriorityPostgresPersistenceAndSamples(t *testing.T) {
 	d := evaluateLatencyPriority(p, nil, samples, nil, now)
 	if d.SampleCount != 1 || *d.AverageMs != 7000 || d.Priority != 21 {
 		t.Fatalf("database-backed decision: %+v", d)
+	}
+	// Changing methods must preserve historical units and must not allow twenty
+	// recent full responses to crowd a first-token sample out of the SQL window.
+	for _, mode := range []string{ProbeModeLight, ProbeModeArithmetic, ProbeModeSub2API, ProbeModeFirstToken} {
+		p.ProbeMode = mode
+		if err := repo.SavePolicyWithTargets(ctx, p, p.ModelTargets); err != nil {
+			t.Fatal(err)
+		}
+		readBack, err := repo.GetPolicy(ctx, p.ID, p.UserID, p.AdminAccountID)
+		if err != nil || readBack.ProbeMode != mode {
+			t.Fatalf("probe mode not persisted: %v", err)
+		}
+	}
+	for i := 0; i < 30; i++ {
+		mode := ProbeModeArithmetic
+		if i == 0 {
+			mode = ProbeModeFirstToken
+		}
+		err := repo.InsertEvent(ctx, ConnectionHealthEvent{ID: fmt.Sprint("method-", i), ConnectionID: target, UserID: "user1", AdminAccountID: "ws1", PolicyID: p.ID, ModelName: "model", Result: "ok", LatencyMs: intPtr(1234), ProbeMode: mode})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	samples, err = repo.ListPriorityProbeSamples(ctx, "user1", "ws1", []string{target}, now.Add(-time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d = evaluateLatencyPriority(p, nil, samples, nil, time.Now())
+	if d.SampleCount != 1 || d.AverageMs == nil || *d.AverageMs != 1234 {
+		t.Fatalf("probe methods mixed/starved: %+v", d)
+	}
+	history, err := repo.ListRecentProbesByTargets(ctx, "user1", "ws1", []string{target})
+	if err != nil || history[0].ProbeMode != ProbeModeArithmetic {
+		t.Fatalf("history lost method: %v", err)
+	}
+	events, err := repo.ListEventsByConnection(ctx, target, "user1", "ws1", 100)
+	if err != nil || events[0].ProbeMode != ProbeModeArithmetic {
+		t.Fatalf("event details lost method: %v", err)
 	}
 }

@@ -14,15 +14,16 @@ const successes = computed(() => samples.value.filter(sample => sample.result ==
 const errors = computed(() => samples.value.length - successes.value.length)
 const slow = computed(() => successes.value.filter(sample => sample.latencyMs != null && sample.latencyMs >= 5000).length)
 const successRate = computed(() => samples.value.length ? `${Math.round(successes.value.length / samples.value.length * 100)}%` : '—')
+const currentMode = computed(() => samples.value[0]?.probeMode || 'real_model')
 const averageLatency = computed(() => {
-  const values = successes.value.flatMap(sample => sample.latencyMs == null ? [] : [sample.latencyMs])
+  const values = successes.value.filter(sample => (sample.probeMode || 'real_model') === currentMode.value).flatMap(sample => sample.latencyMs == null ? [] : [sample.latencyMs])
   return values.length ? `${(values.reduce((sum, value) => sum + value, 0) / values.length / 1000).toFixed(2)}s` : '—'
 })
 const sampleTone = (sample: GroupProbeSample | null) => !sample ? 'bg-slate-200/70 dark:bg-slate-700/60'
   : sample.result !== 'ok' ? 'bg-red-500 dark:bg-red-400'
     : sample.latencyMs != null && sample.latencyMs >= 5000 ? 'bg-amber-400' : 'bg-emerald-500 dark:bg-emerald-400'
 const sampleTitle = (sample: GroupProbeSample | null) => !sample ? t(`${prefix}.noRecord`)
-  : `${sample.modelName} · ${t(`admin.connectionHealth.errorKeys.${sample.result}`)}\n${sample.latencyMs == null ? '—' : `${(sample.latencyMs / 1000).toFixed(2)}s`} · ${formatConnectionHealthTime(sample.createdAt)}`
+  : `${t(`admin.connectionHealth.policyDrawer.probeModes.${sample.probeMode || 'real_model'}`)} · ${sample.modelName} · ${t(`admin.connectionHealth.errorKeys.${sample.result}`)}\n${sample.latencyMs == null ? '—' : `${(sample.latencyMs / 1000).toFixed(2)}s`} · ${formatConnectionHealthTime(sample.createdAt)}`
 const lastProbe = computed(() => {
   const latest = samples.value[0]?.createdAt
   if (!latest) return ''
@@ -51,7 +52,7 @@ const lastProbe = computed(() => {
         <slot name="after-stats" />
         <span v-if="lastProbe" class="text-xs text-muted-foreground">{{ lastProbe }}</span>
       </div>
-      <span class="whitespace-nowrap text-muted-foreground" :title="t(`${prefix}.latencyHint`)">{{ t(`${prefix}.averageLatency`) }} <strong class="ml-1 font-semibold tabular-nums text-foreground">{{ averageLatency }}</strong></span>
+      <span class="whitespace-nowrap text-muted-foreground" :title="t(`${prefix}.latencyHint`)">{{ t(`${prefix}.${currentMode === 'first_token' ? 'averageFirstToken' : 'averageLatency'}`) }} <strong class="ml-1 font-semibold tabular-nums text-foreground">{{ averageLatency }}</strong></span>
     </div>
     <div class="flex gap-px overflow-hidden rounded sm:gap-[2px]" :class="compact ? 'h-3' : 'h-5'" role="img" :aria-label="unavailable ? t(`${prefix}.historyUnavailable`) : t(`${prefix}.historyLabel`, { count: samples.length, errors, rate: successRate })">
       <span v-for="(sample, index) in history" :key="sample?.id ?? `empty-${index}`" class="min-w-0 flex-1 rounded-[1px] transition-opacity hover:opacity-60" :class="sampleTone(sample)" :title="sampleTitle(sample)" aria-hidden="true" />

@@ -874,6 +874,7 @@ export default {
         hint: 'Off: no automatic suspension; probing and the priority switch are unaffected. Applies across all groups sharing this channel. System-suspended channels are restored; manual disables are preserved. On still requires policy permission.'
       },
       latencyPriority: {
+        averageFirstToken: 'Weighted first token',
   "help": "Only updates upstream priority. Average recent successful automatic probes of one selected model.",
   "model": "Model for latency ranking",
   "firstModel": "First enabled model (alphabetical)",
@@ -1030,8 +1031,9 @@ export default {
         slow: 'Slow {count}',
         errors: 'Errors {count}',
         successRate: 'Success {value}',
+        averageFirstToken: 'Average first token',
         averageLatency: 'Avg. probe',
-        latencyHint: 'Average duration of successful requests among the latest 100 probes',
+        latencyHint: 'Average successful duration for the latest probe method, within the latest 100 probes',
         configure: 'Configure monitoring for {name}',
         expand: 'Expand accounts in {name}',
         collapse: 'Collapse accounts in {name}',
@@ -1402,6 +1404,19 @@ export default {
         multiplierOnlySummary: 'No probes; priority follows multiplier'
       },
       policyDrawer: {
+        probeModeLabel: 'Probe method',
+        sharedProbeModeHint: 'A shared channel/model is probed once using the effective policy. Groups share its result; history shows the actual method.',
+        probeModes: { real_model: 'Lightweight request (existing)', arithmetic: 'Arithmetic check (Sub2API monitor style)', sub2api_test: 'Sub2API account test API', first_token: 'Streaming first token' },
+        probeModeHints: {
+          real_model: 'Directly calls this channel’s Chat Completions with hi by default and measures the complete response.',
+          arithmetic: 'Sends a random addition/subtraction challenge directly to the channel. A correct answer is required; output is limited to 50 tokens. OpenAI uses Responses with a Chat Completions fallback for unsupported endpoints; Claude/Gemini use native protocols. This policy controls timeout and actions.',
+          sub2api_test: 'Calls the connected Sub2API account test endpoint for this channel and model, sends hi and waits for completion. Uses Sub2API credentials, proxy and model mapping. Duration includes the network hop to Sub2API.',
+          first_token: 'Sends hi by default and stops at the first nonempty answer text. Headers, heartbeats and reasoning do not count. Priorities use first-token latency; completion of the rest of the answer is not tested.',
+        },
+        nativeProbeNotice: 'Sub2API only. This endpoint may clear upstream errors, rate limits and temporary suspension on success or change account state on failure. Sub2API performs these actions independently of this policy’s suspension permission and consecutive thresholds.',
+        maxFirstTokenLatencyLabel: 'Maximum time to first token (ms)',
+        maxFirstTokenLatencyHelp: 'No answer text within this deadline counts as a failed probe. The request ends as soon as the first text arrives.',
+
         maxLatencyLabel: 'Maximum response latency (ms)',
         maxLatencyHelp: 'Maximum wait for a channel probe response. Defaults to 20000 ms (20 seconds); requests exceeding it are recorded as timeouts.',
         saving: 'Saving…',
@@ -1580,6 +1595,7 @@ export default {
         modelListUnavailable: 'Could not fetch the upstream model list. Please try again later.',
         modelListInvalid: 'The upstream model list response format is not recognized.',
         latencyPriorityInvalid: 'Invalid latency configuration: check samples, weights, model, priorities, and contiguous ranges from 0 to an unbounded final band.',
+        probeModeInvalid: 'Select a valid probe method.',
         maxLatencyInvalid: 'Enter a valid positive integer for maximum response latency (milliseconds).',
         multiplierRequired: 'This group has no valid multiplier. Set it upstream before enabling multiplier sorting.',
         manualModelsRequired: 'Please select at least one model before starting the test.',

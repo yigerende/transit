@@ -329,7 +329,7 @@ func (f *fakeRepository) ListRecentProbesByTargets(ctx context.Context, userID, 
 	result := []GroupProbeSample{}
 	for _, event := range f.events {
 		if event.UserID == userID && event.AdminAccountID == adminAccountID && slices.Contains(targetIDs, event.ConnectionID) && slices.Contains(probeResultKeys(), event.Result) {
-			result = append(result, GroupProbeSample{ID: event.ID, TargetID: event.ConnectionID, ModelName: event.ModelName, Result: event.Result, LatencyMs: event.LatencyMs, CreatedAt: event.CreatedAt})
+			result = append(result, GroupProbeSample{ProbeMode: event.ProbeMode, ID: event.ID, TargetID: event.ConnectionID, ModelName: event.ModelName, Result: event.Result, LatencyMs: event.LatencyMs, CreatedAt: event.CreatedAt})
 		}
 	}
 	return result, nil
@@ -1007,7 +1007,7 @@ func (f *fakeRepository) ListPriorityProbeSamples(ctx context.Context, userID, a
 	out := []PriorityProbeSample{}
 	for _, e := range f.events {
 		if allowed[e.ConnectionID] && e.UserID == userID && e.AdminAccountID == adminAccountID && e.Result == "ok" && e.PolicyID != "" && e.LatencyMs != nil && *e.LatencyMs >= 0 && !e.CreatedAt.Before(since) {
-			out = append(out, PriorityProbeSample{ID: e.ID, TargetID: e.ConnectionID, ModelName: e.ModelName, LatencyMs: *e.LatencyMs, CreatedAt: e.CreatedAt})
+			out = append(out, PriorityProbeSample{ProbeMode: e.ProbeMode, ID: e.ID, TargetID: e.ConnectionID, ModelName: e.ModelName, LatencyMs: *e.LatencyMs, CreatedAt: e.CreatedAt})
 		}
 	}
 	return out, nil

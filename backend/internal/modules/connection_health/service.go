@@ -159,6 +159,7 @@ type OwnGroupHealth struct {
 
 // EventView 是事件的对外展示形态，字段命名与前端 camelCase 对齐。
 type EventView struct {
+	ProbeMode         string    `json:"probeMode"`
 	ID                string    `json:"id"`
 	ConnectionID      string    `json:"connectionId"`
 	ModelName         string    `json:"modelName"`
@@ -636,7 +637,8 @@ func toEventViews(events []ConnectionHealthEvent) []EventView {
 	views := make([]EventView, 0, len(events))
 	for _, e := range events {
 		views = append(views, EventView{
-			ID: e.ID, ConnectionID: e.ConnectionID, ModelName: e.ModelName, OwnGroupName: e.OwnGroupName,
+			ProbeMode: normalizeProbeMode(e.ProbeMode),
+			ID:        e.ID, ConnectionID: e.ConnectionID, ModelName: e.ModelName, OwnGroupName: e.OwnGroupName,
 			UpstreamSiteID: e.UpstreamSiteID, UpstreamGroupName: e.UpstreamGroupName, Result: e.Result,
 			FromState: e.FromState, ToState: e.ToState, LatencyMs: e.LatencyMs, ErrorKey: e.ErrorKey,
 			RemoteAction: e.RemoteAction, CreatedAt: e.CreatedAt,
@@ -657,6 +659,7 @@ type ModelTargetInput struct {
 }
 
 type PolicyInput struct {
+	ProbeMode               string                 `json:"probeMode"`
 	ID                      string                 `json:"id"`
 	Name                    string                 `json:"name"`
 	Enabled                 bool                   `json:"enabled"`
@@ -721,6 +724,9 @@ func (s *Service) SavePolicy(ctx context.Context, userID string, in PolicyInput)
 		if in.MaxLatencyMs == nil {
 			in.MaxLatencyMs = intPtr(defaultInt(existing.MaxLatencyMs, DefaultMaxLatencyMs))
 		}
+		if strings.TrimSpace(in.ProbeMode) == "" {
+			in.ProbeMode = existing.ProbeMode
+		}
 	}
 
 	policy, targets, err := buildPolicyAndTargets(userID, adminAccountID, id, in)
@@ -759,6 +765,10 @@ func (s *Service) DeletePolicy(ctx context.Context, userID string, id string) er
 }
 
 func buildPolicyAndTargets(userID string, adminAccountID string, id string, in PolicyInput) (Policy, []ModelTarget, error) {
+	probeMode := normalizeProbeMode(in.ProbeMode)
+	if !validProbeMode(probeMode) {
+		return Policy{}, nil, requestError("admin.connectionHealth.errors.probeModeInvalid")
+	}
 	maxLatencyMs := DefaultMaxLatencyMs
 	if in.MaxLatencyMs != nil {
 		if *in.MaxLatencyMs < 1 || *in.MaxLatencyMs > 2147483647 {
@@ -770,7 +780,7 @@ func buildPolicyAndTargets(userID string, adminAccountID string, id string, in P
 	policy := Policy{
 		ID: id, UserID: userID, AdminAccountID: adminAccountID, Name: strings.TrimSpace(in.Name), Enabled: in.Enabled,
 		OwnGroupID: in.OwnGroupID, OwnGroupName: in.OwnGroupName, ModelPattern: defaultString(in.ModelPattern, "*"),
-		ProbeMode: "real_model", ProbeIntervalSeconds: defaultInt(in.ProbeIntervalSeconds, 60),
+		ProbeMode: probeMode, ProbeIntervalSeconds: defaultInt(in.ProbeIntervalSeconds, 60),
 		MaxLatencyMs:     maxLatencyMs,
 		FailureThreshold: defaultInt(in.FailureThreshold, 3), SuccessThreshold: defaultInt(in.SuccessThreshold, 2),
 		// Retained storage fields for older clients; timers and gradual recovery are obsolete.
@@ -1066,8 +1076,8 @@ func (s *Service) probeOnce(ctx context.Context, conn my_sites.RealConnection, p
 	}
 
 	outcome := s.probeRunner.Probe(ctx, ProbeRequest{
-		MaxLatencyMs: policy.MaxLatencyMs,
-		BaseURL:      site.BaseURL, UpstreamKey: conn.UpstreamKey, ProviderFamily: target.ProviderFamily,
+		ProbeMode: policy.ProbeMode, MaxLatencyMs: policy.MaxLatencyMs,
+		BaseURL: site.BaseURL, UpstreamKey: conn.UpstreamKey, ProviderFamily: target.ProviderFamily,
 		ModelName: target.ModelName, MaxTokens: target.MaxProbeTokens, ProbePrompt: target.ProbePrompt,
 	})
 
@@ -1134,7 +1144,7 @@ func (s *Service) probeOnce(ctx context.Context, conn my_sites.RealConnection, p
 	if err := s.repo.UpsertState(ctx, next); err != nil {
 		return nil, err
 	}
-	s.recordEvent(ctx, conn, policy.ID, target.ModelName, string(outcome.Result), string(current.State), string(next.State), &latencyMs, next.LastErrorKey, next.LastErrorDetail, remoteAction)
+	s.recordEvent(ctx, conn, policy.ID, target.ModelName, string(outcome.Result), string(current.State), string(next.State), &latencyMs, next.LastErrorKey, next.LastErrorDetail, remoteAction, policy.ProbeMode)
 
 	return &next, nil
 }
@@ -1160,14 +1170,19 @@ func (s *Service) defaultState(conn my_sites.RealConnection, modelName string) C
 	}
 }
 
-func (s *Service) recordEvent(ctx context.Context, conn my_sites.RealConnection, policyID string, modelName string, result string, fromState string, toState string, latencyMs *int, errorKey string, errorDetail string, remoteAction string) {
+func (s *Service) recordEvent(ctx context.Context, conn my_sites.RealConnection, policyID string, modelName string, result string, fromState string, toState string, latencyMs *int, errorKey string, errorDetail string, remoteAction string, probeModes ...string) {
 	id, err := newID()
 	if err != nil {
 		log.Printf("[connection-health] generate event id failed: %v", err)
 		return
 	}
+	mode := ProbeModeLight
+	if len(probeModes) > 0 {
+		mode = normalizeProbeMode(probeModes[0])
+	}
 	event := ConnectionHealthEvent{
-		ID: id, ConnectionID: conn.ID, ModelName: modelName, UserID: conn.UserID, AdminAccountID: conn.WorkspaceAdminAccountID, PolicyID: policyID,
+		ProbeMode: mode,
+		ID:        id, ConnectionID: conn.ID, ModelName: modelName, UserID: conn.UserID, AdminAccountID: conn.WorkspaceAdminAccountID, PolicyID: policyID,
 		UpstreamSiteID: conn.UpstreamSiteID, UpstreamGroupName: conn.UpstreamGroupName, Result: result,
 		FromState: fromState, ToState: toState, LatencyMs: latencyMs, ErrorKey: errorKey, ErrorDetail: errorDetail, RemoteAction: remoteAction,
 	}

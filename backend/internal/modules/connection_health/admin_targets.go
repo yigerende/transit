@@ -339,15 +339,18 @@ func (s *Service) ProbeTarget(ctx context.Context, userID string, targetID strin
 	}
 
 	// 解析凭据（server-only，明文只在内存短暂存在）。失败 -> 结构化不可探活错误。
-	cred, err := s.platformGroups.ResolveProbeCredential(session, account)
-	if err != nil {
-		return nil, requestError(reasonToErrorKey(upstream.ProbeCredentialReason(err)))
+	var cred upstream.ProbeCredential
+	if probeSpecsNeedCredentials(specs) {
+		cred, err = s.platformGroups.ResolveProbeCredential(session, account)
+		if err != nil {
+			return nil, requestError(reasonToErrorKey(upstream.ProbeCredentialReason(err)))
+		}
 	}
 
 	results := make([]ModelHealth, 0, len(specs))
 	probeResults := make([]targetProbeResult, 0, len(specs))
 	for _, spec := range specs {
-		result, probeErr := s.probeTargetOnce(ctx, userID, adminAccountID, target, cred, spec)
+		result, probeErr := s.probeTargetOnce(ctx, userID, adminAccountID, target, cred, spec, session)
 		if probeErr != nil {
 			log.Printf("[connection-health] manual target probe failed target_id=%s model=%s err=%v", target.TargetID, spec.modelName, probeErr)
 			continue
@@ -415,7 +418,7 @@ func (s *Service) findAdminTarget(ctx context.Context, session upstream.Session,
 // session 来自调用方（ProbeTarget 的 resolveManualTarget / 调度器 job 的 RequireSession），
 // 不信任前端传入的任何 platform/account 信息。
 // 每日探活预算耗尽时跳过真实请求，只保留当前状态。
-func (s *Service) probeTargetOnce(ctx context.Context, userID string, adminAccountID string, target AdminProbeTarget, cred upstream.ProbeCredential, spec probeModelSpec) (*targetProbeResult, error) {
+func (s *Service) probeTargetOnce(ctx context.Context, userID string, adminAccountID string, target AdminProbeTarget, cred upstream.ProbeCredential, spec probeModelSpec, sessions ...upstream.Session) (*targetProbeResult, error) {
 	current, err := s.repo.GetState(ctx, target.TargetID, spec.modelName)
 	if err != nil {
 		return nil, err
@@ -438,7 +441,12 @@ func (s *Service) probeTargetOnce(ctx context.Context, userID string, adminAccou
 	if providerFamily == "" {
 		providerFamily = target.ProviderFamily
 	}
+	var adminSession *upstream.Session
+	if len(sessions) > 0 {
+		adminSession = &sessions[0]
+	}
 	outcome := s.probeRunner.Probe(ctx, ProbeRequest{
+		ProbeMode: spec.policy.ProbeMode, AdminSession: adminSession, AccountID: target.AccountID,
 		MaxLatencyMs: spec.policy.MaxLatencyMs,
 		BaseURL:      cred.BaseURL, UpstreamKey: cred.Key, ProviderFamily: providerFamily,
 		ModelName: spec.modelName, MaxTokens: spec.maxProbeTokens, ProbePrompt: spec.probePrompt,
@@ -543,7 +551,7 @@ func (s *Service) finishTargetProbeBatch(ctx context.Context, userID string, adm
 			}
 			s.recordTargetEvent(ctx, userID, adminAccountID, eventTarget, result.spec.policy.ID, result.spec.modelName,
 				string(result.outcome.Result), string(result.previousState), string(result.state.State), &result.latencyMs,
-				result.state.LastErrorKey, result.state.LastErrorDetail, action)
+				result.state.LastErrorKey, result.state.LastErrorDetail, action, result.spec.policy.ProbeMode)
 		}
 		return
 	}
@@ -552,7 +560,7 @@ func (s *Service) finishTargetProbeBatch(ctx context.Context, userID string, adm
 		eventTarget := targetForProbeSpec(target, result.spec)
 		s.recordTargetEvent(ctx, userID, adminAccountID, eventTarget, result.spec.policy.ID, result.spec.modelName,
 			string(result.outcome.Result), string(result.previousState), string(result.state.State), &result.latencyMs,
-			result.state.LastErrorKey, result.state.LastErrorDetail, "")
+			result.state.LastErrorKey, result.state.LastErrorDetail, "", result.spec.policy.ProbeMode)
 	}
 }
 
@@ -586,14 +594,19 @@ func defaultTargetState(userID string, adminAccountID string, target AdminProbeT
 
 // recordTargetEvent 写入一条独立探活事件（connection_id 列存 targetId）。error_detail 已在
 // probe_runner 里脱敏，绝不含明文 key。
-func (s *Service) recordTargetEvent(ctx context.Context, userID string, adminAccountID string, target AdminProbeTarget, policyID string, modelName string, result string, fromState string, toState string, latencyMs *int, errorKey string, errorDetail string, remoteAction string) {
+func (s *Service) recordTargetEvent(ctx context.Context, userID string, adminAccountID string, target AdminProbeTarget, policyID string, modelName string, result string, fromState string, toState string, latencyMs *int, errorKey string, errorDetail string, remoteAction string, probeModes ...string) {
 	id, err := newID()
 	if err != nil {
 		log.Printf("[connection-health] generate target event id failed: %v", err)
 		return
 	}
+	mode := ProbeModeLight
+	if len(probeModes) > 0 {
+		mode = normalizeProbeMode(probeModes[0])
+	}
 	event := ConnectionHealthEvent{
-		ID: id, ConnectionID: target.TargetID, ModelName: modelName, UserID: userID, AdminAccountID: adminAccountID,
+		ProbeMode: mode,
+		ID:        id, ConnectionID: target.TargetID, ModelName: modelName, UserID: userID, AdminAccountID: adminAccountID,
 		PolicyID: policyID, AdminGroupID: target.AdminGroupID,
 		OwnGroupName: target.AdminGroupName, UpstreamSiteID: "", UpstreamGroupName: target.AdminGroupName, Result: result,
 		FromState: fromState, ToState: toState, LatencyMs: latencyMs, ErrorKey: errorKey, ErrorDetail: errorDetail, RemoteAction: remoteAction,

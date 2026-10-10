@@ -874,6 +874,7 @@ export default {
         hint: '关闭后，该渠道不会自动暂停，探活和优先级开关不受影响；共享分组同步生效。系统此前暂停的渠道会自动恢复，人工停用不受影响。开启仍需分组策略授权。'
       },
       latencyPriority: {
+        averageFirstToken: '短期加权首字',
   "help": "仅调整上游优先级。选定一个探活模型，只用有效期内成功的自动探活计算加权延迟。",
   "model": "用于延迟判定的模型",
   "firstModel": "自动选择首个启用模型（按名称排序）",
@@ -1030,8 +1031,9 @@ export default {
         slow: '高延迟 {count}',
         errors: '报错 {count}',
         successRate: '成功率 {value}',
+        averageFirstToken: '平均首字',
         averageLatency: '平均探活',
-        latencyHint: '最近最多 100 次探活中，成功请求的平均耗时',
+        latencyHint: '最近最多 100 次探活中，与最新记录探活方式相同的成功请求平均耗时',
         configure: '配置 {name} 的监控策略',
         expand: '展开 {name} 的账号详情',
         collapse: '收起 {name} 的账号详情',
@@ -1402,6 +1404,19 @@ export default {
         multiplierOnlySummary: '不执行探活，按倍率同步优先级'
       },
       policyDrawer: {
+        probeModeLabel: '探活方式',
+        sharedProbeModeHint: '共享渠道的同一模型只按一条生效策略探测一次，各分组共用结果；历史记录显示实际方式。',
+        probeModes: { real_model: '轻量请求（原有方式）', arithmetic: '算术检测（仿 Sub2API 渠道监控）', sub2api_test: 'Sub2API 单渠道测试接口', first_token: '流式首字探测' },
+        probeModeHints: {
+          real_model: '直接请求单个渠道的 Chat Completions，默认发送 hi，记录完整响应耗时。',
+          arithmetic: '直接向单个渠道发送随机加减法，答对才成功，输出上限 50 tokens。OpenAI 优先 Responses，接口不支持时回退 Chat Completions；Claude、Gemini 使用原生协议。超时和自动动作仍由本策略决定。',
+          sub2api_test: '调用连接的 Sub2API 的账号测试接口，指定单个渠道和模型，发送 hi，等待测试完成。使用 Sub2API 的账号凭据、代理与模型映射，记录包含本地到 Sub2API 网络耗时的总耗时。',
+          first_token: '直接请求单个渠道，默认发送 hi；收到第一段非空回答文本即记为成功并结束请求。忽略响应头、心跳和推理内容，优先级按首字耗时计算；后续完整回答是否成功不在本次检测范围。',
+        },
+        nativeProbeNotice: '仅支持 Sub2API。此接口可能在成功后清除上游错误、限流和临时暂停状态，也可能在失败后改变账号状态；这些行为由 Sub2API 执行，不受本策略的“允许暂停渠道”和连续次数阈值控制。',
+        maxFirstTokenLatencyLabel: '最大首字等待时间（ms）',
+        maxFirstTokenLatencyHelp: '在此时间内没有收到实际回答文本，就记为探活失败；收到首字后立即结束请求。',
+
         maxLatencyLabel: '最大对话延迟（ms）',
         maxLatencyHelp: '单次渠道探活请求的最长等待时间，默认 20000 ms（20 秒）。超过此时间按超时记录。',
         saving: '保存中…',
@@ -1580,6 +1595,7 @@ export default {
         modelListUnavailable: '无法获取上游模型列表，请稍后重试。',
         modelListInvalid: '上游模型列表响应格式无法识别。',
         latencyPriorityInvalid: '延迟配置无效：检查样本数、权重、模型、优先级，以及从 0 开始连续且最后不限的延迟区间。',
+        probeModeInvalid: '请选择有效的探活方式。',
         maxLatencyInvalid: '最大对话延迟请输入有效的正整数（毫秒）',
         multiplierRequired: '当前分组没有有效倍率，请先在上游设置倍率后再启用倍率排序。',
         manualModelsRequired: '请至少选择一个模型再开始测试。',
