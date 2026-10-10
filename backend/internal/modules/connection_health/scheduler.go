@@ -268,6 +268,9 @@ func (s *Service) runAdminProbeJob(ctx context.Context, j adminProbeJob) {
 		return
 	}
 	defer release()
+	if enabled, err := s.repo.GetChannelAutoProbe(ctx, j.userID, j.adminAccountID, j.target.TargetID); err != nil || !enabled {
+		return
+	}
 	// Another instance or manual probe may have completed while this worker waited.
 	// Re-read selection and policy so queued work cannot bypass a recent edit.
 	j.models, err = s.currentScheduledModels(ctx, j)
@@ -304,8 +307,14 @@ func (s *Service) runAdminProbeJob(ctx context.Context, j adminProbeJob) {
 			j.dueSpecs = native
 		}
 	}
+	if enabled, err := s.repo.GetChannelAutoProbe(ctx, j.userID, j.adminAccountID, j.target.TargetID); err != nil || !enabled {
+		return
+	}
 	results := make([]targetProbeResult, 0, len(j.dueSpecs))
 	for _, spec := range j.dueSpecs {
+		if enabled, err := s.repo.GetChannelAutoProbe(ctx, j.userID, j.adminAccountID, j.target.TargetID); err != nil || !enabled {
+			break
+		}
 		result, err := s.probeTargetOnce(ctx, j.userID, j.adminAccountID, j.target, cred, spec, j.session)
 		if err != nil {
 			log.Printf("[connection-health] scheduled target probe failed target_id=%s model=%s err=%v", j.target.TargetID, spec.modelName, err)
@@ -449,6 +458,10 @@ func (s *Service) collectAdminProbeJobsWithGroupsAndCache(ctx context.Context, p
 			log.Printf("[connection-health] scheduler load admin inventory failed user_id=%s admin_account_id=%s err=%v", ws.userID, ws.adminAccountID, err)
 			continue
 		}
+		autoProbeSettings, err := s.repo.ListChannelAutoProbes(ctx, ws.userID, ws.adminAccountID)
+		if err != nil {
+			continue
+		}
 		session := inventory.session
 		platform := string(session.Platform)
 
@@ -520,6 +533,9 @@ func (s *Service) collectAdminProbeJobsWithGroupsAndCache(ctx context.Context, p
 		}
 
 		for _, targetID := range targetOrder {
+			if !channelAutoProbeEnabled(autoProbeSettings, targetID) {
+				continue
+			}
 			if modelBudget <= 0 {
 				break
 			}

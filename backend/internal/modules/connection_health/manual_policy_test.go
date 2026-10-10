@@ -38,6 +38,8 @@ func TestManualPolicyProbeSharesThresholdsSourceActionsAndHistory(t *testing.T) 
 		{UserID: "user1", AdminAccountID: "ws1", AdminGroupID: "second", PolicyID: p.ID},
 	}
 	const target = "sub2api:ws1:a"
+	// Manual probes must still apply policy thresholds and history after automatic probes are disabled.
+	_ = repo.SetChannelAutoProbe(ctx, "user1", "ws1", target, false)
 	reader := fakePlatformGroupReader{groups: []upstream.AdminGroupInfo{{ID: "first", Name: "disabled"}, {ID: "second", Name: "active"}}, accountsByGrp: map[string][]upstream.AdminGroupAccountInfo{
 		"first": {{ID: "a", Status: "active", Models: "gpt-4o"}}, "second": {{ID: "a", Status: "active", Models: "gpt-4o"}},
 	}, credByAccount: map[string]upstream.ProbeCredential{"a": {BaseURL: server.URL, Key: "secret"}}}

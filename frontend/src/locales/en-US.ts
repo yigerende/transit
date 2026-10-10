@@ -861,6 +861,11 @@ export default {
       saveError: 'Save failed. Please try again.'
     },
     connectionHealth: {
+      channelAutoProbe: {
+        label: 'Automatic probes', toggle: 'Toggle automatic probes for {name}', off: 'Probes off',
+        hint: 'Stops new scheduled probes; an in-flight request may finish. Manual probes still follow policies and record history. Shared across groups for this channel; quality checks and other switches are independent.'
+      },
+      channelMenus: { automation: 'Automation', automationFor: 'Automation settings for {name}', quality: 'Quality test', qualityFor: 'Quality tests for {name}' },
       channelPriority: {
         label: 'Allow priority changes',
         toggle: 'Allow automatic priority changes for {name}',

@@ -106,6 +106,7 @@ export interface ChannelProbeBudget {
 }
 
 export interface AdminGroupAccount {
+  autoProbeEnabled?: boolean
   probeBudgets?: ChannelProbeBudget[]
   probeBudgetError?: boolean
   latencyPriority?: LatencyPriorityDecision

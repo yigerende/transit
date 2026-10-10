@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Eye, Loader2, Play, Zap } from 'lucide-vue-next'
+import { Eye, Loader2, Play, Settings2, Zap } from 'lucide-vue-next'
 import ProbeHistoryStrip from './ProbeHistoryStrip.vue'
+import ChannelActionDropdown from './ChannelActionDropdown.vue'
 import QualityHistoryStrip from './QualityHistoryStrip.vue'
 import { connectionHealthStateBadgeClass } from '../../composables/useConnectionHealth'
 import type { QualityManualMethod } from '../../types/quality'
 import type { AdminGroupAccount } from '../../types/connectionHealth'
 import { channelAutomationEnabled, latestChannelProbe } from '../../utils/connectionHealthChannels'
 
-const props = defineProps<{ account: AdminGroupAccount; historyUnavailable?: boolean; showQuality?: boolean; qualityEnabled?: boolean; qualityUnavailable?: boolean; qualityBusy?: boolean; qualityProbeMethod?: QualityManualMethod; qualityError?: string; suspensionBusy?: boolean; suspensionError?: string; priorityBusy?: boolean; priorityError?: string }>()
-const emit = defineEmits<{ probe: [account: AdminGroupAccount]; 'view-events': [account: AdminGroupAccount]; 'view-quality': [account: AdminGroupAccount]; 'toggle-quality': [account: AdminGroupAccount]; 'probe-quality': [account: AdminGroupAccount, method: QualityManualMethod]; 'toggle-suspension': [account: AdminGroupAccount]; 'toggle-priority': [account: AdminGroupAccount] }>()
+const props = defineProps<{ account: AdminGroupAccount; historyUnavailable?: boolean; showQuality?: boolean; qualityEnabled?: boolean; qualityUnavailable?: boolean; qualityBusy?: boolean; qualityProbeMethod?: QualityManualMethod; qualityError?: string; suspensionBusy?: boolean; suspensionError?: string; priorityBusy?: boolean; priorityError?: string; autoProbeBusy?: boolean; autoProbeError?: string }>()
+const emit = defineEmits<{ probe: [account: AdminGroupAccount]; 'view-events': [account: AdminGroupAccount]; 'view-quality': [account: AdminGroupAccount]; 'toggle-quality': [account: AdminGroupAccount]; 'probe-quality': [account: AdminGroupAccount, method: QualityManualMethod]; 'toggle-suspension': [account: AdminGroupAccount]; 'toggle-priority': [account: AdminGroupAccount]; 'toggle-auto-probe': [account: AdminGroupAccount] }>()
 const { t } = useI18n()
 const prefix = 'admin.connectionHealth'
 const qualityMethods: QualityManualMethod[] = ['questions', 'manxue_candy', 'manxue_pelican']
@@ -18,6 +19,13 @@ const selectedForAutomation = computed(() => channelAutomationEnabled(props.acco
 const hasManualProbes = computed(() => props.account.recentProbes?.some(sample => sample.manual))
 const hasManualQuality = computed(() => props.account.qualityHistory?.some(sample => sample.manual))
 const automaticQualityEnabled = computed(() => selectedForAutomation.value && props.account.qualityEnabled !== false)
+const automaticProbeEnabled = computed(() => selectedForAutomation.value && props.account.hasEnabledProbePolicy !== false && props.account.autoProbeEnabled !== false)
+const automationControls = computed(() => [
+  { id: 'probe', label: t(`${prefix}.channelAutoProbe.label`), aria: t(`${prefix}.channelAutoProbe.toggle`, { name: props.account.name || props.account.id }), hint: t(`${prefix}.channelAutoProbe.hint`), checked: automaticProbeEnabled.value, busy: props.autoProbeBusy, disabled: !selectedForAutomation.value || props.account.hasEnabledProbePolicy === false || props.autoProbeBusy, toggle: () => emit('toggle-auto-probe', props.account) },
+  { id: 'priority', label: t(`${prefix}.channelPriority.label`), aria: t(`${prefix}.channelPriority.toggle`, { name: props.account.name || props.account.id }), hint: t(`${prefix}.channelPriority.hint`), checked: selectedForAutomation.value && props.account.priorityEnabled !== false, busy: props.priorityBusy, disabled: !selectedForAutomation.value || props.priorityBusy, toggle: () => emit('toggle-priority', props.account) },
+  { id: 'suspension', label: t(`${prefix}.channelSuspension.label`), aria: t(`${prefix}.channelSuspension.toggle`, { name: props.account.name || props.account.id }), hint: t(`${prefix}.channelSuspension.hint`), checked: selectedForAutomation.value && Boolean(props.account.suspensionSupported) && props.account.suspensionEnabled !== false, busy: props.suspensionBusy, disabled: !selectedForAutomation.value || !props.account.suspensionSupported || props.suspensionBusy, toggle: () => emit('toggle-suspension', props.account) },
+  { id: 'quality', label: t(`${prefix}.quality.automaticLabel`), aria: t(`${prefix}.quality.toggleChannel`, { name: props.account.name || props.account.id }), hint: t(`${prefix}.quality.${selectedForAutomation.value ? 'channelSwitchHint' : 'inactiveAutomationHint'}`), checked: automaticQualityEnabled.value, busy: props.qualityBusy, disabled: !selectedForAutomation.value || props.qualityBusy || props.qualityUnavailable, toggle: () => emit('toggle-quality', props.account) },
+])
 const canProbeQuality = computed(() => props.account.probeAvailable && !props.account.qualityPausedByHealth && !props.qualityUnavailable)
 const latest = computed(() => latestChannelProbe(props.account))
 const latencyPrefix = `${prefix}.latencyPriority`
@@ -46,32 +54,32 @@ const state = computed(() => {
         <h3 class="truncate text-sm font-medium text-foreground" :title="account.name || account.id">{{ account.name || account.id }}</h3>
       </div>
       <div class="flex max-w-full flex-wrap items-center gap-x-2 gap-y-1">
-        <button v-if="selectedForAutomation" type="button" role="switch" :aria-checked="account.priorityEnabled !== false" :aria-label="t(`${prefix}.channelPriority.toggle`, { name: account.name || account.id })" :title="t(`${prefix}.channelPriority.hint`)" :disabled="priorityBusy" class="flex items-center gap-1.5 rounded px-1 py-2 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50" @click.stop="emit('toggle-priority', account)">
-          <span>{{ t(`${prefix}.channelPriority.label`) }}</span>
-          <Loader2 v-if="priorityBusy" class="h-4 w-7 animate-spin" />
-          <span v-else class="relative h-4 w-7 rounded-full transition-colors" :class="account.priorityEnabled !== false ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="account.priorityEnabled !== false ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
-        </button>
-        <button v-if="selectedForAutomation && account.suspensionSupported" type="button" role="switch" :aria-checked="account.suspensionEnabled !== false" :aria-label="t(`${prefix}.channelSuspension.toggle`, { name: account.name || account.id })" :title="t(`${prefix}.channelSuspension.hint`)" :disabled="suspensionBusy" class="flex items-center gap-1.5 rounded px-1 py-2 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50" @click.stop="emit('toggle-suspension', account)">
-          <span>{{ t(`${prefix}.channelSuspension.label`) }}</span>
-          <Loader2 v-if="suspensionBusy" class="h-4 w-7 animate-spin" />
-          <span v-else class="relative h-4 w-7 rounded-full transition-colors" :class="account.suspensionEnabled !== false ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="account.suspensionEnabled !== false ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
-        </button>
-        <button type="button" role="switch" :aria-checked="automaticQualityEnabled" :aria-label="t(`${prefix}.quality.toggleChannel`, { name: account.name || account.id })" :title="t(`${prefix}.quality.${selectedForAutomation ? 'channelSwitchHint' : 'inactiveAutomationHint'}`)" :disabled="!selectedForAutomation || qualityBusy || qualityUnavailable" class="flex h-6 shrink-0 items-center justify-center gap-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50" @click.stop="emit('toggle-quality', account)">
-          <span class="text-xs text-muted-foreground">{{ t(`${prefix}.quality.automaticLabel`) }}</span>
-          <Loader2 v-if="qualityBusy" class="h-4 w-4 animate-spin text-muted-foreground" />
-          <span v-else class="relative h-4 w-7 rounded-full transition-colors" :class="automaticQualityEnabled ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="automaticQualityEnabled ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
-        </button>
-        <button v-for="method in qualityMethods" :key="method" type="button" class="inline-flex h-6 shrink-0 items-center justify-center gap-1 rounded border border-border/60 px-1.5 text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-40" :disabled="qualityBusy || Boolean(qualityProbeMethod) || !canProbeQuality" :aria-busy="qualityProbeMethod === method" :aria-label="t(`${prefix}.quality.manualLabels.${method}`)" :title="t(`${prefix}.quality.${qualityProbeMethod === method ? 'probingNow' : account.qualityPausedByHealth ? 'healthPausedHint' : canProbeQuality ? `manualHints.${method}` : 'probeUnavailable'}`)" @click.stop="emit('probe-quality', account, method)">
-          <Loader2 v-if="qualityProbeMethod === method" class="h-3 w-3 animate-spin" aria-hidden="true" />
-          <Play v-else class="h-3 w-3" aria-hidden="true" />
-          {{ t(`${prefix}.quality.manualLabels.${method}`) }}
-        </button>
+        <ChannelActionDropdown :label="t(`${prefix}.channelMenus.automationFor`, { name: account.name || account.id })">
+          <template #trigger><Settings2 class="h-3.5 w-3.5" />{{ t(`${prefix}.channelMenus.automation`) }}<span v-if="selectedForAutomation && account.autoProbeEnabled === false && account.hasEnabledProbePolicy !== false" class="text-amber-600 dark:text-amber-400">· {{ t(`${prefix}.channelAutoProbe.off`) }}</span></template>
+          <button v-for="control in automationControls" :key="control.id" type="button" role="switch" :aria-checked="control.checked" :aria-label="control.aria" :title="control.hint" :disabled="control.disabled" class="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2.5 text-xs hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-40" @click.stop="control.toggle()">
+            <span>{{ control.label }}</span>
+            <Loader2 v-if="control.busy" class="h-4 w-7 animate-spin" />
+            <span v-else class="relative h-4 w-7 shrink-0 rounded-full transition-colors" :class="control.checked ? 'bg-primary' : 'bg-muted-foreground/25'" aria-hidden="true"><span class="absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform" :class="control.checked ? 'translate-x-3.5' : 'translate-x-0.5'" /></span>
+          </button>
+          <p v-if="!selectedForAutomation" class="border-t border-border/60 px-3 py-2 text-[11px] leading-5 text-muted-foreground">{{ t(`${prefix}.quality.inactiveAutomationHint`) }}</p>
+        </ChannelActionDropdown>
+        <ChannelActionDropdown :label="t(`${prefix}.channelMenus.qualityFor`, { name: account.name || account.id })">
+          <template #trigger><Loader2 v-if="qualityProbeMethod" class="h-3.5 w-3.5 animate-spin" /><Play v-else class="h-3.5 w-3.5" />{{ t(`${prefix}.channelMenus.quality`) }}</template>
+          <template #default="{ close }">
+            <button v-for="method in qualityMethods" :key="method" type="button" class="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-40" :disabled="qualityBusy || Boolean(qualityProbeMethod) || !canProbeQuality" :aria-busy="qualityProbeMethod === method" :aria-label="t(`${prefix}.quality.manualLabels.${method}`)" :title="t(`${prefix}.quality.${qualityProbeMethod === method ? 'probingNow' : account.qualityPausedByHealth ? 'healthPausedHint' : canProbeQuality ? `manualHints.${method}` : 'probeUnavailable'}`)" @click.stop="close(); emit('probe-quality', account, method)">
+              <Loader2 v-if="qualityProbeMethod === method" class="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              <Play v-else class="h-3.5 w-3.5" aria-hidden="true" />
+              {{ t(`${prefix}.quality.manualLabels.${method}`) }}
+            </button>
+          </template>
+        </ChannelActionDropdown>
         <button type="button" class="inline-flex h-6 shrink-0 items-center gap-1 rounded px-1.5 text-xs text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" :aria-label="t(`${prefix}.quality.detail.open`, { name: account.name || account.id })" @click.stop="emit('view-quality', account)"><Eye class="h-3.5 w-3.5" />{{ t(`${prefix}.quality.detail.channelButton`) }}</button>
         <span class="rounded-full px-2.5 py-1 text-xs" :class="state === 'healthy' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : state === 'unhealthy' || state === 'qualitySuspended' ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-surface text-muted-foreground'">{{ t(`${prefix}.cards.status.${state}`) }}</span>
         <button type="button" class="inline-flex h-6 items-center gap-1 rounded border border-border/60 px-1.5 text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-40" :disabled="!account.probeAvailable" :aria-label="t(`${prefix}.actions.probe`)" :title="t(`${prefix}.actions.probe`)" @click.stop="emit('probe', account)"><Zap class="h-3 w-3" />{{ t(`${prefix}.actions.probeShort`) }}</button>
         <button type="button" class="rounded-lg border border-border/70 p-2 text-muted-foreground hover:text-primary" :aria-label="t(`${prefix}.actions.viewEvents`)" :title="t(`${prefix}.actions.viewEvents`)" @click="emit('view-events', account)"><Eye class="h-3.5 w-3.5" /></button>
       </div>
     </div>
+    <p v-if="autoProbeError" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ autoProbeError }}</p>
     <p v-if="qualityError" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ qualityError }}</p>
     <p v-if="priorityError" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ priorityError }}</p>
     <p v-if="account.priorityRestorePending" role="status" class="text-xs text-amber-600 dark:text-amber-400">{{ t(`${prefix}.channelPriority.restoring`) }}</p>

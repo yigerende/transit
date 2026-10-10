@@ -861,6 +861,11 @@ export default {
       saveError: '保存失败，请重试。'
     },
     connectionHealth: {
+      channelAutoProbe: {
+        label: '自动探活', toggle: '切换渠道 {name} 的自动探活', off: '探活已关',
+        hint: '关闭后停止发起新的定时探活，正在执行的请求会完成；手动探活仍按策略执行并记录历史。同一渠道各分组共用此设置，降智测试和其他开关独立控制。'
+      },
+      channelMenus: { automation: '自动化', automationFor: '渠道 {name} 的自动化设置', quality: '降智测试', qualityFor: '渠道 {name} 的降智测试' },
       channelPriority: {
         label: '允许变动优先级',
         toggle: '允许自动变动渠道 {name} 的优先级',

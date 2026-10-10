@@ -71,6 +71,7 @@ type AdminGroupHealthSummary struct {
 // 只要后端能安全解析 base_url + key + model 就可独立探活，不再需要 real_connections。
 // 绝不包含 key / token / cookie / credentials / secret / authorization 明文。
 type AdminGroupAccount struct {
+	AutoProbeEnabled       bool                     `json:"autoProbeEnabled"`
 	ProbeBudgets           []ChannelProbeBudget     `json:"probeBudgets,omitempty"`
 	ProbeBudgetError       bool                     `json:"probeBudgetError,omitempty"`
 	PriorityEnabled        bool                     `json:"priorityEnabled"`
@@ -191,6 +192,10 @@ func (s *Service) readAdminGroups(ctx context.Context, userID string, options ad
 		return nil, err
 	}
 	states, err := s.repo.ListStatesByWorkspace(ctx, userID, adminAccountID)
+	if err != nil {
+		return nil, err
+	}
+	autoProbeSettings, err := s.repo.ListChannelAutoProbes(ctx, userID, adminAccountID)
 	if err != nil {
 		return nil, err
 	}
@@ -354,6 +359,7 @@ func (s *Service) readAdminGroups(ctx context.Context, userID string, options ad
 			}
 
 			item := AdminGroupAccount{
+				AutoProbeEnabled:           hasProbePolicy && channelAutoProbeEnabled(autoProbeSettings, targetID),
 				PriorityEnabled:            channelPriorityEnabled(prioritySettings, targetID),
 				PriorityRestorePending:     !channelPriorityEnabled(prioritySettings, targetID) && priorityManaged,
 				SuspensionEnabled:          suspensionEnabled,
