@@ -343,7 +343,7 @@ func (s *Service) runQualityScope(ctx context.Context, scope QualityScope, token
 							log.Printf("[quality] probe panic recovered")
 						}
 					}()
-					s.runQualityCandidate(ctx, scope, session, q, c, byState[c.targetID])
+					_, _ = s.runQualityCandidate(ctx, scope, session, q, c, false)
 				}()
 			}
 		}()
@@ -360,14 +360,39 @@ func (s *Service) runQualityScope(ctx context.Context, scope QualityScope, token
 	}
 }
 
-func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, session upstream.Session, q QualitySettings, c qualityCandidate, state QualityState) {
+func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, session upstream.Session, q QualitySettings, c qualityCandidate, manual bool) (QualitySample, error) {
+	release, acquired, err := s.qualityRepo.TryAcquireQualityLease(ctx, scope.UserID, scope.WorkspaceID, c.targetID)
+	if err != nil {
+		return QualitySample{}, err
+	}
+	if !acquired {
+		return QualitySample{}, requestError(qualityPrefix + "probeBusy")
+	}
+	defer release()
+	// Inventory collection can race a manual check. Reload after acquiring the
+	// channel lease so queued automatic work uses the updated due time and question.
+	states, err := s.qualityRepo.ListQualityStates(ctx, scope.UserID, scope.WorkspaceID)
+	if err != nil {
+		return QualitySample{}, err
+	}
+	var state QualityState
+	for _, st := range states {
+		if st.TargetID == c.targetID && st.Revision == q.Revision {
+			state = st
+			break
+		}
+	}
+	if !manual && state.NextProbeAt.After(time.Now()) {
+		return QualitySample{}, nil
+	}
+	unavailable := requestError(qualityPrefix + "probeUnavailable")
 	current, err := s.qualityRepo.GetQualitySettings(ctx, scope.UserID, scope.WorkspaceID)
 	if err != nil || !current.Enabled || current.Revision != q.Revision {
-		return
+		return QualitySample{}, unavailable
 	}
 	switches, err := s.qualityRepo.ListQualityGroups(ctx, scope.UserID, scope.WorkspaceID)
 	if err != nil {
-		return
+		return QualitySample{}, err
 	}
 	allowed := map[string]bool{}
 	for _, g := range switches {
@@ -377,7 +402,7 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 	}
 	selection, err := s.loadQualitySelection(ctx, scope.UserID, scope.WorkspaceID)
 	if err != nil {
-		return
+		return QualitySample{}, err
 	}
 	// Refresh the group membership before each real request, including queued jobs.
 	matched := false
@@ -402,17 +427,17 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 		}
 	}
 	if !matched || ctx.Err() != nil {
-		return
+		return QualitySample{}, unavailable
 	}
 	// The user may have unchecked this channel while it was queued or while the
 	// upstream inventory was loading. Re-read before resolving any credentials.
 	selection, err = s.loadQualitySelection(ctx, scope.UserID, scope.WorkspaceID)
 	if err != nil || !selection.selected(c.groups[0], c.targetID) {
-		return
+		return QualitySample{}, unavailable
 	}
 	active := q.activeQuestions()
 	if len(active) == 0 {
-		return
+		return QualitySample{}, unavailable
 	}
 	question := active[0]
 	for _, v := range active {
@@ -423,7 +448,7 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 	}
 	id, err := newID()
 	if err != nil {
-		return
+		return QualitySample{}, err
 	}
 	sample := QualitySample{ID: id, TargetID: c.targetID, Model: q.Model, QuestionID: question.ID, QuestionName: question.Name, ExpectedAnswer: question.Answer, MatchMode: question.MatchMode, MaxDurationMS: question.MaxDurationMS}
 	sample.DetectionMethod = q.DetectionMethod
@@ -438,11 +463,22 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 		// change made during that read before sending the billable model request.
 		selection, err = s.loadQualitySelection(ctx, scope.UserID, scope.WorkspaceID)
 		if err != nil || !selection.selected(c.groups[0], c.targetID) {
-			return
+			return QualitySample{}, unavailable
 		}
 		current, err = s.qualityRepo.GetQualitySettings(ctx, scope.UserID, scope.WorkspaceID)
 		if err != nil || !current.Enabled || current.Revision != q.Revision {
-			return
+			return QualitySample{}, unavailable
+		}
+		// A group may have been switched off while credentials were loading.
+		switches, err = s.qualityRepo.ListQualityGroups(ctx, scope.UserID, scope.WorkspaceID)
+		groupEnabled := false
+		for _, group := range switches {
+			if group.GroupID == c.groups[0] && group.Enabled {
+				groupEnabled = true
+			}
+		}
+		if err != nil || !groupEnabled {
+			return QualitySample{}, unavailable
 		}
 		outcome := s.qualityRunner.ProbeQuality(ctx, cred, c.account.Platform, q, question)
 		sample.Result = outcome.Verdict
@@ -452,16 +488,27 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 		sample.ErrorKey = outcome.ErrorKey
 	}
 	if ctx.Err() != nil {
-		return
+		return QualitySample{}, ctx.Err()
 	}
 	selection, err = s.loadQualitySelection(ctx, scope.UserID, scope.WorkspaceID)
 	if err != nil || !selection.selected(c.groups[0], c.targetID) {
-		return
+		return QualitySample{}, unavailable
 	}
 	sample.CreatedAt = time.Now()
+	nextQuestion := state.NextQuestionID
 	state = applyQualitySample(state, q, question, sample)
-	state.Latest.Answer = truncate(strings.TrimSpace(state.Latest.Answer), 4000)
-	if _, err := s.qualityRepo.SaveQualityResult(ctx, scope.UserID, scope.WorkspaceID, c.groups, q, state); err != nil {
-		log.Printf("[quality] saving result failed")
+	if manual && q.DetectionMethod == qualityMethodManxue {
+		// A one-off API benchmark must not rewind the custom question rotation.
+		state.NextQuestionID = nextQuestion
 	}
+	state.Latest.Answer = truncate(strings.TrimSpace(state.Latest.Answer), 4000)
+	saved, err := s.qualityRepo.SaveQualityResult(ctx, scope.UserID, scope.WorkspaceID, c.groups, q, state)
+	if err != nil {
+		log.Printf("[quality] saving result failed")
+		return QualitySample{}, err
+	}
+	if !saved {
+		return QualitySample{}, unavailable
+	}
+	return state.Latest, nil
 }

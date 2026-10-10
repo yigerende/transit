@@ -28,6 +28,9 @@ func qualityTestPool(t *testing.T) (context.Context, *pgxpool.Pool) {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
+	if _, err := pool.Exec(ctx, `CREATE TEMP TABLE connection_health_runtime_leases (lease_key text PRIMARY KEY, owner_id text NOT NULL, expires_at timestamptz NOT NULL, updated_at timestamptz NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
 	migration, err := os.ReadFile("../../database/migrations/000020_channel_quality_detection.sql")
 	if err != nil {
 		t.Fatal(err)

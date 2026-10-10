@@ -6,6 +6,29 @@ import (
 	"transithub/backend/internal/shared/httpjson"
 )
 
+func (h *Handler) probeChannelQuality(w http.ResponseWriter, r *http.Request) {
+	user, ok := authctx.UserID(r.Context())
+	if !ok {
+		httpjson.WriteError(w, http.StatusUnauthorized, "auth.errors.unauthorized")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	var input struct {
+		GroupID string `json:"groupId"`
+		Method  string `json:"method"`
+	}
+	if httpjson.Decode(r, &input) != nil {
+		httpjson.WriteError(w, http.StatusBadRequest, ErrorRequest)
+		return
+	}
+	result, err := h.service.ProbeChannelQuality(r.Context(), user, r.PathValue("id"), input.GroupID, input.Method)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	httpjson.Write(w, http.StatusOK, result)
+}
+
 func (h *Handler) qualitySettings(w http.ResponseWriter, r *http.Request) {
 	user, ok := authctx.UserID(r.Context())
 	if !ok {

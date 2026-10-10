@@ -51,6 +51,7 @@ const qualityChannelSchema = `CREATE TABLE IF NOT EXISTS connection_health_quali
 `
 
 type qualityRepository interface {
+	TryAcquireQualityLease(context.Context, string, string, string) (func(), bool, error)
 	GetQualitySettings(context.Context, string, string) (QualitySettings, error)
 	SaveQualitySettings(context.Context, string, string, QualitySettings) error
 	ListQualityScopes(context.Context) ([]QualityScope, error)
@@ -61,6 +62,12 @@ type qualityRepository interface {
 	ListQualityStates(context.Context, string, string) ([]QualityState, error)
 	SaveQualityResult(context.Context, string, string, []string, QualitySettings, QualityState) (bool, error)
 	ListQualityHistory(context.Context, string, string, []string, int) ([]QualitySample, error)
+}
+
+// Shared by scheduled and manual checks, including checks started in another group
+// or server process. Never queue a second billable check for a busy channel.
+func (r *Repository) TryAcquireQualityLease(ctx context.Context, user, workspace, target string) (func(), bool, error) {
+	return r.acquireRuntimeLease(ctx, "connection-health:quality-target:"+user+":"+workspace+":"+target, false)
 }
 
 func (r *Repository) GetQualitySettings(ctx context.Context, user, workspace string) (QualitySettings, error) {

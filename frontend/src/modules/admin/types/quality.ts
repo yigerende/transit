@@ -1,3 +1,5 @@
+export type QualityManualMethod = 'questions' | 'manxue_candy' | 'manxue_pelican'
+
 export interface QualityQuestion {
   id: string
   name: string

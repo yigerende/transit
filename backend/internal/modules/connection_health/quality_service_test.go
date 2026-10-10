@@ -12,11 +12,26 @@ import (
 
 type fakeQualityRepo struct {
 	mu       sync.Mutex
+	leases   map[string]bool
 	configs  map[string]QualitySettings
 	groups   map[string]map[string]bool
 	channels map[string]map[string]bool
 	states   map[string]map[string]QualityState
 	history  map[string][]QualitySample
+}
+
+func (r *fakeQualityRepo) TryAcquireQualityLease(_ context.Context, user, workspace, target string) (func(), bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.leases == nil {
+		r.leases = map[string]bool{}
+	}
+	key := user + "|" + workspace + "|" + target
+	if r.leases[key] {
+		return nil, false, nil
+	}
+	r.leases[key] = true
+	return func() { r.mu.Lock(); delete(r.leases, key); r.mu.Unlock() }, true, nil
 }
 
 func newFakeQualityRepo() *fakeQualityRepo {
@@ -326,7 +341,7 @@ func TestQualityConcurrencyAndMovedChannel(t *testing.T) {
 	reader.accountsByGrp["one"] = nil
 	svc.platformGroups = reader
 	config, _ := svc.QualityConfiguration(ctx, "user")
-	svc.runQualityCandidate(ctx, QualityScope{UserID: "user", WorkspaceID: "ws1"}, upstream.Session{Platform: upstream.PlatformSub2API}, config, qualityCandidate{account: upstream.AdminGroupAccountInfo{ID: "a"}, groups: []string{"one"}, targetID: "sub2api:ws1:a"}, QualityState{})
+	svc.runQualityCandidate(ctx, QualityScope{UserID: "user", WorkspaceID: "ws1"}, upstream.Session{Platform: upstream.PlatformSub2API}, config, qualityCandidate{account: upstream.AdminGroupAccountInfo{ID: "a"}, groups: []string{"one"}, targetID: "sub2api:ws1:a"}, true)
 	if runner.calls != before {
 		t.Fatal("moved channel was probed")
 	}
