@@ -6,6 +6,36 @@ import (
 	"transithub/backend/internal/shared/httpjson"
 )
 
+func (h *Handler) qualityHistory(w http.ResponseWriter, r *http.Request) {
+	user, ok := authctx.UserID(r.Context())
+	if !ok {
+		httpjson.WriteError(w, http.StatusUnauthorized, "auth.errors.unauthorized")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	result, err := h.service.QualityHistory(r.Context(), user, r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	httpjson.Write(w, http.StatusOK, result)
+}
+
+func (h *Handler) qualityHistoryDetail(w http.ResponseWriter, r *http.Request) {
+	user, ok := authctx.UserID(r.Context())
+	if !ok {
+		httpjson.WriteError(w, http.StatusUnauthorized, "auth.errors.unauthorized")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	result, err := h.service.QualityHistoryDetail(r.Context(), user, r.PathValue("id"), r.PathValue("sampleId"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	httpjson.Write(w, http.StatusOK, result)
+}
+
 func (h *Handler) probeChannelQuality(w http.ResponseWriter, r *http.Request) {
 	user, ok := authctx.UserID(r.Context())
 	if !ok {

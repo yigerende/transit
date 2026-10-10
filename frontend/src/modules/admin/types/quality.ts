@@ -40,6 +40,12 @@ export interface QualityGroup {
   errorKey?: string
 }
 export interface QualitySample {
+  startedAt?: string
+  prompt?: string
+  mode?: 'content' | 'time' | 'content_time'
+  html?: string
+  hasHtml?: boolean
+  htmlTooLarge?: boolean
   detectionMethod?: 'questions' | 'manxue'
   benchmark?: 'candy' | 'pelican'
   report?: string

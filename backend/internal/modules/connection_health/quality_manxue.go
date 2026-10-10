@@ -19,6 +19,7 @@ import (
 // https://manxue.ai/api documents an asynchronous API, not a model endpoint.
 // The origin is fixed so channel credentials cannot be redirected elsewhere.
 const manxueTestsURL = "https://manxue.ai/api/v1/tests"
+const maxQualityHTMLBytes = 2 * 1024 * 1024
 
 var manxueTaskID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
@@ -41,7 +42,8 @@ type manxueTask struct {
 		Reason  string `json:"reason"`
 	} `json:"assessment"`
 	Result *struct {
-		DurationMS int `json:"duration_ms"`
+		DurationMS int    `json:"duration_ms"`
+		HTML       string `json:"html"`
 	} `json:"result"`
 }
 
@@ -246,6 +248,16 @@ func (r *manxueProbeRunner) ProbeQuality(ctx context.Context, cred upstream.Prob
 
 func manxueVerdict(task manxueTask, benchmark, key string) qualityProbeResult {
 	out := qualityProbeResult{}
+	if benchmark == "pelican" && task.Result != nil {
+		out.DurationMS = task.Result.DurationMS
+		html := strings.TrimSpace(redact(redact(task.Result.HTML, key), task.ID))
+		if len(html) <= maxQualityHTMLBytes {
+			out.HTML = html
+		} else {
+			// Never render truncated source or lose the verdict because artwork is large.
+			out.HTMLTooLarge = true
+		}
+	}
 	if benchmark == "candy" && task.Candy != nil {
 		out.DurationMS = task.Candy.DurationMS
 		out.Answer = truncate(redact(task.Candy.Answer, key), 4000)
@@ -260,9 +272,6 @@ func manxueVerdict(task manxueTask, benchmark, key string) qualityProbeResult {
 			out.ErrorKey = qualityPrefix + "manxueUnknown"
 		}
 	} else if benchmark == "pelican" && task.Assessment != nil {
-		if task.Result != nil {
-			out.DurationMS = task.Result.DurationMS
-		}
 		out.Report = truncate(redact(task.Assessment.Reason, key), 2000)
 		switch task.Assessment.Quality {
 		case "normal":

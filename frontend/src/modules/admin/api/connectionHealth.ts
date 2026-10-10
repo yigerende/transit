@@ -31,6 +31,8 @@ export const setGroupQuality = (groupId: string, enabled: boolean): Promise<Qual
 
 export const setChannelQuality = (targetId: string, enabled: boolean): Promise<QualityChannel> => requestJson(`/connection-health/targets/${encodeURIComponent(targetId)}/quality`, { method: 'PUT', body: JSON.stringify({ enabled }) })
 export const probeChannelQuality = (targetId: string, groupId: string, method: QualityManualMethod): Promise<QualitySample> => requestJson(`/connection-health/targets/${encodeURIComponent(targetId)}/quality-probe`, { method: 'POST', body: JSON.stringify({ groupId, method }) })
+export const getChannelQualityHistory = (targetId: string): Promise<QualitySample[]> => requestJson(`/connection-health/targets/${encodeURIComponent(targetId)}/quality-history`)
+export const getChannelQualityDetail = (targetId: string, sampleId: string): Promise<QualitySample> => requestJson(`/connection-health/targets/${encodeURIComponent(targetId)}/quality-history/${encodeURIComponent(sampleId)}`)
 export const setChannelSuspension = (targetId: string, enabled: boolean): Promise<{ targetId: string; enabled: boolean }> => requestJson(`/connection-health/targets/${encodeURIComponent(targetId)}/suspension`, { method: 'PUT', body: JSON.stringify({ enabled }) })
 
 const endpoint = (path: string): string => `${apiBaseUrl.replace(/\/$/, '')}${path}`

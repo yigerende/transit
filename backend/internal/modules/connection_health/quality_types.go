@@ -149,25 +149,41 @@ type QualityChannel struct {
 }
 
 type QualitySample struct {
-	DetectionMethod string    `json:"detectionMethod,omitempty"`
-	Benchmark       string    `json:"benchmark,omitempty"`
-	Report          string    `json:"report,omitempty"`
-	ID              string    `json:"id"`
-	TargetID        string    `json:"targetId"`
-	Model           string    `json:"model"`
-	QuestionID      string    `json:"questionId"`
-	QuestionName    string    `json:"questionName"`
-	Answer          string    `json:"answer"`
-	ExpectedAnswer  string    `json:"expectedAnswer"`
-	MatchMode       string    `json:"matchMode"`
-	Result          string    `json:"result"` // passed, failed (valid answer), error (no verdict)
-	ErrorKey        string    `json:"errorKey,omitempty"`
-	ContentPassed   bool      `json:"contentPassed"`
-	TimePassed      bool      `json:"timePassed"`
-	DurationMS      int       `json:"durationMs"`
-	MaxDurationMS   int       `json:"maxDurationMs"`
-	CreatedAt       time.Time `json:"createdAt"`
+	StartedAt       *time.Time `json:"startedAt,omitempty"`
+	Prompt          string     `json:"prompt,omitempty"`
+	Mode            string     `json:"mode,omitempty"`
+	HTML            string     `json:"html,omitempty"`
+	HasHTML         bool       `json:"hasHtml,omitempty"`
+	HTMLTooLarge    bool       `json:"htmlTooLarge,omitempty"`
+	DetectionMethod string     `json:"detectionMethod,omitempty"`
+	Benchmark       string     `json:"benchmark,omitempty"`
+	Report          string     `json:"report,omitempty"`
+	ID              string     `json:"id"`
+	TargetID        string     `json:"targetId"`
+	Model           string     `json:"model"`
+	QuestionID      string     `json:"questionId"`
+	QuestionName    string     `json:"questionName"`
+	Answer          string     `json:"answer"`
+	ExpectedAnswer  string     `json:"expectedAnswer"`
+	MatchMode       string     `json:"matchMode"`
+	Result          string     `json:"result"` // passed, failed (valid answer), error (no verdict)
+	ErrorKey        string     `json:"errorKey,omitempty"`
+	ContentPassed   bool       `json:"contentPassed"`
+	TimePassed      bool       `json:"timePassed"`
+	DurationMS      int        `json:"durationMs"`
+	MaxDurationMS   int        `json:"maxDurationMs"`
+	CreatedAt       time.Time  `json:"createdAt"`
 }
+
+// Group cards and history lists stay small; full evidence is fetched on demand.
+func qualitySampleSummary(sample QualitySample) QualitySample {
+	sample.HasHTML = sample.HasHTML || sample.HTML != ""
+	sample.HTML = ""
+	sample.Prompt = ""
+	sample.Answer = truncate(sample.Answer, 4000)
+	return sample
+}
+
 type QualityState struct {
 	TargetID       string        `json:"targetId"`
 	Revision       string        `json:"revision"`

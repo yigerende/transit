@@ -44,7 +44,7 @@ func TestManxueTaskVerdictsAndRequestContract(t *testing.T) {
 		{"candy wrong", "candy", `"candy":{"status":"incorrect","answer":"wrong","duration_ms":11000}`, "failed", ""},
 		{"candy error", "candy", `"candy":{"status":"error","error":"test-secret"}`, "", qualityPrefix + "manxueFailed"},
 		{"candy missing", "candy", `"candy":null`, "", qualityPrefix + "manxueUnknown"},
-		{"pelican normal", "pelican", `"assessment":{"quality":"normal","reason":"test-secret normal"},"result":{"duration_ms":32000,"html":"MUST NOT STORE HTML"}`, "passed", ""},
+		{"pelican normal", "pelican", `"assessment":{"quality":"normal","reason":"test-secret normal"},"result":{"duration_ms":32000,"html":"<html>pelican test-secret test-id</html>"}`, "passed", ""},
 		{"pelican degraded", "pelican", `"assessment":{"quality":"degraded","reason":"poor result"}`, "failed", ""},
 		{"pelican unknown", "pelican", `"assessment":{"quality":"unknown","reason":"no verdict"}`, "", qualityPrefix + "manxueUnknown"},
 	} {
@@ -88,13 +88,16 @@ func TestManxueTaskVerdictsAndRequestContract(t *testing.T) {
 				t.Fatalf("wrong result/calls: %+v %d/%d/%d", out, posts, gets, deletes)
 			}
 			raw, _ := json.Marshal(out)
-			for _, forbidden := range []string{"test-secret", "test-id", "MUST NOT STORE HTML"} {
+			for _, forbidden := range []string{"test-secret", "test-id"} {
 				if strings.Contains(string(raw), forbidden) {
 					t.Fatal("sensitive or unused data stored")
 				}
 			}
 			if tc.name == "candy pass" && out.DurationMS != 17000 {
 				t.Fatal("reported duration lost")
+			}
+			if tc.name == "pelican normal" && !strings.Contains(out.HTML, "<html>pelican") {
+				t.Fatal("pelican artwork was not retained")
 			}
 		})
 	}

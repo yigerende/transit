@@ -454,6 +454,9 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 		return QualitySample{}, err
 	}
 	sample := QualitySample{ID: id, TargetID: c.targetID, Model: q.Model, QuestionID: question.ID, QuestionName: question.Name, ExpectedAnswer: question.Answer, MatchMode: question.MatchMode, MaxDurationMS: question.MaxDurationMS}
+	started := time.Now()
+	sample.StartedAt = &started
+	sample.Prompt, sample.Mode = question.Prompt, q.Mode
 	sample.DetectionMethod = q.DetectionMethod
 	if q.DetectionMethod == qualityMethodManxue {
 		sample.Benchmark = q.ManxueBenchmark
@@ -484,6 +487,8 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 			return QualitySample{}, unavailable
 		}
 		outcome := s.qualityRunner.ProbeQuality(ctx, cred, c.account.Platform, q, question)
+		sample.HTML, sample.HTMLTooLarge = outcome.HTML, outcome.HTMLTooLarge
+		sample.HasHTML = sample.HTML != ""
 		sample.Result = outcome.Verdict
 		sample.Report = outcome.Report
 		sample.Answer = outcome.Answer
@@ -504,7 +509,7 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 		// A one-off API benchmark must not rewind the custom question rotation.
 		state.NextQuestionID = nextQuestion
 	}
-	state.Latest.Answer = truncate(strings.TrimSpace(state.Latest.Answer), 4000)
+	state.Latest.Answer = truncate(strings.TrimSpace(state.Latest.Answer), 65536)
 	saved, err := s.qualityRepo.SaveQualityResult(ctx, scope.UserID, scope.WorkspaceID, c.groups, q, state)
 	if err != nil {
 		log.Printf("[quality] saving result failed")
@@ -513,5 +518,5 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 	if !saved {
 		return QualitySample{}, unavailable
 	}
-	return state.Latest, nil
+	return qualitySampleSummary(state.Latest), nil
 }

@@ -62,6 +62,7 @@ type qualityRepository interface {
 	ListQualityStates(context.Context, string, string) ([]QualityState, error)
 	SaveQualityResult(context.Context, string, string, []string, QualitySettings, QualityState) (bool, error)
 	ListQualityHistory(context.Context, string, string, []string, int) ([]QualitySample, error)
+	GetQualitySample(context.Context, string, string, string, string) (*QualitySample, error)
 }
 
 // Shared by scheduled and manual checks, including checks started in another group
@@ -218,6 +219,9 @@ func (r *Repository) SaveQualityResult(ctx context.Context, user, workspace stri
 	if !channelEnabled {
 		return false, nil
 	}
+	sample := state.Latest
+	sample.HasHTML = sample.HasHTML || sample.HTML != ""
+	state.Latest = qualitySampleSummary(sample)
 	raw, err := json.Marshal(state)
 	if err != nil {
 		return false, err
@@ -227,7 +231,7 @@ func (r *Repository) SaveQualityResult(ctx context.Context, user, workspace stri
 	if err != nil {
 		return false, err
 	}
-	raw, err = json.Marshal(state.Latest)
+	raw, err = json.Marshal(sample)
 	if err != nil {
 		return false, err
 	}
@@ -250,7 +254,7 @@ func (r *Repository) ListQualityHistory(ctx context.Context, user, workspace str
 		limit = 100
 	}
 	rows, err := r.db.Query(ctx, `SELECT h.sample FROM unnest($3::text[]) AS target(id) CROSS JOIN LATERAL
-	 (SELECT sample FROM connection_health_quality_history WHERE user_id=$1 AND admin_account_id=$2 AND target_id=target.id ORDER BY created_at DESC,id DESC LIMIT $4)h`, user, workspace, targets, limit)
+	 (SELECT (sample - 'html' - 'prompt') || jsonb_build_object('answer', left(sample->>'answer', 4000)) AS sample FROM connection_health_quality_history WHERE user_id=$1 AND admin_account_id=$2 AND target_id=target.id ORDER BY created_at DESC,id DESC LIMIT $4)h`, user, workspace, targets, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -268,4 +272,20 @@ func (r *Repository) ListQualityHistory(ctx context.Context, user, workspace str
 		out = append(out, s)
 	}
 	return out, rows.Err()
+}
+
+func (r *Repository) GetQualitySample(ctx context.Context, user, workspace, target, id string) (*QualitySample, error) {
+	var raw []byte
+	err := r.db.QueryRow(ctx, `SELECT sample FROM connection_health_quality_history WHERE user_id=$1 AND admin_account_id=$2 AND target_id=$3 AND id=$4`, user, workspace, target, id).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var sample QualitySample
+	if err := json.Unmarshal(raw, &sample); err != nil {
+		return nil, err
+	}
+	return &sample, nil
 }

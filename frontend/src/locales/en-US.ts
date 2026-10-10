@@ -940,6 +940,17 @@ export default {
         },
       },
       quality: {
+        detail: {
+          button: 'Details', open: 'View quality check details for {name}', title: 'Quality checks · {name}',
+          subtitle: 'Newest start time first, including custom questions, API Candy and API Pelican checks.',
+          filter: 'Filter check type', allTypes: 'All check types', refresh: 'Refresh check history', records: 'Quality check history',
+          empty: 'No checks of this type yet.', count: '{count} records', selectRecord: 'Select a record to view details',
+          started: 'Started:', finished: 'Finished:', duration: 'Duration', assessment: 'API assessment',
+          results: { passed: 'Passed', failed: 'Abnormal', error: 'Check failed' },
+          preview: 'Preview artwork', source: 'View source', stopPreview: 'Stop preview', previewTitle: 'Pelican artwork preview', previewStopped: 'Preview stopped. Select Preview artwork to reload.',
+          noHtml: 'No artwork HTML was saved for this record. Older artwork cannot be recovered; new checks retain the returned artwork.', htmlTooLarge: 'Artwork exceeded 2 MB and was not saved. The assessment is retained.',
+          question: 'Question', noPrompt: 'The question text was not saved for this older record.', matchMode: 'Match mode:', judgement: 'Rules and results', noAnswer: 'No answer was returned.', candyHint: 'Candy verdicts come from the API and do not use local question answers or latency thresholds.',
+        },
         detectionMethod: 'Detection method', methodQuestions: 'Custom questions', methodManxue: 'Manxue AI API',
         manxueOptions: 'API detection', manxueBenchmark: 'Benchmark', benchmarks: { candy: 'Candy test', pelican: 'Pelican test' },
         manxueProtocol: 'Upstream protocol', manxueServiceTier: 'Service tier', manxueDocs: 'API documentation',

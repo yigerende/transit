@@ -940,6 +940,17 @@ export default {
         },
       },
       quality: {
+        detail: {
+          button: '详情', open: '查看渠道 {name} 的降智检测详情', title: '降智检测 · {name}',
+          subtitle: '按检测开始时间从新到旧排列，包含自定义题目、API 糖果和 API 鹈鹕记录。',
+          filter: '筛选检测类型', allTypes: '全部检测类型', refresh: '刷新检测记录', records: '降智检测记录',
+          empty: '暂无该类型的检测记录。', count: '共 {count} 条记录', selectRecord: '选择一条记录查看详情',
+          started: '开始：', finished: '结束：', duration: '耗时', assessment: 'API 判定说明',
+          results: { passed: '通过', failed: '异常', error: '检测失败' },
+          preview: '预览作品', source: '查看源码', stopPreview: '停止预览', previewTitle: '鹈鹕作品预览', previewStopped: '预览已停止，点击“预览作品”重新加载。',
+          noHtml: '该记录未保存作品 HTML。旧记录无法补回，新检测会保存接口返回的作品。', htmlTooLarge: '作品源码超过 2 MB，未保存预览；检测判定仍已保留。',
+          question: '检测题目', noPrompt: '这条旧记录未保存题目正文。', matchMode: '匹配方式：', judgement: '判定规则与结果', noAnswer: '没有返回答案。', candyHint: '糖果测试的判定由 API 返回，不使用本地自定义题目的答案和耗时阈值。',
+        },
         detectionMethod: '检测方式', methodQuestions: '自定义题目', methodManxue: '满血 AI API',
         manxueOptions: 'API 检测', manxueBenchmark: '测试类型', benchmarks: { candy: '糖果测试', pelican: '鹈鹕测试' },
         manxueProtocol: '上游接口协议', manxueServiceTier: '服务档位', manxueDocs: '查看 API 文档',

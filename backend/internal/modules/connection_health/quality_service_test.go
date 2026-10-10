@@ -129,8 +129,9 @@ func (r *fakeQualityRepo) SaveQualityResult(_ context.Context, u, w string, grou
 	if r.states[key] == nil {
 		r.states[key] = map[string]QualityState{}
 	}
-	r.states[key][st.TargetID] = st
 	r.history[key] = append(r.history[key], st.Latest)
+	st.Latest = qualitySampleSummary(st.Latest)
+	r.states[key][st.TargetID] = st
 	return true, nil
 }
 func (r *fakeQualityRepo) ListQualityHistory(_ context.Context, u, w string, targets []string, limit int) ([]QualitySample, error) {
@@ -140,11 +141,22 @@ func (r *fakeQualityRepo) ListQualityHistory(_ context.Context, u, w string, tar
 	for _, sample := range r.history[qualityScopeKey(u, w)] {
 		for _, id := range targets {
 			if sample.TargetID == id {
-				out = append(out, sample)
+				out = append(out, qualitySampleSummary(sample))
 			}
 		}
 	}
 	return out, nil
+}
+
+func (r *fakeQualityRepo) GetQualitySample(_ context.Context, user, workspace, target, id string) (*QualitySample, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, sample := range r.history[qualityScopeKey(user, workspace)] {
+		if sample.TargetID == target && sample.ID == id {
+			return &sample, nil
+		}
+	}
+	return nil, nil
 }
 
 type fakeQuestionRunner struct {
