@@ -873,6 +873,12 @@ export default {
         off: 'Automatic priority off',
         restoring: 'Automatic priority is off. Restoring the original priority; retries are automatic.'
       },
+      channelQualitySuspension: {
+        label: 'Allow quality suspension',
+        toggle: 'Allow quality suspension for channel {name}',
+        hint: 'Off by default. When enabled, the next test applies configured failure/recovery thresholds, subject to global, policy and channel suspension permissions. Turning off immediately releases the quality hold, preserving health/manual holds. Shared across groups.',
+        restoring: 'Quality suspension is off, but upstream restoration is incomplete. Connection failures retry automatically; check manual upstream changes if restoration remains blocked.',
+      },
       channelSuspension: {
         label: 'Allow suspension',
         toggle: 'Allow automatic suspension of {name}',

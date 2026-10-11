@@ -19,34 +19,36 @@ import (
 
 // fakeRepository 是 healthRepository 的内存实现，供 service 单测使用，不连接真实数据库。
 type fakeRepository struct {
-	channelPriorities  map[string]bool
-	channelAutoProbes  map[string]bool
-	channelSuspensions map[string]bool
-	groupProbeMu       sync.Mutex
-	groupProbeConfigs  map[string]GroupProbeConfig
-	policies           []Policy
-	states             map[string]map[string]ConnectionHealthState // connectionID -> modelName -> state
-	events             []ConnectionHealthEvent
-	assignments        []PolicyAssignment
-	groupAssignments   []GroupPolicyAssignment
-	groupExclusions    []GroupTargetExclusion
-	priorityStates     map[string]PrioritySyncState
-	targetActionStates map[string]TargetActionState
-	budgetClaims       map[string]int
-	savePolicyErr      error
-	deletePolicyErr    error
+	channelPriorities         map[string]bool
+	channelQualitySuspensions map[string]bool
+	channelAutoProbes         map[string]bool
+	channelSuspensions        map[string]bool
+	groupProbeMu              sync.Mutex
+	groupProbeConfigs         map[string]GroupProbeConfig
+	policies                  []Policy
+	states                    map[string]map[string]ConnectionHealthState // connectionID -> modelName -> state
+	events                    []ConnectionHealthEvent
+	assignments               []PolicyAssignment
+	groupAssignments          []GroupPolicyAssignment
+	groupExclusions           []GroupTargetExclusion
+	priorityStates            map[string]PrioritySyncState
+	targetActionStates        map[string]TargetActionState
+	budgetClaims              map[string]int
+	savePolicyErr             error
+	deletePolicyErr           error
 }
 
 func newFakeRepository() *fakeRepository {
 	return &fakeRepository{
-		channelPriorities:  map[string]bool{},
-		channelAutoProbes:  map[string]bool{},
-		channelSuspensions: map[string]bool{},
-		groupProbeConfigs:  map[string]GroupProbeConfig{},
-		states:             map[string]map[string]ConnectionHealthState{},
-		priorityStates:     map[string]PrioritySyncState{},
-		targetActionStates: map[string]TargetActionState{},
-		budgetClaims:       map[string]int{},
+		channelPriorities:         map[string]bool{},
+		channelQualitySuspensions: map[string]bool{},
+		channelAutoProbes:         map[string]bool{},
+		channelSuspensions:        map[string]bool{},
+		groupProbeConfigs:         map[string]GroupProbeConfig{},
+		states:                    map[string]map[string]ConnectionHealthState{},
+		priorityStates:            map[string]PrioritySyncState{},
+		targetActionStates:        map[string]TargetActionState{},
+		budgetClaims:              map[string]int{},
 	}
 }
 

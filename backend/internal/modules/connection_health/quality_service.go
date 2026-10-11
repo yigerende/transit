@@ -193,6 +193,7 @@ func (s *Service) attachQuality(ctx context.Context, user, workspace string, gro
 		for j := range g.Accounts {
 			a := &g.Accounts[j]
 			a.QualitySuspended = suspended[a.TargetID]
+			a.QualitySuspensionRestorePending = !a.QualitySuspensionEnabled && a.QualitySuspended
 			a.QualityEnabled = a.QualitySelected && !disabledChannels[a.TargetID] && (enabled[g.ID] || independentChannels[a.TargetID])
 			a.QualityHistory = append([]QualitySample{}, byHistory[a.TargetID]...)
 			if state, ok := byTarget[a.TargetID]; ok {

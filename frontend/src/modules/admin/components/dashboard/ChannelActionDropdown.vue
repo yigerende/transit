@@ -13,7 +13,7 @@ const { height: panelHeight } = useElementBounding(panel)
 const { width, height } = useWindowSize()
 const position = computed(() => ({
   left: `${Math.max(8, Math.min(right.value - 256, width.value - 264))}px`,
-  top: `${Math.max(8, bottom.value + 4 + panelHeight.value <= height.value - 8 ? bottom.value + 4 : top.value - panelHeight.value - 4)}px`,
+  top: `${Math.max(8, Math.min(height.value - panelHeight.value - 8, bottom.value + 4 + panelHeight.value <= height.value - 8 ? bottom.value + 4 : top.value - panelHeight.value - 4))}px`,
   maxHeight: `${Math.max(120, height.value - 16)}px`,
 }))
 const close = (restoreFocus = false) => {

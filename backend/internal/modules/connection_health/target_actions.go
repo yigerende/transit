@@ -38,6 +38,19 @@ func (s *Service) reconcileTargetRemoteActionLocked(ctx context.Context, userID,
 	for i := range specs {
 		specs[i].policy = s.currentTargetActionPermissions(ctx, userID, adminAccountID, target.TargetID, specs[i].policy)
 	}
+	stored, err := s.repo.GetTargetActionState(ctx, userID, adminAccountID, target.TargetID)
+	if err != nil {
+		return "", err
+	}
+	if stored != nil && stored.QualitySuspended {
+		allowed, err := s.repo.GetChannelQualitySuspension(ctx, userID, adminAccountID, target.TargetID)
+		if err != nil {
+			return "", err
+		}
+		if !allowed {
+			return s.releaseChannelQualitySuspensionLocked(ctx, userID, adminAccountID, session, target, specs, stored)
+		}
+	}
 	enabled, err := s.repo.GetChannelSuspension(ctx, userID, adminAccountID, target.TargetID)
 	if err != nil || !enabled {
 		return "", err
@@ -67,10 +80,6 @@ func (s *Service) reconcileTargetRemoteActionLocked(ctx context.Context, userID,
 	}
 	statesComplete := len(states) == len(controlledModels)
 
-	stored, err := s.repo.GetTargetActionState(ctx, userID, adminAccountID, target.TargetID)
-	if err != nil {
-		return "", err
-	}
 	qualityBlocked, err := s.qualitySuspensionBlocked(ctx, userID, adminAccountID, target.TargetID, stored)
 	if err != nil {
 		return "", err
@@ -246,6 +255,19 @@ func (s *Service) restoreUnmanagedTargetAction(ctx context.Context, policies []P
 		}
 	}
 	specs := candidateModelSpecs(target.Models, effectivePolicies)
+	if found && stored.QualitySuspended {
+		allowed, readErr := s.repo.GetChannelQualitySuspension(ctx, stored.UserID, stored.AdminAccountID, stored.TargetID)
+		if readErr != nil {
+			return
+		}
+		if !allowed {
+			action, actionErr := s.releaseChannelQualitySuspensionLocked(ctx, stored.UserID, stored.AdminAccountID, inventory.session, target, specs, &stored)
+			if action != "" || actionErr != nil {
+				s.recordQualityAction(ctx, stored.UserID, stored.AdminAccountID, target, specs, action, actionErr)
+			}
+			return
+		}
+	}
 	if enabled && hasRemoteActionModel(specs) {
 		// Reconcile former quality holds after a settings edit or a failed status write,
 		// even when no health probe is due. Keep any independent health suspension.

@@ -64,6 +64,7 @@ func newQualityActionFixture(t *testing.T) *qualityActionFixture {
 	t.Helper()
 	svc, quality, health, _ := qualityTestService(t)
 	svc.repo = health // Independent lease keys, unlike the single-mutex legacy fake.
+	_ = health.SetChannelQualitySuspension(context.Background(), "user", "ws1", qualityActionTarget, true)
 	p := &health.policies[0]
 	p.AutoDegradeEnabled, p.AutoRemoteActionEnabled, p.AutoSuspendEnabled = true, true, true
 	p.ModelTargets = []ModelTarget{{ModelName: "quality-model", ProviderFamily: ProviderOpenAI, Enabled: true}}

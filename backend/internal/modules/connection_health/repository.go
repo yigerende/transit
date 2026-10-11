@@ -26,6 +26,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 // 已上线实例可以原地升级；旧策略的 priority_mode / strategy_mode 均使用兼容默认值。
 func (r *Repository) EnsureSchema(ctx context.Context) error {
 	statements := []string{
+		channelQualitySuspensionSchema,
 		channelAutoProbeSchema,
 		channelSuspensionSchema,
 		channelPrioritySchema,
@@ -209,6 +210,7 @@ func (r *Repository) EnsureSchema(ctx context.Context) error {
 		`ALTER TABLE connection_health_target_action_states ADD COLUMN IF NOT EXISTS pending_status text NOT NULL DEFAULT ''`,
 		`ALTER TABLE connection_health_target_action_states ADD COLUMN IF NOT EXISTS pending_weight integer NULL`,
 		`ALTER TABLE connection_health_target_action_states ADD COLUMN IF NOT EXISTS quality_suspended boolean NOT NULL DEFAULT false`,
+		channelQualitySuspensionBackfill,
 
 		`CREATE TABLE IF NOT EXISTS connection_health_probe_budget_usage (
 			user_id text NOT NULL,

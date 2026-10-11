@@ -71,35 +71,37 @@ type AdminGroupHealthSummary struct {
 // 只要后端能安全解析 base_url + key + model 就可独立探活，不再需要 real_connections。
 // 绝不包含 key / token / cookie / credentials / secret / authorization 明文。
 type AdminGroupAccount struct {
-	AutoProbeEnabled       bool                     `json:"autoProbeEnabled"`
-	ProbeBudgets           []ChannelProbeBudget     `json:"probeBudgets,omitempty"`
-	ProbeBudgetError       bool                     `json:"probeBudgetError,omitempty"`
-	PriorityEnabled        bool                     `json:"priorityEnabled"`
-	PriorityRestorePending bool                     `json:"priorityRestorePending"`
-	SuspensionEnabled      bool                     `json:"suspensionEnabled"`
-	SuspensionSupported    bool                     `json:"suspensionSupported"`
-	QualityEnabled         bool                     `json:"qualityEnabled"`
-	QualitySuspended       bool                     `json:"qualitySuspended"`
-	QualityPausedByHealth  bool                     `json:"qualityPausedByHealth"`
-	QualitySelected        bool                     `json:"qualitySelected"`
-	QualityState           *QualityState            `json:"qualityState,omitempty"`
-	QualityHistory         []QualitySample          `json:"qualityHistory,omitempty"`
-	RecentProbes           []GroupProbeSample       `json:"recentProbes"`
-	LatencyPriority        *LatencyPriorityDecision `json:"latencyPriority,omitempty"`
-	LatencyPriorityError   bool                     `json:"latencyPriorityError,omitempty"`
-	ID                     string                   `json:"id"`
-	Name                   string                   `json:"name"`
-	Platform               string                   `json:"platform"`
-	Type                   string                   `json:"type"`
-	Status                 string                   `json:"status"`
-	Schedulable            *bool                    `json:"schedulable,omitempty"`
-	Priority               *int                     `json:"priority,omitempty"`
-	Concurrency            *int                     `json:"concurrency,omitempty"`
-	RateMultiplier         *float64                 `json:"rateMultiplier,omitempty"`
-	LoadFactor             *int                     `json:"loadFactor,omitempty"`
-	Weight                 *int                     `json:"weight,omitempty"`
-	Models                 string                   `json:"models,omitempty"`
-	GroupIDs               []string                 `json:"groupIds,omitempty"`
+	QualitySuspensionEnabled        bool                     `json:"qualitySuspensionEnabled"`
+	QualitySuspensionRestorePending bool                     `json:"qualitySuspensionRestorePending"`
+	AutoProbeEnabled                bool                     `json:"autoProbeEnabled"`
+	ProbeBudgets                    []ChannelProbeBudget     `json:"probeBudgets,omitempty"`
+	ProbeBudgetError                bool                     `json:"probeBudgetError,omitempty"`
+	PriorityEnabled                 bool                     `json:"priorityEnabled"`
+	PriorityRestorePending          bool                     `json:"priorityRestorePending"`
+	SuspensionEnabled               bool                     `json:"suspensionEnabled"`
+	SuspensionSupported             bool                     `json:"suspensionSupported"`
+	QualityEnabled                  bool                     `json:"qualityEnabled"`
+	QualitySuspended                bool                     `json:"qualitySuspended"`
+	QualityPausedByHealth           bool                     `json:"qualityPausedByHealth"`
+	QualitySelected                 bool                     `json:"qualitySelected"`
+	QualityState                    *QualityState            `json:"qualityState,omitempty"`
+	QualityHistory                  []QualitySample          `json:"qualityHistory,omitempty"`
+	RecentProbes                    []GroupProbeSample       `json:"recentProbes"`
+	LatencyPriority                 *LatencyPriorityDecision `json:"latencyPriority,omitempty"`
+	LatencyPriorityError            bool                     `json:"latencyPriorityError,omitempty"`
+	ID                              string                   `json:"id"`
+	Name                            string                   `json:"name"`
+	Platform                        string                   `json:"platform"`
+	Type                            string                   `json:"type"`
+	Status                          string                   `json:"status"`
+	Schedulable                     *bool                    `json:"schedulable,omitempty"`
+	Priority                        *int                     `json:"priority,omitempty"`
+	Concurrency                     *int                     `json:"concurrency,omitempty"`
+	RateMultiplier                  *float64                 `json:"rateMultiplier,omitempty"`
+	LoadFactor                      *int                     `json:"loadFactor,omitempty"`
+	Weight                          *int                     `json:"weight,omitempty"`
+	Models                          string                   `json:"models,omitempty"`
+	GroupIDs                        []string                 `json:"groupIds,omitempty"`
 	// UpstreamKeyGroup* 来自 real_connections 中该 admin 转发账号实际绑定的上游 API Key
 	// 分组，再以站点缓存的 Groups 解析其当前倍率。无法可靠关联时保持空值，绝不使用
 	// admin 转发账号自身的 rate_multiplier 猜测。
@@ -192,6 +194,10 @@ func (s *Service) readAdminGroups(ctx context.Context, userID string, options ad
 		return nil, err
 	}
 	states, err := s.repo.ListStatesByWorkspace(ctx, userID, adminAccountID)
+	if err != nil {
+		return nil, err
+	}
+	qualitySuspensionSettings, err := s.repo.ListChannelQualitySuspensions(ctx, userID, adminAccountID)
 	if err != nil {
 		return nil, err
 	}
@@ -359,6 +365,7 @@ func (s *Service) readAdminGroups(ctx context.Context, userID string, options ad
 			}
 
 			item := AdminGroupAccount{
+				QualitySuspensionEnabled:   qualitySuspensionSettings[targetID],
 				AutoProbeEnabled:           hasProbePolicy && channelAutoProbeEnabled(autoProbeSettings, targetID),
 				PriorityEnabled:            channelPriorityEnabled(prioritySettings, targetID),
 				PriorityRestorePending:     !channelPriorityEnabled(prioritySettings, targetID) && priorityManaged,

@@ -106,6 +106,8 @@ export interface ChannelProbeBudget {
 }
 
 export interface AdminGroupAccount {
+  qualitySuspensionEnabled?: boolean
+  qualitySuspensionRestorePending?: boolean
   autoProbeEnabled?: boolean
   probeBudgets?: ChannelProbeBudget[]
   probeBudgetError?: boolean

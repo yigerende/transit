@@ -17,6 +17,9 @@ import (
 // 定义为接口而不是直接依赖 *Repository 具体类型，使聚合、策略、手动动作等核心流程
 // 可以在不连接真实数据库的情况下用内存假实现单测覆盖（同 group_rate_campaigns 的做法）。
 type healthRepository interface {
+	GetChannelQualitySuspension(context.Context, string, string, string) (bool, error)
+	ListChannelQualitySuspensions(context.Context, string, string) (map[string]bool, error)
+	SetChannelQualitySuspension(context.Context, string, string, string, bool) error
 	GetChannelAutoProbe(context.Context, string, string, string) (bool, error)
 	ListChannelAutoProbes(context.Context, string, string) (map[string]bool, error)
 	SetChannelAutoProbe(context.Context, string, string, string, bool) error

@@ -209,3 +209,5 @@ export const deleteConnectionHealthPolicy = async (id: string): Promise<void> =>
 export const setChannelPriority = (targetId: string, enabled: boolean): Promise<{ targetId: string; enabled: boolean; restorePending: boolean; priority: number | null }> => requestJson(`/connection-health/targets/${encodeURIComponent(targetId)}/priority`, { method: 'PUT', body: JSON.stringify({ enabled }) })
 
 export const setChannelAutoProbe = (targetId: string, enabled: boolean): Promise<{ targetId: string; enabled: boolean }> => requestJson(`/connection-health/targets/${encodeURIComponent(targetId)}/auto-probe`, { method: 'PUT', body: JSON.stringify({ enabled }) })
+
+export const setChannelQualitySuspension = (targetId: string, enabled: boolean): Promise<{ targetId: string; enabled: boolean; restorePending: boolean }> => requestJson(`/connection-health/targets/${encodeURIComponent(targetId)}/quality-suspension`, { method: 'PUT', body: JSON.stringify({ enabled }) })

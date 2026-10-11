@@ -22,7 +22,7 @@ import ProbeHistoryStrip from '../components/dashboard/ProbeHistoryStrip.vue'
 import GroupProbeDialog from '../components/dashboard/GroupProbeDialog.vue'
 import QualitySettingsDialog from '../components/dashboard/QualitySettingsDialog.vue'
 import QualityHistoryDialog from '../components/dashboard/QualityHistoryDialog.vue'
-import { listConnectionHealthPolicies, probeChannelQuality, setChannelQuality, setChannelSuspension, setChannelPriority, setChannelAutoProbe, setGroupQuality } from '../api/connectionHealth'
+import { listConnectionHealthPolicies, probeChannelQuality, setChannelQuality, setChannelSuspension, setChannelPriority, setChannelAutoProbe, setChannelQualitySuspension, setGroupQuality } from '../api/connectionHealth'
 import ConnectionHealthEventsDialog from '../components/dashboard/ConnectionHealthEventsDialog.vue'
 import GroupHealthSetupDrawer from '../components/dashboard/GroupHealthSetupDrawer.vue'
 import ManualOneTimeProbeDialog from '../components/dashboard/ManualOneTimeProbeDialog.vue'
@@ -77,6 +77,31 @@ const qualityProbeMethods = ref(new Map<string, QualityManualMethod>())
 const qualityChannelErrors = ref<Record<string, string>>({})
 const suspensionBusyTargets = ref(new Set<string>())
 const suspensionErrors = ref<Record<string, string>>({})
+const qualitySuspensionBusyTargets = ref(new Set<string>())
+const qualitySuspensionErrors = ref<Record<string, string>>({})
+async function toggleChannelQualitySuspension(account: AdminGroupAccount) {
+  const target = account.targetId
+  if (qualitySuspensionBusyTargets.value.has(target)) return
+  qualitySuspensionBusyTargets.value.add(target)
+  delete qualitySuspensionErrors.value[target]
+  try {
+    const saved = await setChannelQualitySuspension(target, !account.qualitySuspensionEnabled)
+    for (const group of adminGroups.value) {
+      for (const channel of group.accounts) {
+        if (channel.targetId !== saved.targetId) continue
+        channel.qualitySuspensionEnabled = saved.enabled
+        channel.qualitySuspensionRestorePending = saved.restorePending
+        if (!saved.enabled && !saved.restorePending) channel.qualitySuspended = false
+      }
+    }
+    await refreshProbeResults()
+  } catch (err) {
+    const key = err instanceof Error ? err.message : 'admin.connectionHealth.errors.request'
+    qualitySuspensionErrors.value[target] = t(connectionHealthMessageKey(key, te))
+  } finally {
+    qualitySuspensionBusyTargets.value.delete(target)
+  }
+}
 const autoProbeBusyTargets = ref(new Set<string>())
 const autoProbeErrors = ref<Record<string, string>>({})
 async function toggleChannelAutoProbe(account: AdminGroupAccount) {
@@ -560,7 +585,7 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
           <p v-if="selectedGroup.accountsError" role="alert" class="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{{ readableMessage(selectedGroup.accountsError) }}</p>
           <p v-else-if="detailsLoaded.has(selectedGroup.id) && !selectedGroup.accounts.length" class="py-16 text-center text-sm text-muted-foreground">{{ t('admin.connectionHealth.groupDetail.empty') }}</p>
           <p v-if="(selectedGroup.priorityConflictCount ?? 0) > 0" class="text-xs text-amber-600">{{ t('admin.connectionHealth.cards.priorityConflict', { count: selectedGroup.priorityConflictCount }) }}</p>
-          <ChannelHealthCard v-for="account in automatedChannels" :key="account.targetId" :account="account" :auto-probe-busy="autoProbeBusyTargets.has(account.targetId)" :auto-probe-error="autoProbeErrors[account.targetId]" @toggle-auto-probe="toggleChannelAutoProbe" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" :show-quality="Boolean(selectedGroup.quality?.enabled || account.qualityEnabled)" :quality-enabled="Boolean(selectedGroup.quality?.globalEnabled)" :quality-unavailable="Boolean(selectedGroup.quality?.errorKey)" :quality-busy="qualityBusyTargets.has(account.targetId)" :quality-probe-method="qualityProbeMethods.get(account.targetId)" @probe-quality="runChannelQuality" @view-quality="openQualityHistory" :quality-error="qualityChannelErrors[account.targetId]" :priority-busy="priorityBusyTargets.has(account.targetId)" :priority-error="priorityErrors[account.targetId]" @toggle-priority="toggleChannelPriority" :suspension-busy="suspensionBusyTargets.has(account.targetId)" :suspension-error="suspensionErrors[account.targetId]" @toggle-suspension="toggleChannelSuspension" @toggle-quality="toggleChannelQuality" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
+          <ChannelHealthCard v-for="account in automatedChannels" :key="account.targetId" :account="account" :quality-suspension-busy="qualitySuspensionBusyTargets.has(account.targetId)" :quality-suspension-error="qualitySuspensionErrors[account.targetId]" @toggle-quality-suspension="toggleChannelQualitySuspension" :auto-probe-busy="autoProbeBusyTargets.has(account.targetId)" :auto-probe-error="autoProbeErrors[account.targetId]" @toggle-auto-probe="toggleChannelAutoProbe" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" :show-quality="Boolean(selectedGroup.quality?.enabled || account.qualityEnabled)" :quality-enabled="Boolean(selectedGroup.quality?.globalEnabled)" :quality-unavailable="Boolean(selectedGroup.quality?.errorKey)" :quality-busy="qualityBusyTargets.has(account.targetId)" :quality-probe-method="qualityProbeMethods.get(account.targetId)" @probe-quality="runChannelQuality" @view-quality="openQualityHistory" :quality-error="qualityChannelErrors[account.targetId]" :priority-busy="priorityBusyTargets.has(account.targetId)" :priority-error="priorityErrors[account.targetId]" @toggle-priority="toggleChannelPriority" :suspension-busy="suspensionBusyTargets.has(account.targetId)" :suspension-error="suspensionErrors[account.targetId]" @toggle-suspension="toggleChannelSuspension" @toggle-quality="toggleChannelQuality" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
           <details v-if="inactiveChannels.length" :key="selectedGroup.id" class="group rounded-lg border border-border/60">
             <summary class="flex cursor-pointer list-none items-center gap-2 rounded-lg px-4 py-3 text-sm text-muted-foreground hover:bg-surface/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary [&::-webkit-details-marker]:hidden">
               <ChevronDown class="h-4 w-4 shrink-0 -rotate-90 transition-transform group-open:rotate-0" aria-hidden="true" />
@@ -568,7 +593,7 @@ const handleDeletePolicy = async (policy: ConnectionHealthPolicy) => {
               <span class="ml-auto tabular-nums">{{ inactiveChannels.length }}</span>
             </summary>
             <div class="space-y-2 border-t border-border/60 p-2">
-              <ChannelHealthCard v-for="account in inactiveChannels" :key="account.targetId" :account="account" :auto-probe-busy="autoProbeBusyTargets.has(account.targetId)" :auto-probe-error="autoProbeErrors[account.targetId]" @toggle-auto-probe="toggleChannelAutoProbe" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" :quality-unavailable="Boolean(selectedGroup.quality?.errorKey)" :quality-busy="qualityBusyTargets.has(account.targetId)" :quality-probe-method="qualityProbeMethods.get(account.targetId)" :quality-error="qualityChannelErrors[account.targetId]" @probe-quality="runChannelQuality" @view-quality="openQualityHistory" @toggle-quality="toggleChannelQuality" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
+              <ChannelHealthCard v-for="account in inactiveChannels" :key="account.targetId" :account="account" :quality-suspension-busy="qualitySuspensionBusyTargets.has(account.targetId)" :quality-suspension-error="qualitySuspensionErrors[account.targetId]" @toggle-quality-suspension="toggleChannelQualitySuspension" :auto-probe-busy="autoProbeBusyTargets.has(account.targetId)" :auto-probe-error="autoProbeErrors[account.targetId]" @toggle-auto-probe="toggleChannelAutoProbe" :history-unavailable="Boolean(selectedGroup.probeHistoryError)" :quality-unavailable="Boolean(selectedGroup.quality?.errorKey)" :quality-busy="qualityBusyTargets.has(account.targetId)" :quality-probe-method="qualityProbeMethods.get(account.targetId)" :quality-error="qualityChannelErrors[account.targetId]" @probe-quality="runChannelQuality" @view-quality="openQualityHistory" @toggle-quality="toggleChannelQuality" @probe="onProbeAccount(selectedGroup, $event)" @view-events="onViewEventsAccount" />
             </div>
           </details>
         </div>
