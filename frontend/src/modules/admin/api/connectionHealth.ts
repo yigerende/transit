@@ -142,7 +142,7 @@ export const prepareGroupProbe = (groupId: string, selection: GroupProbeKeyInput
 export const getGroupProbeConfig = (groupId: string): Promise<GroupProbeConfig | null> =>
   requestJson(`/connection-health/admin-groups/${encodeURIComponent(groupId)}/probe-config`)
 
-export const saveGroupProbeConfig = (groupId: string, config: Pick<GroupProbeConfig, 'model' | 'intervalSeconds' | 'enabled'> & GroupProbeKeyInput): Promise<GroupProbeConfig> =>
+export const saveGroupProbeConfig = (groupId: string, config: Pick<GroupProbeConfig, 'model' | 'probeMode' | 'intervalSeconds' | 'enabled'> & GroupProbeKeyInput): Promise<GroupProbeConfig> =>
   requestJson(`/connection-health/admin-groups/${encodeURIComponent(groupId)}/probe-config`, { method: 'PUT', body: JSON.stringify(config) })
 
 export const probeAdminGroup = (groupId: string, model: string): Promise<GroupProbeSample> =>

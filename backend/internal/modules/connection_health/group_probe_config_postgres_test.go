@@ -30,7 +30,26 @@ func TestGroupProbeConfigPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err = pool.Exec(ctx, `INSERT INTO connection_health_group_probe_configs(user_id,admin_account_id,group_id,model) VALUES('legacy','workspace','42','model')`); err != nil {
+		t.Fatal(err)
+	}
+	migration, err := os.ReadFile("../../database/migrations/000033_group_probe_modes.sql")
+	if err != nil || strings.TrimSpace(strings.ReplaceAll(string(migration), "\r\n", "\n")) != groupProbeModeSchema {
+		t.Fatal("group probe mode migration differs", err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err = pool.Exec(ctx, string(migration)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	repo := NewRepository(pool)
+	legacy, err := repo.GetGroupProbeConfig(ctx, "legacy", "workspace", "42")
+	if err != nil || legacy == nil || legacy.ProbeMode != ProbeModeLight {
+		t.Fatal("migration changed existing probe method")
+	}
+	if _, err = pool.Exec(ctx, `DELETE FROM connection_health_group_probe_configs WHERE user_id='legacy'`); err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	c := GroupProbeConfig{UserID: "user", AdminAccountID: "workspace", GroupID: "42", Model: "model", IntervalSeconds: 60, Enabled: true, NextProbeAt: &now, CustomKeyID: "17"}
 	if err = repo.SaveGroupProbeConfig(ctx, c); err != nil {
@@ -39,6 +58,21 @@ func TestGroupProbeConfigPostgres(t *testing.T) {
 	loaded, err := NewRepository(pool).GetGroupProbeConfig(ctx, "user", "workspace", "42")
 	if err != nil || loaded == nil || !loaded.HasCustomKey || loaded.CustomKeyID != "17" {
 		t.Fatalf("roundtrip failed: %+v %v", loaded, err)
+	}
+	for _, mode := range []string{ProbeModeArithmetic, ProbeModeFirstToken, ProbeModeLight} {
+		c.ProbeMode = mode
+		if err = repo.SaveGroupProbeConfig(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+		loaded, err = NewRepository(pool).GetGroupProbeConfig(ctx, "user", "workspace", "42")
+		if err != nil || loaded == nil || loaded.ProbeMode != mode || loaded.CustomKeyID != "17" {
+			t.Fatal("method/key did not survive reload")
+		}
+		configs, listErr := repo.ListGroupProbeConfigs(ctx, "user", "workspace")
+		due, dueErr := repo.ListDueGroupProbeConfigs(ctx, now)
+		if listErr != nil || dueErr != nil || len(configs) != 1 || len(due) != 1 || configs[0].ProbeMode != mode || due[0].ProbeMode != mode {
+			t.Fatal("method missing from scheduled/listed config")
+		}
 	}
 	for _, scope := range [][2]string{{"other", "workspace"}, {"user", "other"}} {
 		foreign, err := repo.GetGroupProbeConfig(ctx, scope[0], scope[1], "42")

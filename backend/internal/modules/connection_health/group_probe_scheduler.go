@@ -99,7 +99,7 @@ func (s *Service) runScheduledGroupProbe(ctx context.Context, candidate GroupPro
 		}
 		return
 	}
-	sample, err := s.probeGroupOnce(ctx, c.UserID, c.AdminAccountID, group, cred, c.Model)
+	sample, err := s.probeGroupOnce(ctx, c.UserID, c.AdminAccountID, group, cred, c.Model, c.ProbeMode, false)
 	if err != nil {
 		return
 	}

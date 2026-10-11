@@ -1011,6 +1011,13 @@ export default {
         historyUnavailable: '降智记录暂不可用，请刷新重试。', waiting: '等待后台检测。绿色为通过，红色为答题异常，黄色为检测失败。', enableHint: '开启分组及渠道降智检测后自动记录。',
       },
       groupProbe: {
+        probeMode: '探活方式',
+        probeModes: { real_model: '轻量请求（原有方式）', arithmetic: '算术检测（仿 Sub2API 渠道监控）', first_token: '流式首字探测' },
+        probeModeHints: {
+          real_model: '使用分组 Key 发送 Reply OK.，最多输出 32 token，检查模型响应；延迟记录整次请求耗时。',
+          arithmetic: '使用分组 Key 发送随机加减法题目，答案正确才算成功；延迟记录完成答题的耗时。',
+          first_token: '使用分组 Key 流式发送 hi，收到第一段非空回答文本后结束请求；延迟为首字耗时，不计心跳和思考内容。'
+        },
         title: '分组自动探活',
         close: '关闭',
         hint: '保存后按设定间隔自动探测，关闭页面也会继续。Key 留空会保留已保存的 Key；尚未配置时才自动创建并复用专用 Key。',

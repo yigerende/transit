@@ -1011,6 +1011,13 @@ export default {
         historyUnavailable: 'Quality history is unavailable. Refresh to retry.', waiting: 'Waiting for background checks. Green: passed; red: abnormal answer; amber: check failed.', enableHint: 'Enable group and channel quality checks to start recording.',
       },
       groupProbe: {
+        probeMode: 'Probe method',
+        probeModes: { real_model: 'Lightweight request (original)', arithmetic: 'Arithmetic check (Sub2API monitor style)', first_token: 'Streaming first token' },
+        probeModeHints: {
+          real_model: 'Send Reply OK. with the group key, allow up to 32 output tokens, and validate the model response. Latency covers the full request.',
+          arithmetic: 'Send a random addition or subtraction challenge with the group key. Only a correct answer passes; latency covers the full response.',
+          first_token: 'Stream hi with the group key and stop at the first nonempty answer text. Latency measures time to first text, excluding heartbeats and reasoning.'
+        },
         title: 'Automatic group probing',
         close: 'Close',
         hint: 'Save to probe automatically at the chosen interval, even with the page closed. A blank key keeps the saved key; a dedicated key is created and reused only if none is configured.',

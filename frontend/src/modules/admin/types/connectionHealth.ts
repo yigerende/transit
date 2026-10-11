@@ -208,7 +208,10 @@ export interface AdminGroupHealth {
   probeHistoryError?: string
 }
 
+export type GroupProbeMode = 'real_model' | 'arithmetic' | 'first_token'
+
 export interface GroupProbeConfig {
+  probeMode?: GroupProbeMode
   hasCustomKey: boolean
   groupId: string
   model: string

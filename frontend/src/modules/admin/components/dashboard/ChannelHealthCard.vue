@@ -17,7 +17,6 @@ const prefix = 'admin.connectionHealth'
 const qualityMethods: QualityManualMethod[] = ['questions', 'manxue_candy', 'manxue_pelican']
 const selectedForAutomation = computed(() => channelAutomationEnabled(props.account))
 const hasManualProbes = computed(() => props.account.recentProbes?.some(sample => sample.manual))
-const hasManualQuality = computed(() => props.account.qualityHistory?.some(sample => sample.manual))
 const automaticQualityEnabled = computed(() => selectedForAutomation.value && props.account.qualityEnabled !== false)
 const automaticProbeEnabled = computed(() => selectedForAutomation.value && props.account.hasEnabledProbePolicy !== false && props.account.autoProbeEnabled !== false)
 const automationControls = computed(() => [
@@ -118,7 +117,7 @@ const state = computed(() => {
       </div>
     </details>
     <p v-if="selectedForAutomation && account.latencyPriorityError" class="text-xs text-amber-600 dark:text-amber-400">{{ t(`${latencyPrefix}.unavailable`) }}</p>
-    <template v-if="(selectedForAutomation && showQuality) || hasManualQuality || account.qualitySuspended">
+    <template v-if="showQuality">
       <QualityHistoryStrip :samples="account.qualityHistory" :state="account.qualityState" :paused-by-health="account.qualityPausedByHealth" :suspended-by-quality="account.qualitySuspended" :enabled="qualityEnabled && account.qualityEnabled !== false" :selected="account.qualitySelected" :unavailable="qualityUnavailable" />
     </template>
   </section>

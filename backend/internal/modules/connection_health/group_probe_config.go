@@ -24,11 +24,24 @@ const groupProbeConfigSchema = `CREATE TABLE IF NOT EXISTS connection_health_gro
 	PRIMARY KEY (user_id, admin_account_id, group_id)
 )`
 
+const groupProbeModeSchema = `ALTER TABLE connection_health_group_probe_configs
+ ADD COLUMN IF NOT EXISTS probe_mode text NOT NULL DEFAULT 'real_model';`
+
+// Native account tests bypass group routing and are deliberately unavailable here.
+func validGroupProbeMode(mode string) bool {
+	switch normalizeProbeMode(mode) {
+	case ProbeModeLight, ProbeModeArithmetic, ProbeModeFirstToken:
+		return true
+	}
+	return false
+}
+
 type GroupProbeConfig struct {
 	UserID          string     `json:"-"`
 	AdminAccountID  string     `json:"-"`
 	GroupID         string     `json:"groupId"`
 	Model           string     `json:"model"`
+	ProbeMode       string     `json:"probeMode"`
 	CustomKeyID     string     `json:"-"`
 	HasCustomKey    bool       `json:"hasCustomKey"`
 	IntervalSeconds int        `json:"intervalSeconds"`
@@ -43,16 +56,18 @@ type GroupProbeConfigInput struct {
 	Key             *string `json:"key"`
 	UseAutoKey      bool    `json:"useAutoKey"`
 	Model           string  `json:"model"`
+	ProbeMode       string  `json:"probeMode"`
 	IntervalSeconds int     `json:"intervalSeconds"`
 	Enabled         bool    `json:"enabled"`
 }
 
-const groupProbeConfigColumns = `user_id, admin_account_id, group_id, model, interval_seconds, enabled, next_probe_at, last_probe_at, last_error_key, custom_key_id`
+const groupProbeConfigColumns = `user_id, admin_account_id, group_id, model, interval_seconds, enabled, next_probe_at, last_probe_at, last_error_key, custom_key_id, probe_mode`
 
 func scanGroupProbeConfig(row pgx.Row) (GroupProbeConfig, error) {
 	var c GroupProbeConfig
-	err := row.Scan(&c.UserID, &c.AdminAccountID, &c.GroupID, &c.Model, &c.IntervalSeconds, &c.Enabled, &c.NextProbeAt, &c.LastProbeAt, &c.LastErrorKey, &c.CustomKeyID)
+	err := row.Scan(&c.UserID, &c.AdminAccountID, &c.GroupID, &c.Model, &c.IntervalSeconds, &c.Enabled, &c.NextProbeAt, &c.LastProbeAt, &c.LastErrorKey, &c.CustomKeyID, &c.ProbeMode)
 	c.HasCustomKey = c.CustomKeyID != ""
+	c.ProbeMode = normalizeProbeMode(c.ProbeMode)
 	return c, err
 }
 
@@ -99,12 +114,12 @@ func collectGroupProbeConfigs(rows pgx.Rows) ([]GroupProbeConfig, error) {
 
 func (r *Repository) SaveGroupProbeConfig(ctx context.Context, c GroupProbeConfig) error {
 	_, err := r.db.Exec(ctx, `INSERT INTO connection_health_group_probe_configs (`+groupProbeConfigColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 		ON CONFLICT (user_id, admin_account_id, group_id) DO UPDATE SET
-		model=EXCLUDED.model, interval_seconds=EXCLUDED.interval_seconds, enabled=EXCLUDED.enabled,
+		model=EXCLUDED.model, probe_mode=EXCLUDED.probe_mode, interval_seconds=EXCLUDED.interval_seconds, enabled=EXCLUDED.enabled,
 		next_probe_at=EXCLUDED.next_probe_at, last_probe_at=EXCLUDED.last_probe_at,
 		last_error_key=EXCLUDED.last_error_key, custom_key_id=EXCLUDED.custom_key_id, updated_at=now()`,
-		c.UserID, c.AdminAccountID, c.GroupID, c.Model, c.IntervalSeconds, c.Enabled, c.NextProbeAt, c.LastProbeAt, c.LastErrorKey, c.CustomKeyID)
+		c.UserID, c.AdminAccountID, c.GroupID, c.Model, c.IntervalSeconds, c.Enabled, c.NextProbeAt, c.LastProbeAt, c.LastErrorKey, c.CustomKeyID, normalizeProbeMode(c.ProbeMode))
 	return err
 }
 
@@ -126,6 +141,9 @@ func (s *Service) GroupProbeConfiguration(ctx context.Context, userID, groupID s
 }
 
 func (s *Service) SaveGroupProbeConfiguration(ctx context.Context, userID, groupID string, input GroupProbeConfigInput) (GroupProbeConfig, error) {
+	if !validGroupProbeMode(input.ProbeMode) {
+		return GroupProbeConfig{}, requestError("admin.connectionHealth.errors.probeModeInvalid")
+	}
 	input.Model = strings.TrimSpace(input.Model)
 	if input.Model == "" || len(input.Model) > 200 {
 		return GroupProbeConfig{}, requestError(groupProbePrefix + "modelRequired")
@@ -152,6 +170,13 @@ func (s *Service) SaveGroupProbeConfiguration(ctx context.Context, userID, group
 	customKeyID := ""
 	if previous != nil {
 		customKeyID = previous.CustomKeyID
+		if strings.TrimSpace(input.ProbeMode) == "" {
+			input.ProbeMode = previous.ProbeMode
+		}
+	}
+	input.ProbeMode = normalizeProbeMode(input.ProbeMode)
+	if !validGroupProbeMode(input.ProbeMode) {
+		return GroupProbeConfig{}, requestError("admin.connectionHealth.errors.probeModeInvalid")
 	}
 	if !input.Enabled && previous == nil {
 		return GroupProbeConfig{}, requestError(ErrorNotFound)
@@ -166,7 +191,7 @@ func (s *Service) SaveGroupProbeConfiguration(ctx context.Context, userID, group
 	} else if input.UseAutoKey {
 		customKeyID = ""
 	}
-	c := GroupProbeConfig{UserID: userID, AdminAccountID: workspaceID, GroupID: groupID, Model: input.Model, IntervalSeconds: input.IntervalSeconds, Enabled: input.Enabled, CustomKeyID: customKeyID, HasCustomKey: customKeyID != ""}
+	c := GroupProbeConfig{UserID: userID, AdminAccountID: workspaceID, GroupID: groupID, Model: input.Model, ProbeMode: input.ProbeMode, IntervalSeconds: input.IntervalSeconds, Enabled: input.Enabled, CustomKeyID: customKeyID, HasCustomKey: customKeyID != ""}
 	if previous != nil {
 		c.LastProbeAt = previous.LastProbeAt
 		c.LastErrorKey = previous.LastErrorKey

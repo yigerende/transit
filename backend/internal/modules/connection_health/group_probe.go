@@ -155,21 +155,30 @@ func (s *Service) ProbeAdminGroup(ctx context.Context, userID, groupID, model st
 	}
 	var sample GroupProbeSample
 	err := s.withGroupProbeCredential(ctx, userID, groupID, GroupProbeKeyInput{}, func(adminAccountID string, group upstream.AdminGroupInfo, cred upstream.ProbeCredential) error {
+		config, err := s.repo.GetGroupProbeConfig(ctx, userID, adminAccountID, groupID)
+		if err != nil {
+			return err
+		}
+		mode := ProbeModeLight
+		if config != nil {
+			mode = normalizeProbeMode(config.ProbeMode)
+		}
 		var probeErr error
-		sample, probeErr = s.probeGroupOnce(ctx, userID, adminAccountID, group, cred, model)
+		sample, probeErr = s.probeGroupOnce(ctx, userID, adminAccountID, group, cred, model, mode, true)
 		return probeErr
 	})
 	return sample, err
 }
 
-func (s *Service) probeGroupOnce(ctx context.Context, userID, adminAccountID string, group upstream.AdminGroupInfo, cred upstream.ProbeCredential, model string) (GroupProbeSample, error) {
-	outcome := s.probeRunner.ProbeGroup(ctx, ProbeRequest{BaseURL: cred.BaseURL, UpstreamKey: cred.Key, ProviderFamily: group.Platform, ModelName: model})
+func (s *Service) probeGroupOnce(ctx context.Context, userID, adminAccountID string, group upstream.AdminGroupInfo, cred upstream.ProbeCredential, model, mode string, manual bool) (GroupProbeSample, error) {
+	mode = normalizeProbeMode(mode)
+	outcome := s.probeRunner.ProbeGroup(ctx, ProbeRequest{ProbeMode: mode, BaseURL: cred.BaseURL, UpstreamKey: cred.Key, ProviderFamily: group.Platform, ModelName: model})
 	id, err := newID()
 	if err != nil {
 		return GroupProbeSample{}, err
 	}
-	sample := GroupProbeSample{ID: id, TargetID: groupProbeTargetID(adminAccountID, group.ID), ModelName: model, Result: string(outcome.Result), LatencyMs: &outcome.LatencyMs, CreatedAt: time.Now()}
+	sample := GroupProbeSample{ID: id, TargetID: groupProbeTargetID(adminAccountID, group.ID), ModelName: model, ProbeMode: mode, Manual: manual, Result: string(outcome.Result), LatencyMs: &outcome.LatencyMs, CreatedAt: time.Now()}
 	// Group results do not drive account state, policy budgets or remote actions.
-	err = s.repo.InsertEvent(ctx, ConnectionHealthEvent{ID: id, ConnectionID: sample.TargetID, UserID: userID, AdminAccountID: adminAccountID, AdminGroupID: group.ID, OwnGroupName: group.Name, UpstreamGroupName: group.Name, ModelName: model, Result: sample.Result, LatencyMs: sample.LatencyMs, CreatedAt: sample.CreatedAt})
+	err = s.repo.InsertEvent(ctx, ConnectionHealthEvent{ID: id, ConnectionID: sample.TargetID, UserID: userID, AdminAccountID: adminAccountID, AdminGroupID: group.ID, OwnGroupName: group.Name, UpstreamGroupName: group.Name, ModelName: model, ProbeMode: mode, Manual: manual, Result: sample.Result, LatencyMs: sample.LatencyMs, CreatedAt: sample.CreatedAt})
 	return sample, err
 }

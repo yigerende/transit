@@ -13,6 +13,22 @@ import (
 // Group probes go through the connected gateway using its group-bound key.
 // Choose the gateway protocol by the actual group's platform, not its channels.
 func (r *RealProbeRunner) ProbeGroup(ctx context.Context, req ProbeRequest) ProbeOutcome {
+	if !validGroupProbeMode(req.ProbeMode) {
+		return ProbeOutcome{Result: ResultUnsupported}
+	}
+	if normalizeProbeMode(req.ProbeMode) != ProbeModeLight {
+		// Preserve group deadlines and gateway credentials. This path never calls
+		// an admin account endpoint or resolves an individual channel's key.
+		req.MaxLatencyMs = defaultInt(req.MaxLatencyMs, 30000)
+		switch req.ProviderFamily {
+		case ProviderOpenAI, ProviderAnthropic, ProviderGemini:
+		default:
+			req.ProviderFamily = ProviderCustom
+		}
+		outcome := r.probeWithMode(ctx, req)
+		outcome.Detail = ""
+		return outcome
+	}
 	base := strings.TrimRight(req.BaseURL, "/")
 	if strings.HasSuffix(base, "/v1") {
 		base = strings.TrimSuffix(base, "/v1")
@@ -40,7 +56,8 @@ func (r *RealProbeRunner) ProbeGroup(ctx context.Context, req ProbeRequest) Prob
 	started := time.Now()
 	// Group routing and reasoning models may take longer than channel probes.
 	client := *r.client
-	client.Timeout = 30 * time.Second
+	client.Timeout = time.Duration(defaultInt(req.MaxLatencyMs, 30000)) * time.Millisecond
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return ProbeOutcome{Result: classifyTransportError(err), LatencyMs: int(time.Since(started).Milliseconds())}
