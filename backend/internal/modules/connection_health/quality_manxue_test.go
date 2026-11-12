@@ -88,7 +88,7 @@ func TestManxueTaskVerdictsAndRequestContract(t *testing.T) {
 			q := defaultQualitySettings()
 			q.DetectionMethod, q.ManxueBenchmark, q.Model, q.ReasoningEffort, q.ManxueServiceTier = qualityMethodManxue, tc.benchmark, "test-model", "high", "priority"
 			out := runner.ProbeQuality(context.Background(), upstream.ProbeCredential{BaseURL: "https://gateway.example/custom/v1/", Key: "test-secret"}, ProviderOpenAI, q, QualityQuestion{})
-			if out.Verdict != tc.verdict || out.ErrorKey != tc.errorKey || posts != 1 || gets != 2 || deletes != 0 {
+			if out.Verdict != tc.verdict || out.ErrorKey != tc.errorKey || out.ServiceTier != "priority" || posts != 1 || gets != 2 || deletes != 0 {
 				t.Fatalf("wrong result/calls: %+v %d/%d/%d", out, posts, gets, deletes)
 			}
 			raw, _ := json.Marshal(out)
@@ -302,35 +302,53 @@ func TestManxueHTTPFailuresAreSpecificAndNeverChangeQualityEvidence(t *testing.T
 	}
 }
 
-func TestManxueCandyUsagePreservesUnknownAndZero(t *testing.T) {
-	for _, tc := range []struct {
-		name, fields, reported string
-		input, output          string
-	}{
-		{"reported", `"input_tokens":4300,"output_tokens":1000,`, `"usage_reported":true,`, "4300", "1000"},
-		{"zero", `"input_tokens":0,"output_tokens":0,`, `"usage_reported":true,`, "0", "0"},
-		{"legacy", `"input_tokens":12,"output_tokens":7,`, "", "12", "7"},
-		{"missing", "", "", "<nil>", "<nil>"},
-		{"not reported", `"input_tokens":0,"output_tokens":0,`, `"usage_reported":false,`, "<nil>", "<nil>"},
-		{"partial", `"input_tokens":12,`, "", "12", "<nil>"},
-		{"negative", `"input_tokens":-1,"output_tokens":8,`, "", "<nil>", "8"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var task manxueTask
-			if err := json.Unmarshal([]byte(`{`+tc.reported+`"benchmark":"candy","status":"succeeded","candy":{`+tc.fields+`"status":"passed","answer":"ok","duration_ms":1000}}`), &task); err != nil {
-				t.Fatal(err)
-			}
-			out := manxueVerdict(task, "candy", "secret")
-			value := func(n *int64) string {
-				if n == nil {
-					return "<nil>"
+func TestManxueUsagePreservesUnknownAndZero(t *testing.T) {
+	for _, benchmark := range []string{"candy", "pelican"} {
+		for _, tc := range []struct {
+			name, fields, reported string
+			input, output          string
+		}{
+			{"reported", `"input_tokens":4300,"output_tokens":1000,`, `"usage_reported":true,`, "4300", "1000"},
+			{"zero", `"input_tokens":0,"output_tokens":0,`, `"usage_reported":true,`, "0", "0"},
+			{"legacy", `"input_tokens":12,"output_tokens":7,`, "", "12", "7"},
+			{"missing", "", "", "<nil>", "<nil>"},
+			{"not reported", `"input_tokens":0,"output_tokens":0,`, `"usage_reported":false,`, "<nil>", "<nil>"},
+			{"partial", `"input_tokens":12,`, "", "12", "<nil>"},
+			{"negative", `"input_tokens":-1,"output_tokens":8,`, "", "<nil>", "8"},
+		} {
+			t.Run(benchmark+"/"+tc.name, func(t *testing.T) {
+				var task manxueTask
+				field := "candy"
+				if benchmark == "pelican" {
+					field = "result"
 				}
-				return fmt.Sprint(*n)
-			}
-			if out.Verdict != "passed" || out.ErrorKey != "" || value(out.InputTokens) != tc.input || value(out.OutputTokens) != tc.output {
-				t.Fatalf("usage/quality mismatch: %+v", out)
-			}
-		})
+				raw := `{` + tc.reported + `"benchmark":"` + benchmark + `","status":"succeeded","assessment":{"quality":"normal"},"` + field + `":{` + tc.fields + `"status":"passed","answer":"ok","duration_ms":1000}}`
+				if err := json.Unmarshal([]byte(raw), &task); err != nil {
+					t.Fatal(err)
+				}
+				out := manxueVerdict(task, benchmark, "secret")
+				value := func(n *int64) string {
+					if n == nil {
+						return "<nil>"
+					}
+					return fmt.Sprint(*n)
+				}
+				if out.Verdict != "passed" || out.ErrorKey != "" || value(out.InputTokens) != tc.input || value(out.OutputTokens) != tc.output {
+					t.Fatalf("usage/quality mismatch: %+v", out)
+				}
+			})
+		}
+	}
+}
+
+func TestManxueUnknownServiceTierCannotUseRequestedPricing(t *testing.T) {
+	var task manxueTask
+	if err := json.Unmarshal([]byte(`{"status":"succeeded","assessment":{"quality":"normal"},"result":{"service_tier":"future-tier-or-private-text","input_tokens":100,"output_tokens":20}}`), &task); err != nil {
+		t.Fatal(err)
+	}
+	out := manxueVerdict(task, "pelican", "secret")
+	if out.ServiceTier != "unknown" || out.Verdict != "passed" {
+		t.Fatal("unknown tier must preserve the verdict without inventing a price")
 	}
 }
 

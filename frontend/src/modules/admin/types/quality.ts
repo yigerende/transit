@@ -42,6 +42,8 @@ export interface QualityGroup {
   errorKey?: string
 }
 export interface QualitySample {
+  usageReported?: boolean
+  serviceTier?: string
   inputTokens?: number
   outputTokens?: number
   manual?: boolean

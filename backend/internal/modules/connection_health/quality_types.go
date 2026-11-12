@@ -152,6 +152,8 @@ type QualityChannel struct {
 }
 
 type QualitySample struct {
+	UsageReported   *bool      `json:"usageReported,omitempty"`
+	ServiceTier     string     `json:"serviceTier,omitempty"`
 	InputTokens     *int64     `json:"inputTokens,omitempty"`
 	OutputTokens    *int64     `json:"outputTokens,omitempty"`
 	Manual          bool       `json:"manual,omitempty"`

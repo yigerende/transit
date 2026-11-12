@@ -2,12 +2,13 @@
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, useId, watch } from 'vue'
 import { useElementSize, useEventListener } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
-import { connectionHealthMessageKey, formatConnectionHealthTime } from '../../composables/useConnectionHealth'
+import { connectionHealthMessageKey } from '../../composables/useConnectionHealth'
+import { qualityFormatTime, qualityHistoryNewestFirst } from '../../utils/qualityHistory'
 import type { QualitySample, QualityState } from '../../types/quality'
 const props = defineProps<{ samples?: QualitySample[]; state?: QualityState; enabled?: boolean; pausedByHealth?: boolean; suspendedByQuality?: boolean; selected?: boolean; unavailable?: boolean }>()
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 const p = 'admin.connectionHealth.quality'
-const samples = computed(() => [...(props.samples || [])].sort((a,b) => Date.parse(b.createdAt)-Date.parse(a.createdAt) || b.id.localeCompare(a.id)).slice(0,60))
+const samples = computed(() => qualityHistoryNewestFirst(props.samples || []).slice(0,60))
 const history = computed(() => samples.value.slice().reverse())
 const passed = computed(() => samples.value.filter(s => s.result === 'passed').length)
 const failed = computed(() => samples.value.filter(s => s.result === 'failed').length)
@@ -18,13 +19,14 @@ const status = computed(() => props.unavailable ? 'unavailable' : props.pausedBy
 const color = (sample: QualitySample) => sample.result === 'passed' ? 'text-emerald-500 dark:text-emerald-400' : sample.result === 'failed' ? 'text-red-500 dark:text-red-400' : 'text-amber-500 dark:text-amber-400'
 function title(sample: QualitySample | null) {
   if (!sample) return t(`${p}.noRecord`)
+  const timing = `${t(`${p}.detail.started`)} ${qualityFormatTime(sample.startedAt, locale.value)}\n${t(`${p}.detail.finished`)} ${qualityFormatTime(sample.createdAt, locale.value)}`
   if (sample.detectionMethod === 'manxue') {
     const result = sample.errorKey ? t(connectionHealthMessageKey(sample.errorKey, te)) : t(`${p}.${sample.result}`)
     const diagnostics = [sample.phase ? `${t(`${p}.executionPhase`)}: ${t(`${p}.phases.${sample.phase}`)}` : '', sample.errorDetail ? `${t(`${p}.failureReason`)}: ${sample.errorDetail}` : ''].filter(Boolean).join('\n')
-    return `${formatConnectionHealthTime(sample.createdAt)}\n${t(`${p}.methodManxue`)} · ${t(`${p}.benchmarks.${sample.benchmark || 'candy'}`)} · ${sample.model}\n${result} · ${(sample.durationMs/1000).toFixed(2)}s\n${diagnostics}\n${sample.report || sample.answer || ''}`
+    return `${timing}\n${t(`${p}.methodManxue`)} · ${t(`${p}.benchmarks.${sample.benchmark || 'candy'}`)} · ${sample.model}\n${result} · ${(sample.durationMs/1000).toFixed(2)}s\n${diagnostics}\n${sample.report || sample.answer || ''}`
   }
   const detail = sample.errorKey ? t(connectionHealthMessageKey(sample.errorKey,te)) : `${t(`${p}.actualAnswer`)}: ${sample.answer}\n${t(`${p}.expectedAnswer`)}: ${sample.expectedAnswer}\n${t(`${p}.contentResult`)}: ${t(`${p}.${sample.contentPassed?'passed':'failed'}`)} · ${t(`${p}.timeResult`)}: ${t(`${p}.${sample.timePassed?'passed':'failed'}`)} (${sample.durationMs} / <${sample.maxDurationMs} ms)`
-  return `${formatConnectionHealthTime(sample.createdAt)}\n${sample.questionName} · ${sample.model}\n${t(`${p}.${sample.result}`)} · ${(sample.durationMs/1000).toFixed(2)}s\n${detail}`
+  return `${timing}\n${sample.questionName} · ${sample.model}\n${t(`${p}.${sample.result}`)} · ${(sample.durationMs/1000).toFixed(2)}s\n${detail}`
 }
 
 const strip = ref<HTMLElement | null>(null)

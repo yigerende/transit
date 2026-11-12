@@ -6,7 +6,7 @@ import { BrainCircuit, Code2, Eye, Loader2, Pause, RefreshCw, X } from 'lucide-v
 import { getChannelQualityDetail, getChannelQualityHistory } from '../../api/connectionHealth'
 import { connectionHealthMessageKey } from '../../composables/useConnectionHealth'
 import type { QualityManualMethod, QualitySample } from '../../types/quality'
-import { qualityHistoryNewestFirst, qualityPreviewDocument, qualitySampleMethod } from '../../utils/qualityHistory'
+import { qualityEstimatedCostUSD, qualityFormatCost, qualityFormatTime, qualityHistoryNewestFirst, qualityPreviewDocument, qualitySampleMethod, qualitySampleTime } from '../../utils/qualityHistory'
 
 const props = defineProps<{ open: boolean; target: { targetId: string; name: string } | null }>()
 const emit = defineEmits<{ close: [] }>()
@@ -30,7 +30,8 @@ const selected = computed(() => visibleRecords.value.find(record => record.id ==
 const pelican = computed(() => detail.value && qualitySampleMethod(detail.value) === 'manxue_pelican')
 const custom = computed(() => detail.value && qualitySampleMethod(detail.value) === 'questions')
 const previewDocument = computed(() => detail.value?.html ? qualityPreviewDocument(detail.value.html) : '')
-const date = (value?: string) => value ? new Date(value).toLocaleString(locale.value, { hour12: false }) : '—'
+const date = (value?: string) => qualityFormatTime(value, locale.value)
+const estimatedCost = computed(() => detail.value ? qualityEstimatedCostUSD(detail.value) : undefined)
 const methodName = (record: QualitySample) => t(`${p}.manualLabels.${qualitySampleMethod(record)}`)
 const resultName = (record: QualitySample) => t(`${d}.results.${record.result}`)
 const resultClass = (record: QualitySample) => record.result === 'passed' ? 'text-emerald-600 dark:text-emerald-400' : record.result === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'
@@ -133,7 +134,7 @@ useEventListener(document, 'keydown', event => {
             <p v-else-if="!visibleRecords.length && !error" class="p-4 text-xs text-muted-foreground">{{ t(`${d}.empty`) }}</p>
             <nav class="min-h-0 flex-1 space-y-2 overflow-y-auto p-3" :aria-label="t(`${d}.records`)">
               <button v-for="record in visibleRecords" :key="record.id" type="button" class="block w-full rounded-lg border p-3 text-left text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary" :class="selectedId === record.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-surface/70'" :aria-current="selectedId === record.id ? 'true' : undefined" @click="selectedId = record.id">
-                <time class="block font-semibold text-foreground" :datetime="record.startedAt || record.createdAt">{{ date(record.startedAt || record.createdAt) }}</time>
+                <time class="block font-semibold text-foreground" :datetime="qualitySampleTime(record)">{{ date(qualitySampleTime(record)) }}</time>
                 <span class="mt-1.5 flex flex-wrap items-center gap-1.5"><span class="rounded bg-surface px-1.5 py-0.5 text-muted-foreground">{{ methodName(record) }}</span><span :class="resultClass(record)">{{ resultName(record) }}</span></span>
                 <span class="mt-1.5 block break-all text-muted-foreground">{{ record.model }} · {{ (record.durationMs / 1000).toFixed(2) }}s</span>
               </button>
@@ -153,10 +154,16 @@ useEventListener(document, 'keydown', event => {
                 <p>{{ t(connectionHealthMessageKey(detail.errorKey, te)) }}</p>
                 <p v-if="detail.errorDetail" class="whitespace-pre-wrap break-words">{{ t(`${p}.failureReason`) }}: {{ detail.errorDetail }}</p>
               </div>
-              <section v-if="qualitySampleMethod(detail) === 'manxue_candy'" class="rounded-lg bg-surface/50 p-3 text-xs">
+              <section v-if="detail.detectionMethod === 'manxue'" class="rounded-lg bg-surface/50 p-3 text-xs">
                 <h3 class="mb-2 font-medium text-muted-foreground">{{ t(`${d}.tokenUsage`) }}</h3>
-                <p class="flex flex-wrap gap-x-5 gap-y-1"><span>{{ t(`${d}.inputTokens`) }}: {{ detail.inputTokens != null ? detail.inputTokens.toLocaleString(locale) : t(`${d}.usageUnavailable`) }}</span><span>{{ t(`${d}.outputTokens`) }}: {{ detail.outputTokens != null ? detail.outputTokens.toLocaleString(locale) : t(`${d}.usageUnavailable`) }}</span></p>
+                <dl class="grid grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-4">
+                  <div><dt class="text-muted-foreground">{{ t(`${d}.inputTokens`) }}</dt><dd class="mt-1 font-medium">{{ detail.inputTokens != null ? detail.inputTokens.toLocaleString(locale) : t(`${d}.usageUnavailable`) }}</dd></div>
+                  <div><dt class="text-muted-foreground">{{ t(`${d}.outputTokens`) }}</dt><dd class="mt-1 font-medium">{{ detail.outputTokens != null ? detail.outputTokens.toLocaleString(locale) : t(`${d}.usageUnavailable`) }}</dd></div>
+                  <div><dt class="text-muted-foreground">{{ t(`${d}.duration`) }}</dt><dd class="mt-1 font-medium">{{ (detail.durationMs / 1000).toFixed(2) }}s</dd></div>
+                  <div :title="t(`${d}.costHint`)"><dt class="text-muted-foreground">{{ t(`${d}.estimatedCost`) }}</dt><dd class="mt-1 font-medium">{{ qualityFormatCost(estimatedCost) }}</dd></div>
+                </dl>
                 <p class="mt-2 text-muted-foreground">{{ t(`${d}.usageHint`) }}</p>
+                <p class="mt-1 text-muted-foreground">{{ t(`${d}.costHint`) }}</p>
               </section>
               <section v-if="detail.report" class="rounded-lg bg-surface/50 p-3"><h3 class="mb-2 text-xs font-medium text-muted-foreground">{{ t(`${d}.assessment`) }}</h3><p class="whitespace-pre-wrap break-words text-sm">{{ detail.report }}</p></section>
               <template v-if="pelican">

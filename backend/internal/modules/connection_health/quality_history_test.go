@@ -154,6 +154,57 @@ func TestManualCandyUsageIsSavedInHistoryAndState(t *testing.T) {
 	}
 }
 
+func TestPelicanUsageSurvivesHistoryAndState(t *testing.T) {
+	for _, postgres := range []bool{false, true} {
+		t.Run(fmt.Sprintf("postgres=%v", postgres), func(t *testing.T) {
+			svc, _, _, _ := qualityTestService(t)
+			if postgres {
+				_, pool := qualityTestPool(t)
+				svc.qualityRepo = NewRepository(pool)
+			}
+			q := enableManualQuality(t, svc)
+			q.ManxueServiceTier = "priority"
+			if _, err := svc.SaveQualityConfiguration(context.Background(), "user", q); err != nil {
+				t.Fatal(err)
+			}
+			svc.qualityRunner = manxueTestRunner(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					w.WriteHeader(http.StatusAccepted)
+					fmt.Fprint(w, `{"id":"private-task-id","benchmark":"pelican","status":"running"}`)
+				} else {
+					fmt.Fprint(w, `{"id":"private-task-id","benchmark":"pelican","status":"succeeded","usage_reported":true,"assessment":{"quality":"normal"},"result":{"duration_ms":123974,"input_tokens":4226,"output_tokens":6090,"service_tier":"default","html":"<svg>artwork</svg>"}}`)
+				}
+			})
+			reader := svc.platformGroups.(fakePlatformGroupReader)
+			reader.credByAccount["a"] = upstream.ProbeCredential{BaseURL: "https://gateway.example", Key: "secret"}
+			svc.platformGroups = reader
+			ctx := context.Background()
+			const target = "sub2api:ws1:a"
+			summary, err := svc.ProbeChannelQuality(ctx, "user", target, "one", "manxue_pelican")
+			if err != nil {
+				t.Fatal(err)
+			}
+			detail, err := svc.QualityHistoryDetail(ctx, "user", target, summary.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			states, err := svc.qualityRepo.ListQualityStates(ctx, "user", "ws1")
+			if err != nil || len(states) != 1 {
+				t.Fatal("missing saved state")
+			}
+			history, err := svc.qualityRepo.ListQualityHistory(ctx, "user", "ws1", []string{target}, 60)
+			if err != nil || len(history) != 1 {
+				t.Fatal("missing history")
+			}
+			for _, sample := range []QualitySample{summary, detail, states[0].Latest, history[0]} {
+				if sample.InputTokens == nil || *sample.InputTokens != 4226 || sample.OutputTokens == nil || *sample.OutputTokens != 6090 || sample.UsageReported == nil || !*sample.UsageReported || sample.ServiceTier != "default" || sample.DurationMS != 123974 || sample.Result != "passed" {
+					t.Fatalf("pelican usage or effective tier lost: %+v", sample)
+				}
+			}
+		})
+	}
+}
+
 func TestQualityPostgresArtworkDetailAndHistoryTrimming(t *testing.T) {
 	ctx, pool := qualityTestPool(t)
 	repo := NewRepository(pool)

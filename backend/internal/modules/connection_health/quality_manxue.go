@@ -51,8 +51,11 @@ type manxueTask struct {
 		Reason  string `json:"reason"`
 	} `json:"assessment"`
 	Result *struct {
-		DurationMS int    `json:"duration_ms"`
-		HTML       string `json:"html"`
+		DurationMS   int    `json:"duration_ms"`
+		HTML         string `json:"html"`
+		InputTokens  *int64 `json:"input_tokens"`
+		OutputTokens *int64 `json:"output_tokens"`
+		ServiceTier  string `json:"service_tier"`
 	} `json:"result"`
 }
 
@@ -198,6 +201,12 @@ func (r *manxueProbeRunner) ProbeQuality(ctx context.Context, cred upstream.Prob
 		if out.DurationMS == 0 {
 			out.DurationMS = int(time.Since(started).Milliseconds())
 		}
+		if out.ServiceTier == "" {
+			out.ServiceTier = q.ManxueServiceTier
+			if out.ServiceTier == "" {
+				out.ServiceTier = "default"
+			}
+		}
 	}()
 	idempotency, err := newID()
 	if err != nil {
@@ -289,9 +298,21 @@ func (r *manxueProbeRunner) ProbeQuality(ctx context.Context, cred upstream.Prob
 }
 
 func manxueVerdict(task manxueTask, benchmark, key string) qualityProbeResult {
-	out := qualityProbeResult{}
+	out := qualityProbeResult{UsageReported: task.UsageReported}
 	if benchmark == "pelican" && task.Result != nil {
 		out.DurationMS = task.Result.DurationMS
+		if task.UsageReported == nil || *task.UsageReported {
+			out.InputTokens = manxueTokenCount(task.Result.InputTokens)
+			out.OutputTokens = manxueTokenCount(task.Result.OutputTokens)
+		}
+		switch task.Result.ServiceTier {
+		case "default", "priority", "fast", "flex", "ultrafast":
+			out.ServiceTier = task.Result.ServiceTier
+		default:
+			if strings.TrimSpace(task.Result.ServiceTier) != "" {
+				out.ServiceTier = "unknown"
+			}
+		}
 		html := strings.TrimSpace(redact(redact(task.Result.HTML, key), task.ID))
 		if len(html) <= maxQualityHTMLBytes {
 			out.HTML = html

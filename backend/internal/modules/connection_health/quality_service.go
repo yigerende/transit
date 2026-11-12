@@ -522,6 +522,7 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 		}
 		outcome := s.qualityRunner.ProbeQuality(ctx, cred, c.account.Platform, q, question)
 		sample.InputTokens, sample.OutputTokens = outcome.InputTokens, outcome.OutputTokens
+		sample.UsageReported, sample.ServiceTier = outcome.UsageReported, outcome.ServiceTier
 		sample.HTML, sample.HTMLTooLarge = outcome.HTML, outcome.HTMLTooLarge
 		sample.HasHTML = sample.HTML != ""
 		sample.Result = outcome.Verdict

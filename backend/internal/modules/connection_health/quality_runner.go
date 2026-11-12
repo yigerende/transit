@@ -14,17 +14,19 @@ import (
 )
 
 type qualityProbeResult struct {
-	InputTokens  *int64
-	OutputTokens *int64
-	HTML         string
-	HTMLTooLarge bool
-	Verdict      string
-	Report       string
-	Answer       string
-	DurationMS   int
-	ErrorKey     string
-	ErrorDetail  string
-	Phase        string
+	UsageReported *bool
+	ServiceTier   string
+	InputTokens   *int64
+	OutputTokens  *int64
+	HTML          string
+	HTMLTooLarge  bool
+	Verdict       string
+	Report        string
+	Answer        string
+	DurationMS    int
+	ErrorKey      string
+	ErrorDetail   string
+	Phase         string
 }
 type qualityProbeRunner interface {
 	ProbeQuality(context.Context, upstream.ProbeCredential, string, QualitySettings, QualityQuestion) qualityProbeResult
