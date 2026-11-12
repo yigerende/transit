@@ -3,6 +3,7 @@ package connection_health
 import (
 	"context"
 	"encoding/json"
+	"html"
 	"io"
 	"math/rand/v2"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"transithub/backend/internal/modules/upstream"
 )
@@ -30,16 +32,19 @@ type manxueProbeRunner struct {
 }
 
 type manxueTask struct {
-	UsageReported *bool  `json:"usage_reported"`
-	ID            string `json:"id"`
-	Benchmark     string `json:"benchmark"`
-	Status        string `json:"status"`
+	UsageReported *bool           `json:"usage_reported"`
+	ID            string          `json:"id"`
+	Benchmark     string          `json:"benchmark"`
+	Status        string          `json:"status"`
+	Phase         string          `json:"phase"`
+	Error         json.RawMessage `json:"error"`
 	Candy         *struct {
-		Status       string `json:"status"`
-		Answer       string `json:"answer"`
-		DurationMS   int    `json:"duration_ms"`
-		InputTokens  *int64 `json:"input_tokens"`
-		OutputTokens *int64 `json:"output_tokens"`
+		Status       string          `json:"status"`
+		Error        json.RawMessage `json:"error"`
+		Answer       string          `json:"answer"`
+		DurationMS   int             `json:"duration_ms"`
+		InputTokens  *int64          `json:"input_tokens"`
+		OutputTokens *int64          `json:"output_tokens"`
 	} `json:"candy"`
 	Assessment *struct {
 		Quality string `json:"quality"`
@@ -92,8 +97,8 @@ func manxueRetryDelay(header string, attempt int, now time.Time) time.Duration {
 	return time.Duration(min(30, 2<<min(attempt, 4)))*time.Second + time.Duration(rand.IntN(500))*time.Millisecond
 }
 
-// All errors are local keys. Never persist an upstream body, request key or task
-// id (the latter grants access to a private report on the public API).
+// Never persist a raw response body, request key or task id (the latter grants
+// access to a private report). Only sanitized diagnostic fields may be retained.
 func (r *manxueProbeRunner) request(ctx context.Context, method, endpoint string, body any, idempotency string) (manxueTask, int, string, string) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
@@ -222,6 +227,7 @@ func (r *manxueProbeRunner) ProbeQuality(ctx context.Context, cred upstream.Prob
 		break
 	}
 	endpoint := manxueTestsURL + "/" + task.ID
+	defer func() { out.Phase = manxuePhase(task.Phase) }()
 	finished := false
 	defer func() {
 		if !finished {
@@ -246,7 +252,7 @@ func (r *manxueProbeRunner) ProbeQuality(ctx context.Context, cred upstream.Prob
 			return manxueVerdict(task, q.ManxueBenchmark, cred.Key)
 		case "failed", "cancelled":
 			finished = true
-			return qualityProbeResult{ErrorKey: qualityPrefix + "manxueFailed"}
+			return qualityProbeResult{ErrorKey: qualityPrefix + "manxueFailed", ErrorDetail: manxueTaskError(task, cred.Key)}
 		case "queued", "pending", "running":
 		default:
 			return qualityProbeResult{ErrorKey: qualityPrefix + "manxueInvalidResponse"}
@@ -308,6 +314,7 @@ func manxueVerdict(task manxueTask, benchmark, key string) qualityProbeResult {
 			out.Verdict = "failed"
 		case "error":
 			out.ErrorKey = qualityPrefix + "manxueFailed"
+			out.ErrorDetail = manxueTaskError(task, key)
 		default:
 			out.ErrorKey = qualityPrefix + "manxueUnknown"
 		}
@@ -328,6 +335,53 @@ func manxueVerdict(task manxueTask, benchmark, key string) qualityProbeResult {
 		return qualityProbeResult{ErrorKey: "invalid_response"}
 	}
 	return out
+}
+
+// Phases are API enum values, never free-form upstream text.
+func manxuePhase(phase string) string {
+	switch phase {
+	case "generating", "classifying", "complete":
+		return phase
+	}
+	return ""
+}
+
+func manxueTaskError(task manxueTask, key string) string {
+	detail := manxueErrorDetail(task.Error, key, task.ID)
+	if detail == "" && task.Candy != nil {
+		detail = manxueErrorDetail(task.Candy.Error, key, task.ID)
+	}
+	return detail
+}
+
+// Error is optional diagnostic text, not a body dump. Ignore unexpected JSON
+// shapes, redact before truncation (including common escaped representations),
+// and preserve UTF-8 so long Chinese messages remain readable.
+func manxueErrorDetail(raw json.RawMessage, key, taskID string) string {
+	var detail string
+	if json.Unmarshal(raw, &detail) != nil {
+		return ""
+	}
+	for _, secret := range []string{key, taskID} {
+		if secret == "" {
+			continue
+		}
+		quoted, _ := json.Marshal(secret)
+		for _, encoded := range []string{string(quoted[1 : len(quoted)-1]), url.QueryEscape(secret), url.PathEscape(secret), html.EscapeString(secret), secret} {
+			detail = strings.ReplaceAll(detail, encoded, "***")
+		}
+	}
+	detail = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && r != '\n' && r != '\t' {
+			return -1
+		}
+		return r
+	}, detail)
+	runes := []rune(strings.TrimSpace(detail))
+	if len(runes) > 1000 {
+		return string(runes[:1000]) + "…"
+	}
+	return string(runes)
 }
 
 func manxueTokenCount(count *int64) *int64 {

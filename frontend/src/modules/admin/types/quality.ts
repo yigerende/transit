@@ -64,6 +64,8 @@ export interface QualitySample {
   matchMode: string
   result: 'passed' | 'failed' | 'error'
   errorKey?: string
+  errorDetail?: string
+  phase?: 'generating' | 'classifying' | 'complete'
   contentPassed: boolean
   timePassed: boolean
   durationMs: number

@@ -23,6 +23,8 @@ type qualityProbeResult struct {
 	Answer       string
 	DurationMS   int
 	ErrorKey     string
+	ErrorDetail  string
+	Phase        string
 }
 type qualityProbeRunner interface {
 	ProbeQuality(context.Context, upstream.ProbeCredential, string, QualitySettings, QualityQuestion) qualityProbeResult

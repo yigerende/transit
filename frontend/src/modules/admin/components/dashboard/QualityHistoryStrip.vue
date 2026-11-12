@@ -20,7 +20,8 @@ function title(sample: QualitySample | null) {
   if (!sample) return t(`${p}.noRecord`)
   if (sample.detectionMethod === 'manxue') {
     const result = sample.errorKey ? t(connectionHealthMessageKey(sample.errorKey, te)) : t(`${p}.${sample.result}`)
-    return `${formatConnectionHealthTime(sample.createdAt)}\n${t(`${p}.methodManxue`)} · ${t(`${p}.benchmarks.${sample.benchmark || 'candy'}`)} · ${sample.model}\n${result} · ${(sample.durationMs/1000).toFixed(2)}s\n${sample.report || sample.answer || ''}`
+    const diagnostics = [sample.phase ? `${t(`${p}.executionPhase`)}: ${t(`${p}.phases.${sample.phase}`)}` : '', sample.errorDetail ? `${t(`${p}.failureReason`)}: ${sample.errorDetail}` : ''].filter(Boolean).join('\n')
+    return `${formatConnectionHealthTime(sample.createdAt)}\n${t(`${p}.methodManxue`)} · ${t(`${p}.benchmarks.${sample.benchmark || 'candy'}`)} · ${sample.model}\n${result} · ${(sample.durationMs/1000).toFixed(2)}s\n${diagnostics}\n${sample.report || sample.answer || ''}`
   }
   const detail = sample.errorKey ? t(connectionHealthMessageKey(sample.errorKey,te)) : `${t(`${p}.actualAnswer`)}: ${sample.answer}\n${t(`${p}.expectedAnswer`)}: ${sample.expectedAnswer}\n${t(`${p}.contentResult`)}: ${t(`${p}.${sample.contentPassed?'passed':'failed'}`)} · ${t(`${p}.timeResult`)}: ${t(`${p}.${sample.timePassed?'passed':'failed'}`)} (${sample.durationMs} / <${sample.maxDurationMs} ms)`
   return `${formatConnectionHealthTime(sample.createdAt)}\n${sample.questionName} · ${sample.model}\n${t(`${p}.${sample.result}`)} · ${(sample.durationMs/1000).toFixed(2)}s\n${detail}`
@@ -161,6 +162,6 @@ onBeforeUnmount(keepTooltipOpen)
       <div v-if="activeIndex !== null" :id="tooltipId" ref="tooltip" role="tooltip" tabindex="0" class="fixed z-[9999] max-h-[min(28rem,calc(100vh-1rem))] w-max max-w-[min(28rem,calc(100vw-1rem))] overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-lg border border-border bg-card px-3 py-2 text-xs leading-5 text-foreground shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" :style="[tooltipPosition, { visibility: tooltipReady ? 'visible' : 'hidden' }]" @pointerenter="keepTooltipOpen" @pointerleave="scheduleHide" @focusin="keepTooltipOpen" @focusout="scheduleHide" @keydown.esc.stop.prevent="hideTooltip">{{ tooltipText }}</div>
     </Teleport>
     <p v-if="unavailable || (!selected && !manualOnly) || pausedByHealth || !samples.length" class="text-xs text-muted-foreground">{{ t(`${p}.${unavailable ? 'historyUnavailable' : pausedByHealth ? 'healthPausedHint' : !selected ? 'selectionHint' : enabled ? 'waiting' : 'enableHint'}`) }}</p>
-    <p v-else-if="state?.latest.errorKey" class="text-xs text-amber-600 dark:text-amber-400">{{ t(connectionHealthMessageKey(state.latest.errorKey,te)) }}<span v-if="state.degraded"> · {{ t(`${p}.previousDegraded`) }}</span></p>
+    <p v-else-if="state?.latest.errorKey" class="line-clamp-2 break-words text-xs text-amber-600 dark:text-amber-400">{{ state.latest.errorDetail || t(connectionHealthMessageKey(state.latest.errorKey,te)) }}<span v-if="state.degraded"> · {{ t(`${p}.previousDegraded`) }}</span></p>
   </div>
 </template>

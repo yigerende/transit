@@ -1005,6 +1005,8 @@ export default {
         manxuePublicURL: '满血 AI 需要可从公网访问的 HTTPS 渠道地址。',
         manxueUnknown: '满血 AI 未返回明确判定，本次不计入降智次数。',
         manxueFailed: '满血 AI 检测未成功完成，本次不计入降智次数。',
+        failureReason: '失败原因', executionPhase: 'API 返回阶段',
+        phases: { generating: '生成中', classifying: '评估中', complete: '已结束' },
         manxueExpired: '满血 AI 检测任务不存在或已过期。',
         manxueTimeout: '满血 AI 检测超时，已尝试取消本次任务。',
         toggleChannel: '切换渠道 {name} 的降智检测', channelSwitchHint: '默认跟随分组，单独开启后可在分组降智关闭时自动检测；单独关闭后不随分组开启。仍需开启全局检测并被自动策略选中。同一渠道各分组共用设置，手动测试和历史不受影响。',

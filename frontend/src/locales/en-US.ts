@@ -1005,6 +1005,8 @@ export default {
         manxuePublicURL: 'Manxue requires a publicly accessible HTTPS channel URL.',
         manxueUnknown: 'Manxue returned no definite verdict. This does not count as degradation.',
         manxueFailed: 'Manxue could not complete the test. This does not count as degradation.',
+        failureReason: 'Failure reason', executionPhase: 'API reported phase',
+        phases: { generating: 'Generating', classifying: 'Classifying', complete: 'Finished' },
         manxueExpired: 'The Manxue task was not found or has expired.',
         manxueTimeout: 'Manxue timed out; cancellation of this task was attempted.',
         toggleChannel: 'Toggle quality checks for channel {name}', channelSwitchHint: 'Follows the group by default. Explicitly enabling a channel allows automatic checks while group quality is off; disabling it overrides the group. Requires global checks and selection in an enabled policy. Shared across groups; manual tests and history are unaffected.',

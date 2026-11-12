@@ -148,7 +148,11 @@ useEventListener(document, 'keydown', event => {
                 <p class="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground"><span>{{ t(`${d}.started`) }} {{ date(detail.startedAt) }}</span><span>{{ t(`${d}.finished`) }} {{ date(detail.createdAt) }}</span></p>
                 <div class="flex flex-wrap items-center gap-2 text-xs"><span class="rounded-md border border-primary/40 bg-primary/5 px-2 py-1 text-primary">{{ detail.model }}</span><span class="rounded-md bg-surface px-2 py-1">{{ methodName(detail) }}</span><strong :class="resultClass(detail)">{{ resultName(detail) }}</strong><span class="text-muted-foreground">{{ t(`${d}.duration`) }} {{ (detail.durationMs / 1000).toFixed(2) }}s</span></div>
               </div>
-              <p v-if="detail.errorKey" role="status" class="rounded-lg bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">{{ t(connectionHealthMessageKey(detail.errorKey, te)) }}</p>
+              <p v-if="detail.phase" class="text-xs text-muted-foreground">{{ t(`${p}.executionPhase`) }}: {{ t(`${p}.phases.${detail.phase}`) }}</p>
+              <div v-if="detail.errorKey" role="status" class="space-y-2 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
+                <p>{{ t(connectionHealthMessageKey(detail.errorKey, te)) }}</p>
+                <p v-if="detail.errorDetail" class="whitespace-pre-wrap break-words">{{ t(`${p}.failureReason`) }}: {{ detail.errorDetail }}</p>
+              </div>
               <section v-if="qualitySampleMethod(detail) === 'manxue_candy'" class="rounded-lg bg-surface/50 p-3 text-xs">
                 <h3 class="mb-2 font-medium text-muted-foreground">{{ t(`${d}.tokenUsage`) }}</h3>
                 <p class="flex flex-wrap gap-x-5 gap-y-1"><span>{{ t(`${d}.inputTokens`) }}: {{ detail.inputTokens != null ? detail.inputTokens.toLocaleString(locale) : t(`${d}.usageUnavailable`) }}</span><span>{{ t(`${d}.outputTokens`) }}: {{ detail.outputTokens != null ? detail.outputTokens.toLocaleString(locale) : t(`${d}.usageUnavailable`) }}</span></p>

@@ -529,6 +529,7 @@ func (s *Service) runQualityCandidate(ctx context.Context, scope QualityScope, s
 		sample.Answer = outcome.Answer
 		sample.DurationMS = outcome.DurationMS
 		sample.ErrorKey = outcome.ErrorKey
+		sample.ErrorDetail, sample.Phase = outcome.ErrorDetail, outcome.Phase
 	}
 	if ctx.Err() != nil {
 		return QualitySample{}, ctx.Err()

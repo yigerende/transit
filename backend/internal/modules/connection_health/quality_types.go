@@ -174,6 +174,8 @@ type QualitySample struct {
 	MatchMode       string     `json:"matchMode"`
 	Result          string     `json:"result"` // passed, failed (valid answer), error (no verdict)
 	ErrorKey        string     `json:"errorKey,omitempty"`
+	ErrorDetail     string     `json:"errorDetail,omitempty"`
+	Phase           string     `json:"phase,omitempty"`
 	ContentPassed   bool       `json:"contentPassed"`
 	TimePassed      bool       `json:"timePassed"`
 	DurationMS      int        `json:"durationMs"`
