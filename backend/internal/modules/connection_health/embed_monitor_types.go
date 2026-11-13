@@ -83,6 +83,7 @@ type EmbedBoardSettings struct {
 	Enabled           bool     `json:"enabled"`
 	Token             string   `json:"token"`
 	VisibleMonitorIDs []string `json:"visibleMonitorIds"`
+	HistoryLimit      *int     `json:"historyLimit"`
 }
 
 type EmbedJob struct {

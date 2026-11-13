@@ -228,6 +228,9 @@ func (s *EmbedMonitorService) saveSettings(ctx context.Context, user, workspace 
 			return current, err
 		}
 	} else {
+		if in.HistoryLimit != nil && (*in.HistoryLimit < 1 || *in.HistoryLimit > 1000) {
+			return current, requestError("每类历史保留条数须为 1–1000 的整数")
+		}
 		current.Title = strings.TrimSpace(in.Title)
 		current.Enabled = in.Enabled
 		if current.Title == "" || len(current.Title) > 120 {
@@ -274,8 +277,17 @@ func (s *EmbedMonitorService) saveSettings(ctx context.Context, user, workspace 
 				return current, err
 			}
 		}
-		if _, err = tx.Exec(ctx, `UPDATE embed_group_monitor_boards SET title=$3,enabled=$4 WHERE user_id=$1 AND admin_account_id=$2`, user, workspace, current.Title, current.Enabled); err != nil {
+		if _, err = tx.Exec(ctx, `UPDATE embed_group_monitor_boards SET title=$3,enabled=$4,history_limit=COALESCE($5::integer,history_limit) WHERE user_id=$1 AND admin_account_id=$2`, user, workspace, current.Title, current.Enabled, in.HistoryLimit); err != nil {
 			return current, err
+		}
+		if in.HistoryLimit != nil {
+			// Prune the whole workspace immediately, including disabled/private monitors.
+			_, err = tx.Exec(ctx, `DELETE FROM embed_group_monitor_samples WHERE id IN (
+			 SELECT id FROM (SELECT s.id,row_number() OVER (PARTITION BY s.monitor_id,s.kind ORDER BY s.started_at DESC,s.id DESC) AS position
+			 FROM embed_group_monitor_samples s JOIN embed_group_monitors m ON m.id=s.monitor_id WHERE m.user_id=$1 AND m.admin_account_id=$2) ranked WHERE position>$3)`, user, workspace, *in.HistoryLimit)
+			if err != nil {
+				return current, err
+			}
 		}
 		err = tx.Commit(ctx)
 	}

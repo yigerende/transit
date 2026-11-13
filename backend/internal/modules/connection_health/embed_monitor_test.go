@@ -75,7 +75,7 @@ func embedTestRepository(t *testing.T) *embedMonitorRepository {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { pool.Close(); admin.Exec(ctx, `DROP SCHEMA `+schema+` CASCADE`); admin.Close() })
-	for _, file := range []string{"000036_embed_group_monitor.sql", "000037_embed_monitor_visibility.sql"} {
+	for _, file := range []string{"000036_embed_group_monitor.sql", "000037_embed_monitor_visibility.sql", "000038_embed_monitor_history_limit.sql"} {
 		migration, err := os.ReadFile("../../database/migrations/" + file)
 		if err != nil {
 			t.Fatal(err)

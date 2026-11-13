@@ -16,6 +16,7 @@ const token = computed(() => props.embedded ? String(route.query.embed_token || 
 const board = ref<Board>(), settings = ref<BoardSettings>(), edit = ref<Monitor>(), detail = ref<Sample>()
 const sharing = ref(false), error = ref(''), notice = ref(''), loading = ref(false), saving = ref(false)
 const refreshSeconds = ref(15)
+const savedHistoryLimit = ref(60)
 const selectedId = ref(''), search = ref('')
 const filteredCards = computed(() => (board.value?.cards || []).filter(card => `${card.monitor.name} ${card.monitor.groupName} ${card.monitor.model}`.toLowerCase().includes(search.value.trim().toLowerCase())))
 const selectedCard = computed(() => filteredCards.value.find(card => card.monitor.id === selectedId.value) || filteredCards.value[0])
@@ -60,10 +61,24 @@ async function openSharing() {
   await perform(async () => {
     const [config, currentBoard] = await Promise.all([getSettings(), getBoard()])
     ++loadVersion; loading.value = false
-    board.value = currentBoard; settings.value = config; sharing.value = true; planRefresh()
+    board.value = currentBoard; settings.value = config; savedHistoryLimit.value = config.historyLimit; sharing.value = true; planRefresh()
   })
 }
-async function updateSharing(rotate = false) { await perform(async () => { if (!settings.value) return; if (rotate && !window.confirm('重置后旧嵌入链接将立即失效，继续？')) return; settings.value = rotate ? await rotateToken() : await saveSettings(settings.value); notice.value = '嵌入设置已保存'; await load() }) }
+async function updateSharing(rotate = false) {
+  await perform(async () => {
+    if (!settings.value) return
+    if (rotate && !window.confirm('重置后旧嵌入链接将立即失效，继续？')) return
+    if (!rotate) {
+      const limit = settings.value.historyLimit
+      if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('每类历史保留条数须为 1–1000 的整数')
+      if (limit < savedHistoryLimit.value && !window.confirm(`将每个检测项的探活、糖果、鹈鹕各保留最近 ${limit} 条。保存后会立即删除超出的最早历史及作品，无法恢复。继续？`)) return
+    }
+    settings.value = rotate ? await rotateToken() : await saveSettings(settings.value)
+    savedHistoryLimit.value = settings.value.historyLimit
+    ++loadVersion; loading.value = false; clearTimeout(timer); detail.value = undefined
+    notice.value = '嵌入设置已保存'; await load()
+  })
+}
 async function clearAllHistory() {
   if (saving.value || !window.confirm('确定清空当前工作区所有分组检测项的探活、糖果和鹈鹕历史吗？历史记录和作品无法恢复。分组、模型及自动检测配置会保留，正在运行和后续检测仍会产生新记录。')) return
   await perform(async () => {
@@ -121,7 +136,7 @@ function onSaved(monitor: Monitor) { edit.value = undefined; selectedId.value = 
           <div v-else class="selection-empty"><Search :size="28" /><p>换个关键词试试</p></div>
         </div>
       </div>
-      <p v-if="board?.cards.length" class="board-footnote">统计来自各项最近 60 次检测。请求异常不计入糖果和鹈鹕的有效判定分母；历史包含手动检测。</p>
+      <p v-if="board?.cards.length" class="board-footnote">统计来自各项保留历史中最近最多 60 次检测。请求异常不计入糖果和鹈鹕的有效判定分母；历史包含手动检测。</p>
       <p class="quality-attribution">糖果与鹈鹕检测由 <a href="https://manxue.ai" target="_blank" rel="noopener noreferrer">manxue.ai</a> 提供</p>
     </div>
     <MonitorForm v-if="edit" :monitor="edit" @close="edit = undefined" @saved="onSaved" />
@@ -129,6 +144,7 @@ function onSaved(monitor: Monitor) { edit.value = undefined; selectedId.value = 
     <MonitorDialog v-if="sharing && settings" title="嵌入展示设置" @close="sharing = false">
       <div class="sharing-form"><p class="text-sm text-muted-foreground">开启后，持有链接的人可以查看检测结果与作品；嵌入页面只读。</p><p v-if="error" role="alert" class="banner error">{{ error }}</p><p v-if="notice" role="status" class="banner notice">{{ notice }}</p>
         <div class="history-cleanup"><strong>检测历史</strong><p>清空当前工作区所有分组检测项的探活、糖果和鹈鹕历史及作品，保留分组、模型、自动检测和嵌入配置。正在运行和后续检测会继续产生新记录。</p><button type="button" class="clear-history" :disabled="saving" @click="clearAllHistory"><Trash2 :size="14" />一键清空检测历史</button></div>
+        <div class="history-retention"><label>每类历史保留条数<input v-model.number="settings.historyLimit" type="number" min="1" max="1000" step="1" :disabled="saving"></label><p>每个检测项的探活、糖果、鹈鹕分别保留最近指定条数（1–1000，默认 60）。超过数量自动删除最早记录及作品；调小后保存立即清理。页面最多展示最近 60 次。</p></div>
         <label>展示标题<input v-model="settings.title" maxlength="120"></label><label class="check-label"><input v-model="settings.enabled" type="checkbox">开启嵌入展示</label>
         <fieldset class="visibility-picker" :disabled="saving">
           <legend>向用户展示的检测项</legend>
@@ -148,6 +164,7 @@ function onSaved(monitor: Monitor) { edit.value = undefined; selectedId.value = 
   </main>
 </template>
 <style scoped>
+.history-retention p{font-size:11px;line-height:1.8;color:hsl(var(--muted-foreground));margin-top:8px}
 .visibility-picker{border:1px solid hsl(var(--border));border-radius:10px;padding:12px;min-width:0}.visibility-picker legend{padding:0 5px;font-size:12px;font-weight:600}.visibility-picker p{font-size:11px;line-height:1.8;color:hsl(var(--muted-foreground))}.visibility-actions{display:flex;align-items:center;gap:7px;margin:10px 0;font-size:11px}.visibility-actions span{margin-right:auto;color:hsl(var(--muted-foreground))}.visibility-actions button{padding:5px 9px;font-size:11px}.visibility-options{max-height:230px;overflow:auto;display:flex;flex-direction:column;gap:6px}.sharing-form .visibility-option{display:flex;flex-direction:row;align-items:center;gap:10px;padding:10px;border-radius:7px;background:hsl(var(--muted)/.45);cursor:pointer}.visibility-option input{accent-color:#0f766e;flex-shrink:0}.visibility-option span{min-width:0}.visibility-option strong{display:block;font-size:12px;overflow-wrap:anywhere}.visibility-option small{display:block;margin-top:4px;font-size:10px;color:hsl(var(--muted-foreground));overflow-wrap:anywhere}.visibility-picker .visibility-empty{margin-top:10px;color:#a46519}
 .history-cleanup{display:flex;flex-direction:column;gap:10px;border-bottom:1px solid hsl(var(--border));padding-bottom:18px;font-size:12px}.history-cleanup p{font-size:11px;line-height:1.8;color:hsl(var(--muted-foreground))}.history-cleanup .clear-history{color:#be4555;border-color:#e3697940;background:#e3697908}
 .quality-attribution{text-align:center;font-size:11px;color:hsl(var(--muted-foreground));padding:14px 8px}.quality-attribution a{color:#0f766e;text-decoration:underline;text-underline-offset:3px}.quality-attribution a:hover{color:#0d9488}

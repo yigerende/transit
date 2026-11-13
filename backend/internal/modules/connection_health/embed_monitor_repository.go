@@ -30,7 +30,7 @@ func (r *embedMonitorRepository) settings(ctx context.Context, user, workspace s
 	if err != nil {
 		return out, err
 	}
-	err = r.db.QueryRow(ctx, `SELECT title,enabled,token,ARRAY(SELECT id FROM embed_group_monitors WHERE user_id=$1 AND admin_account_id=$2 AND published ORDER BY created_at,id) FROM embed_group_monitor_boards WHERE user_id=$1 AND admin_account_id=$2`, user, workspace).Scan(&out.Title, &out.Enabled, &out.Token, &out.VisibleMonitorIDs)
+	err = r.db.QueryRow(ctx, `SELECT title,enabled,token,ARRAY(SELECT id FROM embed_group_monitors WHERE user_id=$1 AND admin_account_id=$2 AND published ORDER BY created_at,id),history_limit FROM embed_group_monitor_boards WHERE user_id=$1 AND admin_account_id=$2`, user, workspace).Scan(&out.Title, &out.Enabled, &out.Token, &out.VisibleMonitorIDs, &out.HistoryLimit)
 	return out, err
 }
 
@@ -154,7 +154,7 @@ func (r *embedMonitorRepository) board(ctx context.Context, user, workspace, tit
 			return out, err
 		}
 		// Strip large/generated and diagnostic text in SQL, not after loading it.
-		history, err := r.db.Query(ctx, `SELECT (sample - 'html' - 'answer' - 'report' - 'errorDetail') FROM embed_group_monitor_samples WHERE monitor_id=$1 ORDER BY started_at DESC,id DESC`, card.Monitor.ID)
+		history, err := r.db.Query(ctx, `SELECT sample - 'html' - 'answer' - 'report' - 'errorDetail' FROM (SELECT sample,started_at,id,row_number() OVER (PARTITION BY kind ORDER BY started_at DESC,id DESC) AS position FROM embed_group_monitor_samples WHERE monitor_id=$1) recent WHERE position<=60 ORDER BY started_at DESC,id DESC`, card.Monitor.ID)
 		if err != nil {
 			return out, err
 		}
@@ -251,6 +251,11 @@ func (r *embedMonitorRepository) complete(ctx context.Context, m EmbedMonitor, j
 		return err
 	}
 	defer tx.Rollback(ctx)
+	// Serialize retention setting changes with completions, while allowing different
+	// detection jobs in the same workspace to complete together.
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))`, "embed-monitor:"+m.UserID+":"+m.WorkspaceID); err != nil {
+		return err
+	}
 	// A stale completion cannot overwrite a new worker or resurrect a deleted target.
 	tag, err := tx.Exec(ctx, `UPDATE embed_group_monitor_jobs SET running_until=NULL,run_id='',next_run_at=GREATEST(now(),started_at+interval_seconds*interval '1 second') WHERE monitor_id=$1 AND kind=$2 AND run_id=$3`, m.ID, j.Kind, j.RunID)
 	if err != nil {
@@ -267,7 +272,7 @@ func (r *embedMonitorRepository) complete(ctx context.Context, m EmbedMonitor, j
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `DELETE FROM embed_group_monitor_samples WHERE monitor_id=$1 AND kind=$2 AND id IN (SELECT id FROM embed_group_monitor_samples WHERE monitor_id=$1 AND kind=$2 ORDER BY started_at DESC,id DESC OFFSET 60)`, m.ID, j.Kind)
+	_, err = tx.Exec(ctx, `DELETE FROM embed_group_monitor_samples WHERE monitor_id=$1 AND kind=$2 AND id IN (SELECT id FROM embed_group_monitor_samples WHERE monitor_id=$1 AND kind=$2 ORDER BY started_at DESC,id DESC OFFSET (SELECT COALESCE((SELECT history_limit FROM embed_group_monitor_boards WHERE user_id=$3 AND admin_account_id=$4),60)))`, m.ID, j.Kind, m.UserID, m.WorkspaceID)
 	if err != nil {
 		return err
 	}

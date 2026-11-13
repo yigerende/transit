@@ -24,7 +24,7 @@ export interface Sample extends QualitySample { kind: CheckKind; probeMode?: str
 export interface Job { monitorId: string; kind: CheckKind; queued: boolean; startedAt?: string; runningUntil?: string; nextRunAt: string }
 export interface Card { monitor: Monitor; history: Sample[]; jobs: Job[] }
 export interface Board { title: string; cards: Card[]; updatedAt: string }
-export interface BoardSettings { title: string; enabled: boolean; token: string; visibleMonitorIds: string[] }
+export interface BoardSettings { title: string; enabled: boolean; token: string; visibleMonitorIds: string[]; historyLimit: number }
 export interface Group { id: string; name: string; platform: string }
 export const kinds: CheckKind[] = ['health', 'candy', 'pelican']
 export const labels: Record<CheckKind, string> = { health: '探活', candy: 'API 糖果', pelican: 'API 鹈鹕' }
