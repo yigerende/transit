@@ -6,6 +6,7 @@ import { kinds, labels, modeLabels } from './types'
 import { samplesFor, verdictRate, healthAverage, resultLabel, timeLabel, busy } from './stats'
 import { getSample } from './api'
 import { qualityPreviewDocument } from '../admin/utils/qualityHistory'
+import ArtworkThumbnail from './ArtworkThumbnail.vue'
 
 const props = defineProps<{ card: Card; token?: string; saving?: boolean }>()
 const emit = defineEmits<{ edit: []; remove: []; run: [kind: CheckKind]; detail: [sample: Sample] }>()
@@ -43,13 +44,19 @@ onMounted(() => {
 onBeforeUnmount(() => { observer?.disconnect(); previewEpoch++ })
 watch(() => `${artworkVisible.value}:${artwork.value.map(s => s.id).join(',')}`, async () => {
   if (!artworkVisible.value) return
-  const epoch = ++previewEpoch, next: Record<string, string> = {}
-  await Promise.allSettled(artwork.value.map(async sample => {
-    if (previews.value[sample.id]) { next[sample.id] = previews.value[sample.id]!; return }
-    const result = await getSample(sample.id, props.token)
-    if (result.html) next[sample.id] = qualityPreviewDocument(result.html)
-  }))
-  if (epoch === previewEpoch) previews.value = next
+  const epoch = ++previewEpoch
+  const samples = artwork.value, selected = featured.value
+  previews.value = Object.fromEntries(samples.filter(sample => previews.value[sample.id]).map(sample => [sample.id, previews.value[sample.id]!]))
+  const load = async (sample: Sample) => {
+    if (previews.value[sample.id]) return
+    try {
+      const result = await getSample(sample.id, props.token)
+      if (epoch === previewEpoch && result.html) previews.value = { ...previews.value, [sample.id]: qualityPreviewDocument(result.html) }
+    } catch { /* The detail button remains available for retrying failed reads. */ }
+  }
+  // Show the featured artwork first; a slow history request must not delay it.
+  if (selected) await load(selected)
+  if (epoch === previewEpoch) await Promise.allSettled(samples.filter(sample => sample.id !== selected?.id).map(load))
 }, { immediate: true })
 </script>
 
@@ -99,7 +106,7 @@ watch(() => `${artworkVisible.value}:${artwork.value.map(s => s.id).join(',')}`,
       <header><div class="section-title"><span class="section-number">02</span><h3>创作样本室</h3></div><span class="subtle">鹈鹕 API · gpt-6-astra</span></header>
       <div v-if="featured" class="artwork-layout">
         <button type="button" class="featured-art" :aria-label="`查看 ${timeLabel(featured.startedAt)} 鹈鹕作品`" @click="emit('detail', featured)"><div class="preview"><iframe v-if="previews[featured.id]" :srcdoc="previews[featured.id]" sandbox="allow-scripts" referrerpolicy="no-referrer" tabindex="-1" title="鹈鹕作品预览" /><span v-else>点击加载作品</span></div><div class="artwork-caption"><span>{{ timeLabel(featured.startedAt) }}</span><span>查看完整作品<ArrowUpRight :size="14" /></span></div></button>
-        <div class="artwork-index" aria-label="近期作品选择"><button v-for="(sample, index) in artwork" :key="sample.id" type="button" :class="{ selected: featured.id === sample.id }" :aria-pressed="featured.id === sample.id" @click="chosenArt = sample.id"><span class="mini-preview"><iframe v-if="previews[sample.id]" :srcdoc="previews[sample.id]" sandbox="allow-scripts" referrerpolicy="no-referrer" tabindex="-1" :title="`作品缩略图 ${index + 1}`" /><span v-else>0{{ index + 1 }}</span></span><div><strong>{{ index === 0 ? '最新样本' : '历史样本' }}</strong><small>{{ shortTime(sample.startedAt) }} · {{ resultLabel(sample) }}</small></div></button><p>保留近期 3 份创作<br>点击大画布查看详情</p></div>
+        <div class="artwork-index" aria-label="近期作品选择"><button v-for="(sample, index) in artwork" :key="sample.id" type="button" :class="{ selected: featured.id === sample.id }" :aria-pressed="featured.id === sample.id" @click="chosenArt = sample.id"><span class="mini-preview"><ArtworkThumbnail :html="previews[sample.id]" :index="index" :title="`作品缩略图 ${index + 1}`" /></span><div><strong>{{ index === 0 ? '最新样本' : '历史样本' }}</strong><small>{{ shortTime(sample.startedAt) }} · {{ resultLabel(sample) }}</small></div></button><p>保留近期 3 份创作<br>点击大画布查看详情</p></div>
       </div>
       <div v-else class="no-artwork"><div class="empty-orbit"><ScanLine :size="34" /></div><div><h4>等待第一份创作样本</h4><p>完成 API 鹈鹕检测后，作品会在这里归档。</p></div><button v-if="!isPublic" type="button" class="run-button" :disabled="busy(card, 'pelican')" @click="emit('run', 'pelican')">{{ busy(card, 'pelican') ? '创作中…' : '启动鹈鹕检测' }}<ArrowUpRight :size="14" /></button></div>
     </section>
