@@ -11,6 +11,12 @@ import {
 
 const routes = [
   {
+    path: '/embed/group-quality',
+    name: 'EmbedGroupQuality',
+    component: () => import('./modules/group-quality/GroupQualityPage.vue'),
+    props: { embedded: true },
+  },
+  {
     path: '/',
     redirect: '/login'
   },
@@ -43,6 +49,12 @@ const routes = [
     component: () => import('./modules/admin/layout/AdminLayout.vue'),
     meta: { requiresAuth: true },
     children: [
+      {
+        path: 'group-quality',
+        name: 'AdminGroupQuality',
+        meta: { requiresWorkspace: true },
+        component: () => import('./modules/group-quality/GroupQualityPage.vue'),
+      },
       {
         path: '',
         name: 'AdminDashboard',

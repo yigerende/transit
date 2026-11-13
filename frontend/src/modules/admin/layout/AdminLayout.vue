@@ -144,6 +144,7 @@ const menuItems = computed<MenuEntry[]>(() => [
     name: t('admin.menu.sub2apiFeatures'),
     icon: Boxes,
     children: [
+      { name: t('admin.menu.groupQuality'), path: '/admin/group-quality', icon: Activity },
       { name: t('admin.menu.leaderboard'), path: '/admin/leaderboard', icon: Trophy },
       { name: t('admin.menu.lottery'), path: '/admin/lottery', icon: Gift },
       { name: t('admin.menu.groupRateCampaigns'), path: '/admin/group-rate-campaigns', icon: Megaphone },

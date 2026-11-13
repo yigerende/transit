@@ -125,6 +125,7 @@ export default {
       connectionHealth: '分组健康',
       groupRateCampaigns: '活动调价',
       sub2apiFeatures: '嵌入功能',
+      groupQuality: '分组降智检测',
       settings: '系统设置',
       tickets: '工单',
       massEmail: '群发邮件',

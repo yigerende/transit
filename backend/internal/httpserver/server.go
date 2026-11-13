@@ -227,6 +227,8 @@ func New(cfg config.Config, db *pgxpool.Pool, redisClient *redis.Client) *Server
 	// 分组下账号/渠道，叠加 real_connections 探活状态。platformService 已实现所需方法。
 	connHealthService.SetPlatformGroupReader(platformService)
 	connection_health.RegisterRoutes(server.mux, connHealthService)
+	embedMonitorService := connection_health.NewEmbedMonitorService(db, connHealthService)
+	connection_health.RegisterEmbedMonitorRoutes(server.mux, embedMonitorService)
 
 	// 所有 workspace 表 schema 完成后再补 legacy 归属；随后才启动 restore、worker 和 scheduler，
 	// 避免后台任务在旧行尚未补齐 workspace 时读取或写回数据。
@@ -249,6 +251,7 @@ func New(cfg config.Config, db *pgxpool.Pool, redisClient *redis.Client) *Server
 	server.groupProbeCancel = groupProbeCancel
 	connHealthService.StartGroupProbeScheduler(groupProbeCtx)
 	connHealthService.StartQualityScheduler(groupProbeCtx)
+	embedMonitorService.Start(groupProbeCtx)
 
 	// 策略设置变更时通知上游服务更新定时同步配置。
 	applyRefreshConfig := func(s settings.StrategySettings) {
@@ -447,12 +450,18 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func (s *Server) protectedPath(path string) bool {
+	if strings.HasPrefix(path, "/api/group-quality") {
+		return true
+	}
 	return strings.HasPrefix(path, "/api/admin-accounts") || strings.HasPrefix(path, "/api/upstream-sites") || strings.HasPrefix(path, "/api/group-rates") || strings.HasPrefix(path, "/api/group-rate-campaigns") || strings.HasPrefix(path, "/api/my-sites") || strings.HasPrefix(path, "/api/settings") || strings.HasPrefix(path, "/api/dashboard") || strings.HasPrefix(path, "/api/system") || strings.HasPrefix(path, "/api/connection-health") || strings.HasPrefix(path, "/api/tickets") || strings.HasPrefix(path, "/api/leaderboard") || strings.HasPrefix(path, "/api/lottery") || strings.HasPrefix(path, "/api/mass-email")
 }
 
 func (s *Server) setSecurityHeaders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	if r.URL.Path == "/embed/group-quality" {
+		w.Header().Set("Referrer-Policy", "no-referrer")
+	}
 	if r.Method == http.MethodGet && r.URL.Path == "/embed/leaderboard" {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		origin := ""

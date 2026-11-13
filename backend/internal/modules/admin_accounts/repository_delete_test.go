@@ -26,6 +26,8 @@ func TestWorkspaceDeleteStatementsCoverAllWorkspaceTables(t *testing.T) {
 		"group_rate_campaign_items",
 		"group_rate_campaigns",
 		"connection_health_group_probe_configs",
+		"embed_group_monitors",
+		"embed_group_monitor_boards",
 		"connection_health_target_action_states",
 		"connection_health_probe_budget_usage",
 		"connection_health_priority_sync_states",
@@ -88,7 +90,7 @@ func TestLegacyWorkspaceDescriptorsCoverDeleteTables(t *testing.T) {
 	}
 	for _, stmt := range workspaceDeleteStatements {
 		// Introduced after workspaces: this table has no legacy unscoped rows.
-		if stmt.Name == "connection_health_group_probe_configs" || strings.HasPrefix(stmt.Name, "connection_health_quality_") {
+		if stmt.Name == "connection_health_group_probe_configs" || strings.HasPrefix(stmt.Name, "connection_health_quality_") || strings.HasPrefix(stmt.Name, "embed_group_") {
 			continue
 		}
 		column, ok := descriptors[stmt.Name]

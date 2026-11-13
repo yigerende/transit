@@ -125,6 +125,7 @@ export default {
       connectionHealth: 'Group Health',
       groupRateCampaigns: 'Rate Campaigns',
       sub2apiFeatures: 'Embedded Features',
+      groupQuality: 'Group Quality Monitor',
       settings: 'Settings',
       tickets: 'Tickets',
       massEmail: 'Mass Email',

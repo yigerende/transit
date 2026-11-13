@@ -50,6 +50,8 @@ var workspaceDeleteStatements = []workspaceDeleteStatement{
 	{Name: "group_rate_campaign_items", SQL: `DELETE FROM group_rate_campaign_items WHERE user_id = $1 AND admin_account_id = $2`},
 	{Name: "group_rate_campaigns", SQL: `DELETE FROM group_rate_campaigns WHERE user_id = $1 AND admin_account_id = $2`},
 	{Name: "connection_health_group_probe_configs", SQL: `DELETE FROM connection_health_group_probe_configs WHERE user_id = $1 AND admin_account_id = $2`},
+	{Name: "embed_group_monitors", SQL: `DELETE FROM embed_group_monitors WHERE user_id = $1 AND admin_account_id = $2`},
+	{Name: "embed_group_monitor_boards", SQL: `DELETE FROM embed_group_monitor_boards WHERE user_id = $1 AND admin_account_id = $2`},
 	{Name: "connection_health_target_action_states", SQL: `DELETE FROM connection_health_target_action_states WHERE user_id = $1 AND admin_account_id = $2`},
 	{Name: "connection_health_probe_budget_usage", SQL: `DELETE FROM connection_health_probe_budget_usage WHERE user_id = $1 AND admin_account_id = $2`},
 	{Name: "connection_health_priority_sync_states", SQL: `DELETE FROM connection_health_priority_sync_states WHERE user_id = $1 AND admin_account_id = $2`},
