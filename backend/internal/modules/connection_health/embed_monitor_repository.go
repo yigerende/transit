@@ -30,7 +30,7 @@ func (r *embedMonitorRepository) settings(ctx context.Context, user, workspace s
 	if err != nil {
 		return out, err
 	}
-	err = r.db.QueryRow(ctx, `SELECT title,enabled,token FROM embed_group_monitor_boards WHERE user_id=$1 AND admin_account_id=$2`, user, workspace).Scan(&out.Title, &out.Enabled, &out.Token)
+	err = r.db.QueryRow(ctx, `SELECT title,enabled,token,ARRAY(SELECT id FROM embed_group_monitors WHERE user_id=$1 AND admin_account_id=$2 AND published ORDER BY created_at,id) FROM embed_group_monitor_boards WHERE user_id=$1 AND admin_account_id=$2`, user, workspace).Scan(&out.Title, &out.Enabled, &out.Token, &out.VisibleMonitorIDs)
 	return out, err
 }
 
@@ -109,7 +109,7 @@ func (r *embedMonitorRepository) monitor(ctx context.Context, user, workspace, i
 
 func (r *embedMonitorRepository) board(ctx context.Context, user, workspace, title string, public bool) (EmbedMonitorBoard, error) {
 	out := EmbedMonitorBoard{Title: title, Cards: []EmbedMonitorCard{}, UpdatedAt: time.Now()}
-	rows, err := r.db.Query(ctx, `SELECT config FROM embed_group_monitors WHERE user_id=$1 AND admin_account_id=$2 ORDER BY created_at,id`, user, workspace)
+	rows, err := r.db.Query(ctx, `SELECT config FROM embed_group_monitors WHERE user_id=$1 AND admin_account_id=$2 AND (NOT $3 OR published) ORDER BY created_at,id`, user, workspace, public)
 	if err != nil {
 		return out, err
 	}
@@ -181,9 +181,17 @@ func (r *embedMonitorRepository) board(ctx context.Context, user, workspace, tit
 }
 
 func (r *embedMonitorRepository) detail(ctx context.Context, user, workspace, id string) (EmbedSample, error) {
+	return r.readDetail(ctx, user, workspace, id, false)
+}
+
+func (r *embedMonitorRepository) publicDetail(ctx context.Context, user, workspace, id string) (EmbedSample, error) {
+	return r.readDetail(ctx, user, workspace, id, true)
+}
+
+func (r *embedMonitorRepository) readDetail(ctx context.Context, user, workspace, id string, public bool) (EmbedSample, error) {
 	var raw []byte
 	var sample EmbedSample
-	err := r.db.QueryRow(ctx, `SELECT s.sample FROM embed_group_monitor_samples s JOIN embed_group_monitors m ON m.id=s.monitor_id WHERE m.user_id=$1 AND m.admin_account_id=$2 AND s.id=$3`, user, workspace, id).Scan(&raw)
+	err := r.db.QueryRow(ctx, `SELECT s.sample FROM embed_group_monitor_samples s JOIN embed_group_monitors m ON m.id=s.monitor_id WHERE m.user_id=$1 AND m.admin_account_id=$2 AND s.id=$3 AND (NOT $4 OR m.published)`, user, workspace, id, public).Scan(&raw)
 	if err == nil {
 		err = json.Unmarshal(raw, &sample)
 	}

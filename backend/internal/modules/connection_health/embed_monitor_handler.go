@@ -139,7 +139,7 @@ func (s *EmbedMonitorService) servePublic(w http.ResponseWriter, r *http.Request
 	var out any
 	if r.PathValue("id") != "" {
 		var sample EmbedSample
-		sample, err = s.repo.detail(r.Context(), user, workspace, r.PathValue("id"))
+		sample, err = s.repo.publicDetail(r.Context(), user, workspace, r.PathValue("id"))
 		// Public reports omit upstream diagnostic text; artwork and verdicts are
 		// explicitly published through the enabled board.
 		sample.ErrorDetail = ""

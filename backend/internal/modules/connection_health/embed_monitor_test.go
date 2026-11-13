@@ -75,13 +75,15 @@ func embedTestRepository(t *testing.T) *embedMonitorRepository {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { pool.Close(); admin.Exec(ctx, `DROP SCHEMA `+schema+` CASCADE`); admin.Close() })
-	migration, err := os.ReadFile("../../database/migrations/000036_embed_group_monitor.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i := 0; i < 2; i++ {
-		if _, err = pool.Exec(ctx, string(migration)); err != nil {
+	for _, file := range []string{"000036_embed_group_monitor.sql", "000037_embed_monitor_visibility.sql"} {
+		migration, err := os.ReadFile("../../database/migrations/" + file)
+		if err != nil {
 			t.Fatal(err)
+		}
+		for i := 0; i < 2; i++ {
+			if _, err = pool.Exec(ctx, string(migration)); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	return &embedMonitorRepository{db: pool}
@@ -195,7 +197,7 @@ func TestEmbedMonitorDurableJobsAndIsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	board, err = r.board(ctx, m.UserID, m.WorkspaceID, "Title", true)
+	board, err = r.board(ctx, m.UserID, m.WorkspaceID, "Title", false)
 	if err != nil || len(board.Cards[0].History) != 60 {
 		t.Fatal("incorrect retention", err)
 	}
@@ -363,6 +365,7 @@ func TestEmbedMonitorWorkerAndReadOnlyHTTP(t *testing.T) {
 		t.Fatal("disabled publication exposed data")
 	}
 	config.Enabled = true
+	config.VisibleMonitorIDs = []string{m.ID}
 	config, err = s.saveSettings(ctx, m.UserID, m.WorkspaceID, config, false)
 	if err != nil {
 		t.Fatal(err)

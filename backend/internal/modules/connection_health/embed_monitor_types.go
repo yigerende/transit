@@ -79,9 +79,10 @@ func (m *EmbedMonitor) validate() error {
 }
 
 type EmbedBoardSettings struct {
-	Title   string `json:"title"`
-	Enabled bool   `json:"enabled"`
-	Token   string `json:"token"`
+	Title             string   `json:"title"`
+	Enabled           bool     `json:"enabled"`
+	Token             string   `json:"token"`
+	VisibleMonitorIDs []string `json:"visibleMonitorIds"`
 }
 
 type EmbedJob struct {

@@ -239,7 +239,48 @@ func (s *EmbedMonitorService) saveSettings(ctx context.Context, user, workspace 
 	if rotate {
 		err = s.repo.db.QueryRow(ctx, `UPDATE embed_group_monitor_boards SET token=$3 WHERE user_id=$1 AND admin_account_id=$2 RETURNING title,enabled,token`, user, workspace, current.Token).Scan(&current.Title, &current.Enabled, &current.Token)
 	} else {
-		err = s.repo.db.QueryRow(ctx, `UPDATE embed_group_monitor_boards SET title=$3,enabled=$4 WHERE user_id=$1 AND admin_account_id=$2 RETURNING title,enabled,token`, user, workspace, current.Title, current.Enabled).Scan(&current.Title, &current.Enabled, &current.Token)
+		tx, beginErr := s.repo.db.Begin(ctx)
+		if beginErr != nil {
+			return current, beginErr
+		}
+		defer tx.Rollback(ctx)
+		if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "embed-monitor:"+user+":"+workspace); err != nil {
+			return current, err
+		}
+		// An omitted selection from an older client preserves visibility; [] hides all.
+		if in.VisibleMonitorIDs != nil {
+			if len(in.VisibleMonitorIDs) > 50 {
+				return current, requestError("最多选择 50 个展示检测项")
+			}
+			ids := make([]string, 0, len(in.VisibleMonitorIDs))
+			seen := map[string]bool{}
+			for _, id := range in.VisibleMonitorIDs {
+				if id == "" || len(id) > 120 {
+					return current, requestError("请选择有效的检测项")
+				}
+				if !seen[id] {
+					ids = append(ids, id)
+					seen[id] = true
+				}
+			}
+			var count int
+			if err = tx.QueryRow(ctx, `SELECT count(*) FROM embed_group_monitors WHERE user_id=$1 AND admin_account_id=$2 AND id=ANY($3::text[])`, user, workspace, ids).Scan(&count); err != nil {
+				return current, err
+			}
+			if count != len(ids) {
+				return current, requestError("部分检测项已删除或不属于当前工作区，请重新打开嵌入设置")
+			}
+			if _, err = tx.Exec(ctx, `UPDATE embed_group_monitors SET published=(id=ANY($3::text[])) WHERE user_id=$1 AND admin_account_id=$2`, user, workspace, ids); err != nil {
+				return current, err
+			}
+		}
+		if _, err = tx.Exec(ctx, `UPDATE embed_group_monitor_boards SET title=$3,enabled=$4 WHERE user_id=$1 AND admin_account_id=$2`, user, workspace, current.Title, current.Enabled); err != nil {
+			return current, err
+		}
+		err = tx.Commit(ctx)
 	}
-	return current, err
+	if err != nil {
+		return current, err
+	}
+	return s.repo.settings(ctx, user, workspace)
 }
