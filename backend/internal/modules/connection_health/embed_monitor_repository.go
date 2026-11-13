@@ -190,6 +190,12 @@ func (r *embedMonitorRepository) detail(ctx context.Context, user, workspace, id
 	return sample, err
 }
 
+func (r *embedMonitorRepository) clearHistory(ctx context.Context, user, workspace string) (int64, error) {
+	// Keep settings and scheduled/running jobs; subsequent completions are new history.
+	tag, err := r.db.Exec(ctx, `DELETE FROM embed_group_monitor_samples s USING embed_group_monitors m WHERE s.monitor_id=m.id AND m.user_id=$1 AND m.admin_account_id=$2`, user, workspace)
+	return tag.RowsAffected(), err
+}
+
 func (r *embedMonitorRepository) queue(ctx context.Context, user, workspace, id, kind string) error {
 	if kind != "health" && kind != "candy" && kind != "pelican" {
 		return requestError("未知检测方式")

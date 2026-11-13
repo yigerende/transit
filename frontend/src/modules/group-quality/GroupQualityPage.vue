@@ -8,7 +8,7 @@ import MonitorDialog from './MonitorDialog.vue'
 import MonitorDetail from './MonitorDetail.vue'
 import type { Board, BoardSettings, Monitor, Sample, CheckKind } from './types'
 import { defaultMonitor, kinds, labels } from './types'
-import { getBoard, getSettings, saveSettings, rotateToken, deleteMonitor, runCheck } from './api'
+import { getBoard, getSettings, saveSettings, rotateToken, clearHistory, deleteMonitor, runCheck } from './api'
 import { timeLabel, samplesFor, resultLabel } from './stats'
 const props = defineProps<{ embedded?: boolean }>()
 const route = useRoute()
@@ -20,13 +20,25 @@ const selectedId = ref(''), search = ref('')
 const filteredCards = computed(() => (board.value?.cards || []).filter(card => `${card.monitor.name} ${card.monitor.groupName} ${card.monitor.model}`.toLowerCase().includes(search.value.trim().toLowerCase())))
 const selectedCard = computed(() => filteredCards.value.find(card => card.monitor.id === selectedId.value) || filteredCards.value[0])
 let timer: ReturnType<typeof setTimeout> | undefined, disposed = false
+let loadVersion = 0
 const embedURL = computed(() => settings.value ? `${window.location.origin}/embed/group-quality?embed_token=${encodeURIComponent(settings.value.token)}` : '')
 const embedCode = computed(() => `<iframe src="${embedURL.value}" title="分组质量观测" style="width:100%;height:1000px;border:0" loading="lazy" referrerpolicy="no-referrer"></iframe>`)
 function planRefresh() { clearTimeout(timer); if (!disposed && refreshSeconds.value > 0) timer = setTimeout(() => { if (document.visibilityState === 'hidden') planRefresh(); else void load() }, refreshSeconds.value * 1000) }
 async function load() {
-  if (loading.value) return
+  if (loading.value || disposed) return
+  const version = ++loadVersion
   loading.value = true
-  try { board.value = await getBoard(token.value); error.value = '' } catch (e) { error.value = e instanceof Error ? e.message : '加载失败'; if (props.embedded) board.value = undefined } finally { loading.value = false; planRefresh() }
+  try {
+    const result = await getBoard(token.value)
+    if (version !== loadVersion || disposed) return
+    board.value = result; error.value = ''
+  } catch (e) {
+    if (version !== loadVersion || disposed) return
+    error.value = e instanceof Error ? e.message : '加载失败'
+    if (props.embedded) board.value = undefined
+  } finally {
+    if (version === loadVersion) { loading.value = false; planRefresh() }
+  }
 }
 let restoreTheme: (() => void) | undefined
 onBeforeMount(() => {
@@ -45,6 +57,18 @@ async function perform(action: () => Promise<unknown>) {
 }
 async function openSharing() { await perform(async () => { settings.value = await getSettings(); sharing.value = true }) }
 async function updateSharing(rotate = false) { await perform(async () => { if (!settings.value) return; if (rotate && !window.confirm('重置后旧嵌入链接将立即失效，继续？')) return; settings.value = rotate ? await rotateToken() : await saveSettings(settings.value); notice.value = '嵌入设置已保存'; await load() }) }
+async function clearAllHistory() {
+  if (saving.value || !window.confirm('确定清空当前工作区所有分组检测项的探活、糖果和鹈鹕历史吗？历史记录和作品无法恢复。分组、模型及自动检测配置会保留，正在运行和后续检测仍会产生新记录。')) return
+  await perform(async () => {
+    const result = await clearHistory()
+    // Discard a refresh started before deletion so stale results cannot reappear.
+    ++loadVersion; loading.value = false; clearTimeout(timer)
+    if (board.value) board.value = { ...board.value, cards: board.value.cards.map(card => ({ ...card, history: [] })) }
+    detail.value = undefined
+    notice.value = `已清空 ${result.deleted} 条检测历史，检测配置已保留`
+    await load()
+  })
+}
 async function run(id: string, kind: CheckKind) { await perform(async () => { await runCheck(id, kind); notice.value = '已提交后台检测，结果将自动更新'; await load() }) }
 async function remove(m: Monitor) { if (!window.confirm(`删除“${m.name}”及其检测历史？`)) return; await perform(async () => { await deleteMonitor(m.id); await load() }) }
 async function copied(text: string) { await perform(async () => { await navigator.clipboard.writeText(text); notice.value = '已复制' }) }
@@ -89,11 +113,13 @@ function onSaved(monitor: Monitor) { edit.value = undefined; selectedId.value = 
         <label>展示标题<input v-model="settings.title" maxlength="120"></label><label class="check-label"><input v-model="settings.enabled" type="checkbox">开启嵌入展示</label><button type="button" class="primary" :disabled="saving" @click="updateSharing()">保存嵌入设置</button>
         <label>嵌入链接<input :value="embedURL" readonly @focus="($event.target as HTMLInputElement).select()"></label><div class="sharing-actions"><button type="button" @click="copied(embedURL)"><Copy :size="14" />复制链接</button><a :href="embedURL" target="_blank" rel="noreferrer"><ExternalLink :size="14" />打开预览</a></div>
         <label>iframe 代码<textarea :value="embedCode" readonly rows="4" /></label><button type="button" @click="copied(embedCode)"><Copy :size="14" />复制嵌入代码</button><button type="button" class="reset-link" :disabled="saving" @click="updateSharing(true)">重置链接（旧链接失效）</button>
+        <div class="history-cleanup"><strong>检测历史</strong><p>清空当前工作区所有分组检测项的探活、糖果和鹈鹕历史及作品，保留分组、模型、自动检测和嵌入配置。正在运行和后续检测会继续产生新记录。</p><button type="button" class="clear-history" :disabled="saving" @click="clearAllHistory"><Trash2 :size="14" />一键清空检测历史</button></div>
       </div>
     </MonitorDialog>
   </main>
 </template>
 <style scoped>
+.history-cleanup{display:flex;flex-direction:column;gap:10px;border-top:1px solid hsl(var(--border));padding-top:18px;font-size:12px}.history-cleanup p{font-size:11px;line-height:1.8;color:hsl(var(--muted-foreground))}.history-cleanup .clear-history{color:#be4555;border-color:#e3697940;background:#e3697908}
 .quality-attribution{text-align:center;font-size:11px;color:hsl(var(--muted-foreground));padding:14px 8px}.quality-attribution a{color:#0f766e;text-decoration:underline;text-underline-offset:3px}.quality-attribution a:hover{color:#0d9488}
 .quality-page{padding:28px 30px 40px;min-height:100%;background:radial-gradient(ellipse at 100% 0,#0d948807,transparent 55%)}.quality-page.embedded{min-height:100vh;background:hsl(var(--background));color:hsl(var(--foreground))}.page-content{max-width:1150px;margin:auto}.page-heading{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:26px}.eyebrow{display:flex;gap:6px;align-items:center;font-size:10px;letter-spacing:1.6px;color:#0f9384;font-weight:650;margin-bottom:8px}h1{font-size:26px;font-weight:650;letter-spacing:-.5px}.page-heading p{font-size:12px;color:hsl(var(--muted-foreground));margin-top:8px}.page-actions{display:flex;gap:10px;flex-shrink:0}button,.sharing-actions a{display:inline-flex;gap:7px;align-items:center;justify-content:center;border:1px solid hsl(var(--border));padding:9px 13px;border-radius:9px;font-size:12px;background:hsl(var(--background));transition:background .15s}button:hover{background:hsl(var(--muted))}button:disabled{opacity:.55;cursor:wait}button.primary{background:#0f766e;color:white;border-color:#0f766e}button.primary:hover{background:#115e59}button:focus-visible,select:focus-visible{outline:2px solid #0d9488;outline-offset:3px}.board-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;color:hsl(var(--muted-foreground));font-size:11px;gap:12px}.board-toolbar>span{display:flex;gap:9px;align-items:center}.board-toolbar i{width:3px;height:3px;border-radius:50%;background:currentColor}.board-toolbar>div{display:flex;gap:7px;align-items:center}.board-toolbar label{display:flex;gap:6px;align-items:center}.board-toolbar select{background:hsl(var(--background));border:1px solid hsl(var(--border));border-radius:6px;padding:5px}.board-toolbar button{padding:6px}.delete-target{border:0;background:none;padding:7px 2px;float:right;font-size:10px;color:hsl(var(--muted-foreground))}.delete-target:hover{color:#d45768;background:none}.empty-state{min-height:360px;border:1px dashed hsl(var(--border));border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:hsl(var(--muted-foreground));text-align:center;padding:20px}.empty-state h2{font-size:20px;color:hsl(var(--foreground))}.empty-state p{font-size:13px}.banner{padding:12px 14px;border-radius:10px;font-size:12px;margin-bottom:16px;overflow-wrap:anywhere}.banner.error{background:#e3697912;color:#be4555;border:1px solid #e3697930}.banner.notice{background:#0d94880b;color:#0f766e;border:1px solid #0d948822}.board-footnote{text-align:center;font-size:10px;color:hsl(var(--muted-foreground));padding:28px 8px}.sharing-form{display:flex;flex-direction:column;gap:16px}.sharing-form label{display:flex;flex-direction:column;gap:7px;font-size:12px}.sharing-form input:not([type=checkbox]),.sharing-form textarea{border:1px solid hsl(var(--border));border-radius:8px;background:hsl(var(--background));padding:10px;font-size:12px;width:100%}.sharing-form .check-label{flex-direction:row;align-items:center}.check-label input{accent-color:#0f766e}.sharing-actions{display:flex;gap:10px}.sharing-form button.reset-link{border:0;color:#c55365}.sharing-form .banner{margin:0}@media(max-width:760px){.quality-page{padding:20px 12px}.page-heading{align-items:flex-start;flex-direction:column}.page-actions{width:100%}.page-actions button{flex:1}.board-toolbar{align-items:flex-start}.board-toolbar>span{flex-direction:column;align-items:flex-start;gap:3px}.board-toolbar i{display:none}h1{font-size:24px}}
 .observation-workspace{display:grid;grid-template-columns:218px minmax(0,1fr);border:1px solid hsl(var(--border));border-radius:18px;overflow:hidden;background:hsl(var(--card));box-shadow:0 8px 24px #133d3504}.target-rail{display:flex;flex-direction:column;border-right:1px solid hsl(var(--border));background:hsl(var(--muted)/.3);padding:22px 14px;min-width:0}.rail-heading{display:flex;justify-content:space-between;align-items:center;padding:0 7px;font-size:12px;font-weight:600;letter-spacing:.4px}.rail-heading small{font-family:monospace;font-size:11px;color:#0d9488}.target-search{display:flex;align-items:center;gap:6px;margin:18px 5px 14px;border-bottom:1px solid hsl(var(--border));padding:0 0 9px;color:hsl(var(--muted-foreground))}.target-search input{width:100%;min-width:0;background:transparent;border:0;font-size:10px;outline:none}.target-search:focus-within{border-color:#0d9488}.target-list{display:flex;flex-direction:column;gap:10px}.target-button{display:block;width:100%;padding:14px;text-align:left;border:1px solid transparent;background:transparent;border-radius:10px;transition:background .15s}.target-button:hover{background:hsl(var(--muted))}.target-button.selected{background:hsl(var(--card));border-color:#0d948840;box-shadow:0 3px 12px #0d948808}.target-number{display:flex;align-items:center;justify-content:space-between;color:hsl(var(--muted-foreground));font-size:10px;font-family:monospace;margin-bottom:12px}.target-number svg{opacity:0}.target-button.selected .target-number{color:#0d9488}.target-button.selected .target-number svg{opacity:1}.target-button>strong{display:block;font-size:12px;font-weight:600;line-height:1.6;overflow-wrap:anywhere}.target-button>code{display:block;font-size:9px;color:hsl(var(--muted-foreground));margin-top:4px;overflow-wrap:anywhere}.target-signals{display:flex;gap:10px;margin-top:17px;font-size:9px;color:hsl(var(--muted-foreground))}.target-signals>span{display:flex;align-items:center;gap:4px}.target-signals i{height:4px;width:4px;border-radius:50%}.target-signals .passed{background:#30a995}.target-signals .failed{background:#df6c7e}.target-signals .error{background:#dca457}.target-signals .empty{background:hsl(var(--border))}.rail-footnote{display:flex;align-items:center;gap:8px;color:hsl(var(--muted-foreground));font-size:9px;line-height:1.9;margin-top:auto;padding:36px 7px 0}.rail-empty{font-size:11px;color:hsl(var(--muted-foreground));padding:12px 7px}.observation-content{padding:26px 28px 18px;min-width:0}.delete-target{float:none;display:flex;margin:20px 0 0 auto;font-size:9px}.selection-empty{min-height:480px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:15px;font-size:12px;color:hsl(var(--muted-foreground))}@media(max-width:900px){.observation-workspace{grid-template-columns:180px minmax(0,1fr)}.target-rail{padding:18px 10px}.observation-content{padding:22px 18px}.target-button{padding:11px}.target-signals{gap:7px}}@media(max-width:680px){.observation-workspace{grid-template-columns:1fr}.target-rail{border-right:0;border-bottom:1px solid hsl(var(--border));padding:16px}.rail-heading{padding:0}.target-search{margin:12px 0}.target-list{flex-direction:row;overflow:auto;gap:8px;padding-bottom:5px}.target-button{flex:0 0 170px;width:170px}.target-number{margin-bottom:7px}.target-signals{margin-top:11px}.rail-footnote{display:none}.observation-content{padding:22px 16px}.selection-empty{min-height:180px}}

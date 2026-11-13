@@ -15,6 +15,7 @@ export const getBoard = (token?: string): Promise<Board> => request(token == nul
 export const getSettings = (): Promise<BoardSettings> => request(root + '/settings')
 export const saveSettings = (config: BoardSettings): Promise<BoardSettings> => request(root + '/settings', { method: 'PUT', body: JSON.stringify(config) })
 export const rotateToken = (): Promise<BoardSettings> => request(root + '/rotate-token', { method: 'POST' })
+export const clearHistory = (): Promise<{ deleted: number }> => request(root + '/history', { method: 'DELETE' })
 export const getGroups = (): Promise<Group[]> => request(root + '/groups')
 export const getModels = (id: string): Promise<{ id: string }[]> => request(`${root}/groups/${encodeURIComponent(id)}/models`, { method: 'POST' })
 export const saveMonitor = (monitor: Monitor): Promise<Monitor> => request(root + '/monitors' + (monitor.id ? '/' + encodeURIComponent(monitor.id) : ''), { method: monitor.id ? 'PUT' : 'POST', body: JSON.stringify(monitor) })

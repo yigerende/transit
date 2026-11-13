@@ -222,6 +222,85 @@ func (f *embedQualityRecorder) ProbeQuality(_ context.Context, c upstream.ProbeC
 }
 func int64Ptr(v int64) *int64 { return &v }
 
+func TestEmbedMonitorClearHistoryKeepsConfigurationAndScope(t *testing.T) {
+	r := embedTestRepository(t)
+	ctx := context.Background()
+	m := embedTestMonitor()
+	monitors := []EmbedMonitor{m, m, m, m}
+	monitors[1].ID = "same-workspace"
+	monitors[2].ID, monitors[2].WorkspaceID = "other-workspace", "ws2"
+	monitors[3].ID, monitors[3].UserID = "other-user", "user2"
+	for _, monitor := range monitors {
+		if err := r.save(ctx, monitor); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.settings(ctx, monitor.UserID, monitor.WorkspaceID); err != nil {
+			t.Fatal(err)
+		}
+		for _, kind := range []string{"health", "candy", "pelican"} {
+			if _, err := r.db.Exec(ctx, `INSERT INTO embed_group_monitor_samples(id,monitor_id,kind,started_at,sample) VALUES($1,$2,$3,now(),'{"result":"passed","html":"artwork"}')`, monitor.ID+"-"+kind, monitor.ID, kind); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := r.queue(ctx, m.UserID, m.WorkspaceID, m.ID, "candy"); err != nil {
+		t.Fatal(err)
+	}
+	_, running, err := r.claim(ctx, "candy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.queue(ctx, m.UserID, m.WorkspaceID, m.ID, "health"); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := func() string {
+		t.Helper()
+		var result string
+		err := r.db.QueryRow(ctx, `SELECT jsonb_build_array(
+		 (SELECT jsonb_agg(to_jsonb(b) ORDER BY user_id,admin_account_id) FROM embed_group_monitor_boards b),
+		 (SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM embed_group_monitors m),
+		 (SELECT jsonb_agg(to_jsonb(j) ORDER BY monitor_id,kind) FROM embed_group_monitor_jobs j))::text`).Scan(&result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	before := snapshot()
+	deleted, err := r.clearHistory(ctx, m.UserID, m.WorkspaceID)
+	if err != nil || deleted != 6 {
+		t.Fatalf("clear history: deleted=%d err=%v", deleted, err)
+	}
+	if snapshot() != before {
+		t.Fatal("clearing history changed settings, monitors, or scheduled/running jobs")
+	}
+	for i, monitor := range monitors {
+		var count int
+		if err := r.db.QueryRow(ctx, `SELECT count(*) FROM embed_group_monitor_samples WHERE monitor_id=$1`, monitor.ID).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		want := 0
+		if i >= 2 {
+			want = 3
+		}
+		if count != want {
+			t.Fatalf("monitor %s: got %d history rows, want %d", monitor.ID, count, want)
+		}
+	}
+	if _, err := r.detail(ctx, m.UserID, m.WorkspaceID, m.ID+"-pelican"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatal("cleared artwork remains accessible", err)
+	}
+	if deleted, err = r.clearHistory(ctx, m.UserID, m.WorkspaceID); err != nil || deleted != 0 {
+		t.Fatal("clearing empty history failed", deleted, err)
+	}
+	newSample := EmbedSample{Kind: "candy", QualitySample: QualitySample{ID: running.RunID, TargetID: m.ID, StartedAt: running.StartedAt, CreatedAt: time.Now(), Result: "passed"}}
+	if err := r.complete(ctx, m, running, newSample); err != nil {
+		t.Fatal("running detection could not finish after clear", err)
+	}
+	if _, err := r.detail(ctx, m.UserID, m.WorkspaceID, running.RunID); err != nil {
+		t.Fatal("new detection result was not saved", err)
+	}
+}
+
 func TestEmbedMonitorWorkerAndReadOnlyHTTP(t *testing.T) {
 	r := embedTestRepository(t)
 	ctx := context.Background()
@@ -318,5 +397,18 @@ func TestEmbedMonitorWorkerAndReadOnlyHTTP(t *testing.T) {
 	var board EmbedMonitorBoard
 	if err = json.Unmarshal(w.Body.Bytes(), &board); err != nil || len(board.Cards) != 1 {
 		t.Fatal("public workspace isolation failed", err)
+	}
+	if w = call("DELETE", "/api/group-quality/history", "", config.Token, ""); w.Code != 401 {
+		t.Fatal("public token can clear admin history", w.Code)
+	}
+	if w = call("DELETE", "/api/embed/group-quality", "", config.Token, ""); w.Code != 405 {
+		t.Fatal("public mutation allowed", w.Code)
+	}
+	if w = call("DELETE", "/api/group-quality/history", m.UserID, "", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"deleted":1`) {
+		t.Fatal("authenticated clear failed", w.Code, w.Body.String())
+	}
+	w = call("GET", "/api/embed/group-quality", "", config.Token, "")
+	if err = json.Unmarshal(w.Body.Bytes(), &board); w.Code != 200 || err != nil || len(board.Cards) != 1 || len(board.Cards[0].History) != 0 {
+		t.Fatal("public board did not reflect clear or lost its monitor", w.Code, err)
 	}
 }

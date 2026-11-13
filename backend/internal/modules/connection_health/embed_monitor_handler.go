@@ -13,7 +13,7 @@ import (
 func RegisterEmbedMonitorRoutes(mux *http.ServeMux, s *EmbedMonitorService) {
 	// All admin routes also perform explicit auth/workspace checks, independent
 	// of the outer server middleware. Public routes are read-only capabilities.
-	for _, route := range []string{"GET /api/group-quality/board", "GET /api/group-quality/settings", "PUT /api/group-quality/settings", "POST /api/group-quality/rotate-token", "GET /api/group-quality/groups", "POST /api/group-quality/groups/{id}/models", "POST /api/group-quality/monitors", "PUT /api/group-quality/monitors/{id}", "DELETE /api/group-quality/monitors/{id}", "POST /api/group-quality/monitors/{id}/run/{kind}", "GET /api/group-quality/samples/{id}"} {
+	for _, route := range []string{"GET /api/group-quality/board", "GET /api/group-quality/settings", "PUT /api/group-quality/settings", "POST /api/group-quality/rotate-token", "DELETE /api/group-quality/history", "GET /api/group-quality/groups", "POST /api/group-quality/groups/{id}/models", "POST /api/group-quality/monitors", "PUT /api/group-quality/monitors/{id}", "DELETE /api/group-quality/monitors/{id}", "POST /api/group-quality/monitors/{id}/run/{kind}", "GET /api/group-quality/samples/{id}"} {
 		mux.HandleFunc(route, func(w http.ResponseWriter, r *http.Request) { s.serveAdmin(w, r) })
 	}
 	mux.HandleFunc("GET /api/embed/group-quality", s.servePublic)
@@ -55,6 +55,10 @@ func (s *EmbedMonitorService) serveAdmin(w http.ResponseWriter, r *http.Request)
 		return true
 	}
 	switch {
+	case r.URL.Path == "/api/group-quality/history":
+		var deleted int64
+		deleted, err = s.repo.clearHistory(ctx, user, workspace)
+		out = map[string]int64{"deleted": deleted}
 	case r.URL.Path == "/api/group-quality/board":
 		var cfg EmbedBoardSettings
 		cfg, err = s.repo.settings(ctx, user, workspace)
