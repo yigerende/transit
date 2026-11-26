@@ -6,6 +6,31 @@
     <meta name="description" content="监控探测 上游聚合与运营管理平台" />
     <meta id="theme-color" name="theme-color" content="#121212" />
     <script>
+      // An open iframe can outlive a release. Retry obsolete module URLs with a
+      // fresh entry document once, then offer recovery without a reload loop.
+      function recoverFrontend() {
+        const url = new URL(window.location.href)
+        const lastRetry = Number(url.searchParams.get('_transit_reload') || 0)
+        const now = Date.now()
+        if (!lastRetry || now - lastRetry > 60000) {
+          url.searchParams.set('_transit_reload', String(now))
+          window.location.replace(url.href)
+          return
+        }
+        const show = () => {
+          const recovery = document.getElementById('frontend-recovery')
+          if (recovery) recovery.hidden = false
+        }
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show, { once: true })
+        else show()
+      }
+      window.addEventListener('error', (event) => {
+        if (event.target instanceof HTMLScriptElement && event.target.type === 'module') recoverFrontend()
+      }, true)
+      window.addEventListener('vite:preloadError', (event) => {
+        event.preventDefault()
+        recoverFrontend()
+      })
       // Apply the public board theme before styles load to avoid a dark flash.
       if (window.location.pathname.replace(/\/$/, '') === '/embed/group-quality') {
         const dark = new URLSearchParams(window.location.search).get('theme') === 'dark'
@@ -18,6 +43,10 @@
   </head>
   <body>
     <div id="app"></div>
+    <div id="frontend-recovery" hidden role="alert" style="position:fixed;inset:0;z-index:99999;background:#fafafa;color:#334155;padding:48px 24px;font:14px/1.8 system-ui;text-align:center">
+      <p>页面资源暂时加载失败，请刷新重试。</p>
+      <button type="button" onclick="const url = new URL(location.href); url.searchParams.set('_transit_reload', String(Date.now())); location.replace(url.href)" style="margin-top:12px;padding:8px 20px;border:1px solid #0f766e;border-radius:8px;background:#0f766e;color:white;cursor:pointer">重新加载</button>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
  </html>

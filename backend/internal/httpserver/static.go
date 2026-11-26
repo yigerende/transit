@@ -26,7 +26,17 @@ func staticHandler(publicDir string) http.Handler {
 		info, err := os.Stat(fullPath)
 		if err == nil && !info.IsDir() {
 			// 文件存在，直接返回
+			if strings.EqualFold(filepath.Ext(fullPath), ".html") {
+				w.Header().Set("Cache-Control", "no-store")
+			}
 			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// A previous release's hashed assets must never become cached HTML.
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			w.Header().Set("Cache-Control", "no-store")
+			http.NotFound(w, r)
 			return
 		}
 
@@ -36,6 +46,7 @@ func staticHandler(publicDir string) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		w.Header().Set("Cache-Control", "no-store")
 		http.ServeFile(w, r, indexPath)
 	})
 }
