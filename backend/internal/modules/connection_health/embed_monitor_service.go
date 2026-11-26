@@ -64,7 +64,7 @@ func (s *EmbedMonitorService) save(ctx context.Context, user, workspace string, 
 			return m, err
 		}
 	}
-	err = s.repo.save(ctx, m)
+	err = s.repo.save(ctx, &m)
 	return m, err
 }
 

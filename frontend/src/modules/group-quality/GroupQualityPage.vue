@@ -33,7 +33,7 @@ async function load() {
     const result = await getBoard(token.value)
     if (version !== loadVersion || disposed) return
     board.value = result; error.value = ''
-    if (props.embedded && detail.value && !result.cards.some(card => card.monitor.id === detail.value?.targetId)) detail.value = undefined
+    if (detail.value && !result.cards.some(card => card.monitor.id === detail.value?.targetId && (card.monitor.targetRevision || '') === (detail.value?.targetRevision || ''))) detail.value = undefined
   } catch (e) {
     if (version !== loadVersion || disposed) return
     error.value = e instanceof Error ? e.message : '加载失败'
@@ -105,7 +105,16 @@ async function remove(m: Monitor) {
   })
 }
 async function copied(text: string) { await perform(async () => { await navigator.clipboard.writeText(text); notice.value = '已复制' }) }
-function onSaved(monitor: Monitor) { edit.value = undefined; selectedId.value = monitor.id; void load() }
+function onSaved(monitor: Monitor) {
+  edit.value = undefined; selectedId.value = monitor.id; search.value = ''
+  // Reject a refresh that started before the save; immediately drop old artwork
+  // and statistics when changing targets, even if the next refresh fails.
+  ++loadVersion; loading.value = false; clearTimeout(timer); detail.value = undefined
+  if (board.value) board.value = { ...board.value, cards: board.value.cards.map(card => card.monitor.id !== monitor.id ? card : {
+    ...card, monitor, ...((card.monitor.targetRevision || '') !== (monitor.targetRevision || '') ? { history: [], jobs: [] } : {}),
+  }) }
+  notice.value = '检测项设置已保存'; void load()
+}
 </script>
 <template>
   <main class="quality-page" :class="{ embedded }">
@@ -132,7 +141,7 @@ function onSaved(monitor: Monitor) { edit.value = undefined; selectedId.value = 
           <div class="rail-footnote"><Radio :size="15" /><p>分组与模型独立采样<br>点击目录切换观测对象</p></div>
         </aside>
         <div class="observation-content">
-          <template v-if="selectedCard"><MonitorCard :key="selectedCard.monitor.id" :card="selectedCard" :token="token" :saving="saving" @edit="edit = selectedCard!.monitor" @remove="remove(selectedCard!.monitor)" @run="kind => run(selectedCard!.monitor.id, kind)" @detail="sample => detail = sample" /></template>
+          <template v-if="selectedCard"><MonitorCard :key="`${selectedCard.monitor.id}:${selectedCard.monitor.targetRevision || ''}`" :card="selectedCard" :token="token" :saving="saving" @edit="edit = selectedCard!.monitor" @remove="remove(selectedCard!.monitor)" @run="kind => run(selectedCard!.monitor.id, kind)" @detail="sample => detail = sample" /></template>
           <div v-else class="selection-empty"><Search :size="28" /><p>换个关键词试试</p></div>
         </div>
       </div>

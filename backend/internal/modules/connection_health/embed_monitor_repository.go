@@ -42,7 +42,7 @@ func (r *embedMonitorRepository) publicScope(ctx context.Context, token string) 
 	return
 }
 
-func (r *embedMonitorRepository) save(ctx context.Context, m EmbedMonitor) error {
+func (r *embedMonitorRepository) save(ctx context.Context, m *EmbedMonitor) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -59,7 +59,10 @@ func (r *embedMonitorRepository) save(ctx context.Context, m EmbedMonitor) error
 	if count >= 50 {
 		return requestError("每个工作区最多配置 50 个分组模型")
 	}
-	// Do not mix different groups/models in the same history after an edit.
+	// Revisions belong to the server. Legacy targets and samples share the empty
+	// revision until the first target change; ordinary edits retain their history.
+	m.TargetRevision = ""
+	targetChanged := false
 	var old []byte
 	err = tx.QueryRow(ctx, `SELECT config FROM embed_group_monitors WHERE id=$1 AND user_id=$2 AND admin_account_id=$3 FOR UPDATE`, m.ID, m.UserID, m.WorkspaceID).Scan(&old)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -71,7 +74,13 @@ func (r *embedMonitorRepository) save(ctx context.Context, m EmbedMonitor) error
 			return err
 		}
 		if previous.Model != m.Model || previous.GroupID != m.GroupID {
-			return requestError("分组和模型不可修改，请新建检测项以保留正确历史")
+			targetChanged = true
+			m.TargetRevision, err = newID()
+			if err != nil {
+				return err
+			}
+		} else {
+			m.TargetRevision = previous.TargetRevision
 		}
 	}
 	data, err := json.Marshal(m)
@@ -91,6 +100,13 @@ func (r *embedMonitorRepository) save(ctx context.Context, m EmbedMonitor) error
 		ON CONFLICT(monitor_id,kind) DO UPDATE SET enabled=EXCLUDED.enabled,interval_seconds=EXCLUDED.interval_seconds,
 		next_run_at=CASE WHEN EXCLUDED.enabled AND NOT embed_group_monitor_jobs.enabled THEN now() ELSE LEAST(embed_group_monitor_jobs.next_run_at,now()+EXCLUDED.interval_seconds*interval '1 second') END`, m.ID, kind, m.Enabled && c.Enabled, c.IntervalSeconds)
 		if err != nil {
+			return err
+		}
+	}
+	if targetChanged {
+		// Requests already sent cannot be recalled. Revoke their completion tokens
+		// and old manual requests, and let enabled jobs start with the new target.
+		if _, err = tx.Exec(ctx, `UPDATE embed_group_monitor_jobs SET run_id='',running_until=NULL,started_at=NULL,requested=false,manual=false,next_run_at=now() WHERE monitor_id=$1`, m.ID); err != nil {
 			return err
 		}
 	}
@@ -154,7 +170,7 @@ func (r *embedMonitorRepository) board(ctx context.Context, user, workspace, tit
 			return out, err
 		}
 		// Strip large/generated and diagnostic text in SQL, not after loading it.
-		history, err := r.db.Query(ctx, `SELECT sample - 'html' - 'answer' - 'report' - 'errorDetail' FROM (SELECT sample,started_at,id,row_number() OVER (PARTITION BY kind ORDER BY started_at DESC,id DESC) AS position FROM embed_group_monitor_samples WHERE monitor_id=$1) recent WHERE position<=60 ORDER BY started_at DESC,id DESC`, card.Monitor.ID)
+		history, err := r.db.Query(ctx, `SELECT sample - 'html' - 'answer' - 'report' - 'errorDetail' FROM (SELECT sample,started_at,id,row_number() OVER (PARTITION BY kind ORDER BY started_at DESC,id DESC) AS position FROM embed_group_monitor_samples WHERE monitor_id=$1 AND COALESCE(sample->>'targetRevision','')=$2) recent WHERE position<=60 ORDER BY started_at DESC,id DESC`, card.Monitor.ID, card.Monitor.TargetRevision)
 		if err != nil {
 			return out, err
 		}
@@ -191,7 +207,7 @@ func (r *embedMonitorRepository) publicDetail(ctx context.Context, user, workspa
 func (r *embedMonitorRepository) readDetail(ctx context.Context, user, workspace, id string, public bool) (EmbedSample, error) {
 	var raw []byte
 	var sample EmbedSample
-	err := r.db.QueryRow(ctx, `SELECT s.sample FROM embed_group_monitor_samples s JOIN embed_group_monitors m ON m.id=s.monitor_id WHERE m.user_id=$1 AND m.admin_account_id=$2 AND s.id=$3 AND (NOT $4 OR m.published)`, user, workspace, id, public).Scan(&raw)
+	err := r.db.QueryRow(ctx, `SELECT s.sample FROM embed_group_monitor_samples s JOIN embed_group_monitors m ON m.id=s.monitor_id WHERE m.user_id=$1 AND m.admin_account_id=$2 AND s.id=$3 AND (NOT $4 OR m.published) AND COALESCE(s.sample->>'targetRevision','')=COALESCE(m.config->>'targetRevision','')`, user, workspace, id, public).Scan(&raw)
 	if err == nil {
 		err = json.Unmarshal(raw, &sample)
 	}
@@ -264,6 +280,19 @@ func (r *embedMonitorRepository) complete(ctx context.Context, m EmbedMonitor, j
 	if tag.RowsAffected() == 0 {
 		return nil
 	}
+	// A claim racing an edit may have read an older MVCC configuration snapshot.
+	// Release that lease but never add its result to the current target's history.
+	var revision string
+	if err = tx.QueryRow(ctx, `SELECT COALESCE(config->>'targetRevision','') FROM embed_group_monitors WHERE id=$1`, m.ID).Scan(&revision); err != nil {
+		return err
+	}
+	if revision != m.TargetRevision {
+		if _, err = tx.Exec(ctx, `UPDATE embed_group_monitor_jobs SET next_run_at=now() WHERE monitor_id=$1 AND kind=$2`, m.ID, j.Kind); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
+	}
+	sample.TargetRevision = m.TargetRevision
 	raw, err := json.Marshal(sample)
 	if err != nil {
 		return err

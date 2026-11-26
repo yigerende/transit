@@ -14,13 +14,14 @@ export interface Monitor {
   groupName: string
   name: string
   model: string
+  targetRevision?: string
   qualityBaseUrl: string
   enabled: boolean
   health: CheckConfig
   candy: CheckConfig
   pelican: CheckConfig
 }
-export interface Sample extends QualitySample { kind: CheckKind; probeMode?: string }
+export interface Sample extends QualitySample { kind: CheckKind; probeMode?: string; targetRevision?: string }
 export interface Job { monitorId: string; kind: CheckKind; queued: boolean; startedAt?: string; runningUntil?: string; nextRunAt: string }
 export interface Card { monitor: Monitor; history: Sample[]; jobs: Job[] }
 export interface Board { title: string; cards: Card[]; updatedAt: string }

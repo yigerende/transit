@@ -19,7 +19,7 @@ func TestEmbedMonitorConfigurableRetention(t *testing.T) {
 	monitors[2].ID, monitors[2].WorkspaceID = "foreign-workspace", "ws2"
 	monitors[3].ID, monitors[3].UserID = "foreign-user", "user2"
 	for _, monitor := range monitors {
-		if err := r.save(ctx, monitor); err != nil {
+		if err := r.save(ctx, &monitor); err != nil {
 			t.Fatal(err)
 		}
 		for _, kind := range []string{"health", "candy", "pelican"} {

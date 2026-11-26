@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import MonitorDialog from './MonitorDialog.vue'
 import type { Group, Monitor } from './types'
 import { kinds, labels, modeLabels } from './types'
@@ -9,10 +9,24 @@ const emit = defineEmits<{ close: []; saved: [monitor: Monitor] }>()
 const form = ref<Monitor>(JSON.parse(JSON.stringify(props.monitor)))
 const groups = ref<Group[]>([]), models = ref<{ id: string }[]>([])
 const error = ref(''), saving = ref(false), discovering = ref(false), loadingGroups = ref(true)
+const targetChanged = computed(() => !!form.value.id && (form.value.groupId !== props.monitor.groupId || form.value.model.trim() !== props.monitor.model))
+let modelRequest = 0
+function groupChanged() { ++modelRequest; models.value = []; discovering.value = false; error.value = '' }
+onBeforeUnmount(() => { ++modelRequest })
 const message = (e: unknown) => e instanceof Error ? e.message : '操作失败，请重试'
 async function loadGroups() { loadingGroups.value = true; try { groups.value = await getGroups() } catch (e) { error.value = message(e) } finally { loadingGroups.value = false } }
 onMounted(loadGroups)
-async function discover() { discovering.value = true; error.value = ''; try { models.value = await getModels(form.value.groupId); if (!models.value.length) error.value = '未获取到模型列表，可以手动填写模型名称' } catch (e) { error.value = message(e) } finally { discovering.value = false } }
+async function discover() {
+  const request = ++modelRequest, groupId = form.value.groupId
+  discovering.value = true; error.value = ''
+  try {
+    const result = await getModels(groupId)
+    if (request !== modelRequest) return
+    models.value = result
+    if (!result.length) error.value = '未获取到模型列表，可以手动填写模型名称'
+  } catch (e) { if (request === modelRequest) error.value = message(e) }
+  finally { if (request === modelRequest) discovering.value = false }
+}
 async function save() { saving.value = true; error.value = ''; try { const monitor = await saveMonitor(form.value); emit('saved', monitor) } catch (e) { error.value = message(e) } finally { saving.value = false } }
 </script>
 <template>
@@ -21,10 +35,11 @@ async function save() { saving.value = true; error.value = ''; try { const monit
       <p v-if="error" role="alert" class="form-error">{{ error }}</p>
       <div class="fields">
         <label>展示名称<input v-model="form.name" required maxlength="120" placeholder="例如：标准组 · 旗舰模型"></label>
-        <label>检测分组<select v-model="form.groupId" required :disabled="!!form.id || loadingGroups" @change="models = []"><option value="">{{ loadingGroups ? '正在读取分组…' : '选择分组' }}</option><option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option><option v-if="form.id && !groups.some(g => g.id === form.groupId)" :value="form.groupId">{{ form.groupName }}</option></select></label>
+        <label>检测分组<select v-model="form.groupId" required :disabled="loadingGroups || saving" @change="groupChanged"><option value="">{{ loadingGroups ? '正在读取分组…' : '选择分组' }}</option><option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option><option v-if="form.id && !groups.some(g => g.id === form.groupId)" :value="form.groupId">{{ form.groupName }}</option></select></label>
       </div>
-      <label>探活 / 糖果检测模型<div class="model-input"><input v-model="form.model" list="group-monitor-models" required maxlength="200" :disabled="!!form.id" placeholder="输入或选择模型"><button type="button" :disabled="!form.groupId || discovering || !!form.id" @click="discover">{{ discovering ? '读取中…' : '获取模型' }}</button></div><datalist id="group-monitor-models"><option v-for="model in models" :key="model.id" :value="model.id" /></datalist></label>
-      <p class="help">使用绑定该分组的专用 Key，首次获取模型或检测时自动创建。更换分组或模型请新建检测项。</p>
+      <label>探活 / 糖果检测模型<div class="model-input"><input v-model="form.model" list="group-monitor-models" required maxlength="200" :disabled="saving" placeholder="输入或选择模型"><button type="button" :disabled="!form.groupId || discovering || saving" @click="discover">{{ discovering ? '读取中…' : '获取模型' }}</button></div><datalist id="group-monitor-models"><option v-for="model in models" :key="model.id" :value="model.id" /></datalist></label>
+      <p class="help">使用所选分组的专用 Key，获取模型或检测时自动获取，没有则创建。分组和模型均可修改。</p>
+      <p v-if="targetChanged" class="help" role="status">保存后按新分组和模型重新统计三类检测。原历史保留至超过保留条数，不混入当前图表；旧任务结果不会写入新统计。</p>
       <label>API 降智检测地址（可选）<input v-model="form.qualityBaseUrl" type="url" maxlength="2048" placeholder="https://example.com"><span class="help">默认使用工作区地址；需要公开 HTTPS 地址时可单独填写，仍使用原分组 Key。</span></label>
       <label class="switch-label master"><input v-model="form.enabled" type="checkbox">启用本检测项的自动任务<span>关闭后仍可手动检测</span></label>
       <section v-for="kind in kinds" :key="kind" class="check-settings">

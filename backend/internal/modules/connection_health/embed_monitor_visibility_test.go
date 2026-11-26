@@ -22,7 +22,7 @@ func TestEmbedMonitorVisibilityScopeAndPublicDetails(t *testing.T) {
 	monitors[2].ID, monitors[2].WorkspaceID = "other-workspace", "ws2"
 	monitors[3].ID, monitors[3].UserID = "other-user", "user2"
 	for _, monitor := range monitors {
-		if err := r.save(ctx, monitor); err != nil {
+		if err := r.save(ctx, &monitor); err != nil {
 			t.Fatal(err)
 		}
 		sample := EmbedSample{Kind: "pelican", QualitySample: QualitySample{ID: monitor.ID + "-sample", TargetID: monitor.ID, HTML: "<p>artwork</p>", HasHTML: true, Result: "passed"}}
@@ -102,7 +102,7 @@ func TestEmbedMonitorVisibilityScopeAndPublicDetails(t *testing.T) {
 		}
 	}
 	// Editing an item and rotating its board token must retain selection.
-	if err := r.save(ctx, m); err != nil {
+	if err := r.save(ctx, &m); err != nil {
 		t.Fatal(err)
 	}
 	oldToken := config.Token
@@ -185,7 +185,7 @@ func TestEmbedMonitorVisibilityMigrationPreservesExistingAndHidden(t *testing.T)
 	r := embedTestRepository(t)
 	ctx := context.Background()
 	m := embedTestMonitor()
-	if err := r.save(ctx, m); err != nil {
+	if err := r.save(ctx, &m); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.db.Exec(ctx, `ALTER TABLE embed_group_monitors DROP COLUMN published`); err != nil {
@@ -209,7 +209,7 @@ func TestEmbedMonitorVisibilityMigrationPreservesExistingAndHidden(t *testing.T)
 		t.Fatal(err)
 	}
 	m.ID = "created-after-upgrade"
-	if err = r.save(ctx, m); err != nil {
+	if err = r.save(ctx, &m); err != nil {
 		t.Fatal(err)
 	}
 	config, err = r.settings(ctx, m.UserID, m.WorkspaceID)

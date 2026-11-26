@@ -93,7 +93,7 @@ func TestEmbedMonitorDurableJobsAndIsolation(t *testing.T) {
 	r := embedTestRepository(t)
 	ctx := context.Background()
 	m := embedTestMonitor()
-	if err := r.save(ctx, m); err != nil {
+	if err := r.save(ctx, &m); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := r.claim(ctx); !errors.Is(err, pgx.ErrNoRows) {
@@ -165,17 +165,12 @@ func TestEmbedMonitorDurableJobsAndIsolation(t *testing.T) {
 	// Update settings without changing identity or deleting history.
 	m.Health.Enabled = true
 	m.Health.IntervalSeconds = 90
-	if err = r.save(ctx, m); err != nil {
+	if err = r.save(ctx, &m); err != nil {
 		t.Fatal(err)
 	}
 	_, health, err := r.claim(ctx)
 	if err != nil || health.Kind != "health" || health.Manual {
 		t.Fatal("enabled schedule not due", err)
-	}
-	changed := m
-	changed.Model = "another-model"
-	if r.save(ctx, changed) == nil {
-		t.Fatal("mixed model histories")
 	}
 	// Lease recovery also works for a manual-only test after a crashed process.
 	if _, err = r.db.Exec(ctx, `UPDATE embed_group_monitor_jobs SET enabled=false,running_until=now()-interval '1 second' WHERE monitor_id=$1 AND kind='health'`, m.ID); err != nil {
@@ -233,7 +228,7 @@ func TestEmbedMonitorClearHistoryKeepsConfigurationAndScope(t *testing.T) {
 	monitors[2].ID, monitors[2].WorkspaceID = "other-workspace", "ws2"
 	monitors[3].ID, monitors[3].UserID = "other-user", "user2"
 	for _, monitor := range monitors {
-		if err := r.save(ctx, monitor); err != nil {
+		if err := r.save(ctx, &monitor); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := r.settings(ctx, monitor.UserID, monitor.WorkspaceID); err != nil {
@@ -308,7 +303,7 @@ func TestEmbedMonitorWorkerAndReadOnlyHTTP(t *testing.T) {
 	ctx := context.Background()
 	m := embedTestMonitor()
 	m.QualityBaseURL = "https://public.example.com"
-	if err := r.save(ctx, m); err != nil {
+	if err := r.save(ctx, &m); err != nil {
 		t.Fatal(err)
 	}
 	repo := newFakeRepository()
@@ -385,7 +380,7 @@ func TestEmbedMonitorWorkerAndReadOnlyHTTP(t *testing.T) {
 	other.ID = "other"
 	other.UserID = "foreign"
 	other.WorkspaceID = "foreign"
-	if err = r.save(ctx, other); err != nil {
+	if err = r.save(ctx, &other); err != nil {
 		t.Fatal(err)
 	}
 	old := config.Token

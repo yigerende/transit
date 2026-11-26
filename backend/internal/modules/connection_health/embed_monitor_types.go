@@ -24,6 +24,7 @@ type EmbedMonitor struct {
 	GroupName      string     `json:"groupName"`
 	Name           string     `json:"name"`
 	Model          string     `json:"model"`
+	TargetRevision string     `json:"targetRevision,omitempty"`
 	QualityBaseURL string     `json:"qualityBaseUrl"`
 	Enabled        bool       `json:"enabled"`
 	Health         EmbedCheck `json:"health"`
@@ -99,8 +100,9 @@ type EmbedJob struct {
 
 type EmbedSample struct {
 	QualitySample
-	Kind      string `json:"kind"`
-	ProbeMode string `json:"probeMode,omitempty"`
+	Kind           string `json:"kind"`
+	ProbeMode      string `json:"probeMode,omitempty"`
+	TargetRevision string `json:"targetRevision,omitempty"`
 }
 
 type EmbedMonitorCard struct {
